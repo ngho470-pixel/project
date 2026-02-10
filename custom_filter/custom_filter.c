@@ -738,8 +738,17 @@ cf_rel_pathlist_hook(PlannerInfo *root, RelOptInfo *rel,
     }
     table_close(relobj, NoLock);
 
-    if (!cf_rel_is_policy_target(root, rte->relid))
-        return;
+    /*
+     * Correctness-first: wrap all base-relation paths when custom_filter is enabled.
+     *
+     * The planner may pull up relations from EXISTS/subqueries into the outer
+     * join tree. If we only wrap "policy targets" inferred from root->parse->rtable,
+     * we can miss those pulled-up relations and later hard-error in ExecutorStart
+     * when enforcement is required but the scan node was never wrapped.
+     *
+     * Wrapping a non-target table is safe: cf_exec() will simply pass tuples
+     * through when no TableFilterState exists for the relid.
+     */
 
     const char *relname = rte ? get_rel_name(rte->relid) : NULL;
     List *orig_paths = rel->pathlist;
