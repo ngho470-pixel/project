@@ -1,0 +1,14 @@
+SET
+SET
+SET
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+SET
+SET
+psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_strict_20260209_130452/FAIL_BUNDLE/repro.sql:16: ERROR:  canceling statement due to user request
+psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_strict_20260209_130452/FAIL_BUNDLE/repro.sql:16: NOTICE:  policy_profile: eval_ms=1.124 artifact_load_ms=101.062 artifact_parse_ms=10.674 stamp_ms=7.039 bin_ms=1.769 local_sat_ms=14.704 prop_ms=13.588 prop_iters=1 decode_ms=6.147 policy_total_ms=220.104 ctid_map_ms=3.037 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=5 n_policy_targets=4 n_filters=2 bytes_artifacts_loaded=46155664 bytes_allow=85072 bytes_ctid=5444576 bytes_blk_index=1803722 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
