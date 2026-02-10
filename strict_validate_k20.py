@@ -117,6 +117,8 @@ def fail(kind: str, msg: str, *, repro_sql: Optional[str] = None, explain_sql: O
                 "\\set ON_ERROR_STOP on",
                 "SET max_parallel_workers_per_gather=0;",
                 "SET enable_indexonlyscan=off;",
+                "SET enable_indexscan=off;",
+                "SET enable_bitmapscan=off;",
                 "SET enable_tidscan=off;",
                 "SET statement_timeout='30min';",
                 f"LOAD '{h.CUSTOM_FILTER_SO}';",
@@ -176,6 +178,8 @@ def repro_psql_for_count(count_sql: str, *, debug_mode: str = "off") -> str:
             "\\set ON_ERROR_STOP on",
             "SET max_parallel_workers_per_gather=0;",
             "SET enable_indexonlyscan=off;",
+            "SET enable_indexscan=off;",
+            "SET enable_bitmapscan=off;",
             "SET enable_tidscan=off;",
             "SET statement_timeout='30min';",
             "",
@@ -190,6 +194,8 @@ def repro_psql_for_count(count_sql: str, *, debug_mode: str = "off") -> str:
             "",
             "-- RLS (as rls_user via SET ROLE, no password needed)",
             "SET custom_filter.enabled=off;",
+            "RESET enable_indexscan;",
+            "RESET enable_bitmapscan;",
             "SET client_min_messages = warning;",
             "SET ROLE rls_user;",
             f"{q} \\gset rls_",
@@ -328,6 +334,8 @@ def main() -> int:
             "\\set ON_ERROR_STOP on",
             "SET max_parallel_workers_per_gather=0;",
             "SET enable_indexonlyscan=off;",
+            "SET enable_indexscan=off;",
+            "SET enable_bitmapscan=off;",
             "SET enable_tidscan=off;",
             "SET statement_timeout='30min';",
             f"LOAD '{h.CUSTOM_FILTER_SO}';",
@@ -398,7 +406,16 @@ def main() -> int:
 
         log(f"q{qid}: explain marker check")
         marker_sql = qsql if is_single_statement(qsql) else count_sql
-        ok_marker, plan = run_explain_marker(marker_sql)
+        try:
+            ok_marker, plan = run_explain_marker(marker_sql)
+        except Exception as exc:  # noqa: BLE001
+            msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()
+            fail(
+                "explain_error",
+                f"q{qid}: {msg}",
+                repro_sql=repro_psql_for_count(count_sql),
+                explain_sql=marker_sql,
+            )
         if not ok_marker:
             (RUN_DIR / f"q{qid}_explain_missing_marker.txt").write_text(plan + "\n", encoding="utf-8")
             fail(
