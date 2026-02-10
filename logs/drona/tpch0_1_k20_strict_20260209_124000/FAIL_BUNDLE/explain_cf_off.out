@@ -1,0 +1,25 @@
+SET
+SET
+SET
+SET
+SET
+SET
+                                                                                                                                                                                       QUERY PLAN                                                                                                                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort
+   Output: orders.o_orderpriority, (count(*))
+   Sort Key: orders.o_orderpriority
+   ->  HashAggregate
+         Output: orders.o_orderpriority, count(*)
+         Group Key: orders.o_orderpriority
+         ->  Nested Loop Semi Join
+               Output: orders.o_orderpriority
+               ->  Seq Scan on public.orders
+                     Output: orders.o_orderkey, orders.o_custkey, orders.o_orderstatus, orders.o_totalprice, orders.o_orderdate, orders.o_orderpriority, orders.o_clerk, orders.o_shippriority, orders.o_comment
+                     Filter: ((orders.o_orderdate >= '1996-04-01'::date) AND (orders.o_orderdate < '1996-07-01 00:00:00'::timestamp without time zone))
+               ->  Index Scan using cf_rls_k20_lineitem_l_orderkey_10 on public.lineitem
+                     Output: lineitem.l_orderkey, lineitem.l_partkey, lineitem.l_suppkey, lineitem.l_linenumber, lineitem.l_quantity, lineitem.l_extendedprice, lineitem.l_discount, lineitem.l_tax, lineitem.l_returnflag, lineitem.l_linestatus, lineitem.l_shipdate, lineitem.l_commitdate, lineitem.l_receiptdate, lineitem.l_shipinstruct, lineitem.l_shipmode, lineitem.l_comment
+                     Index Cond: (lineitem.l_orderkey = orders.o_orderkey)
+                     Filter: (lineitem.l_commitdate < lineitem.l_receiptdate)
+(15 rows)
+

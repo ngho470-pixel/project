@@ -1,0 +1,12 @@
+LOAD
+psql:FAIL_BUNDLE/build_subset_p1.sql:3: NOTICE:  relation "files" already exists, skipping
+CREATE TABLE
+TRUNCATE TABLE
+psql:FAIL_BUNDLE/build_subset_p1.sql:5: NOTICE:  relation "files" already exists, skipping
+psql:FAIL_BUNDLE/build_subset_p1.sql:5: NOTICE:  table "tmp_dict_0" does not exist, skipping
+psql:FAIL_BUNDLE/build_subset_p1.sql:5: NOTICE:  table "tmp_dict_1" does not exist, skipping
+ build_base 
+------------
+ 
+(1 row)
+

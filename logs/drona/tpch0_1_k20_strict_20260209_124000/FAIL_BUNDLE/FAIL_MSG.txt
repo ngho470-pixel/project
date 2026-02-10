@@ -1,0 +1,1 @@
+q4: custom_filter: policy enforcement required but scan type not wrapped (table=lineitem scan=IndexScan)

@@ -1,0 +1,12 @@
+SET
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+SET
+SET
+psql:FAIL_BUNDLE/explain.sql:12: ERROR:  custom_filter: policy enforcement required but scan type not wrapped (table=lineitem scan=IndexScan)
+HINT:  disable index/bitmap/tid scans or add wrapper support

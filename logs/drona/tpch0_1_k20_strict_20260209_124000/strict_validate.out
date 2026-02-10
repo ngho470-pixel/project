@@ -1,0 +1,30 @@
+[2026-02-09 12:40:18] setup_ours: build artifacts from /tmp/z3_lab/policy.txt
+[setup_ours] K=20 setup_ms=18604.915 disk=46155726
+[2026-02-09 12:40:37] setup_rls: apply policies + inferred indexes
+[index_infer] K=20 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_name:text_pattern_ops', 'customer.c_nationkey', 'customer.c_phone:text_pattern_ops', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'lineitem.l_tax', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_brand', 'part.p_partkey', 'part.p_size', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_nationkey', 'supplier.s_suppkey']
+[setup_rls] K=20 setup_ms=3642.428 disk=110084096 indexes=['cf_rls_k20_customer_c_acctbal_1', 'cf_rls_k20_customer_c_custkey_2', 'cf_rls_k20_customer_c_mktsegment_3', 'cf_rls_k20_customer_c_name_4', 'cf_rls_k20_customer_c_nationkey_5', 'cf_rls_k20_customer_c_phone_6', 'cf_rls_k20_lineitem_l_discount_7', 'cf_rls_k20_lineitem_l_extendedprice_8', 'cf_rls_k20_lineitem_l_linestatus_9', 'cf_rls_k20_lineitem_l_orderkey_10', 'cf_rls_k20_lineitem_l_partkey_11', 'cf_rls_k20_lineitem_l_quantity_12', 'cf_rls_k20_lineitem_l_returnflag_13', 'cf_rls_k20_lineitem_l_shipinstruct_14', 'cf_rls_k20_lineitem_l_shipmode_15', 'cf_rls_k20_lineitem_l_suppkey_16', 'cf_rls_k20_lineitem_l_tax_17', 'cf_rls_k20_nation_n_name_18', 'cf_rls_k20_nation_n_nationkey_19', 'cf_rls_k20_nation_n_regionkey_20', 'cf_rls_k20_orders_o_custkey_21', 'cf_rls_k20_orders_o_orderkey_22', 'cf_rls_k20_orders_o_orderpriority_23', 'cf_rls_k20_orders_o_orderstatus_24', 'cf_rls_k20_orders_o_totalprice_25', 'cf_rls_k20_part_p_brand_26', 'cf_rls_k20_part_p_partkey_27', 'cf_rls_k20_part_p_size_28', 'cf_rls_k20_partsupp_ps_partkey_29', 'cf_rls_k20_partsupp_ps_suppkey_30', 'cf_rls_k20_partsupp_ps_supplycost_31', 'cf_rls_k20_region_r_name_32', 'cf_rls_k20_region_r_regionkey_33', 'cf_rls_k20_supplier_s_nationkey_34', 'cf_rls_k20_supplier_s_suppkey_35']
+[2026-02-09 12:40:41] q15: dump raw query text (queries.txt)
+[2026-02-09 12:40:41] q15: run ours via psql
+[2026-02-09 12:40:41] q15: run rls via psql
+[2026-02-09 12:40:41] q1: explain marker check
+[2026-02-09 12:40:42] q1: ours count + profile
+[2026-02-09 12:40:42] q1: rls count
+[2026-02-09 12:40:42] q2: explain marker check
+[2026-02-09 12:40:42] q2: ours count + profile
+[2026-02-09 12:40:43] q2: rls count
+[2026-02-09 12:40:43] q3: explain marker check
+[2026-02-09 12:40:43] q3: ours count + profile
+[2026-02-09 12:40:43] q3: rls count
+[2026-02-09 12:40:44] q4: explain marker check
+Traceback (most recent call last):
+  File "/home/nghosh/research/z3_lab/logs/tpch0_1_k20_strict_20260209_124000/./strict_validate_k20.py", line 597, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/nghosh/research/z3_lab/logs/tpch0_1_k20_strict_20260209_124000/./strict_validate_k20.py", line 401, in main
+    ok_marker, plan = run_explain_marker(marker_sql)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/nghosh/research/z3_lab/logs/tpch0_1_k20_strict_20260209_124000/./strict_validate_k20.py", line 220, in run_explain_marker
+    cur.execute("EXPLAIN (VERBOSE, COSTS OFF) " + sql.strip().rstrip(";") + ";")
+psycopg2.errors.InternalError_: custom_filter: policy enforcement required but scan type not wrapped (table=lineitem scan=IndexScan)
+HINT:  disable index/bitmap/tid scans or add wrapper support
+
