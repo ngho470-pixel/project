@@ -753,9 +753,6 @@ def set_session_for_baseline(
         cur.execute("SET custom_filter.debug_mode = %s;", [ours_debug_mode])
         cur.execute("SET enable_tidscan = off;")
         cur.execute("SET enable_indexonlyscan = off;")
-        # custom_filter currently does not wrap IndexScan/Bitmap* scans. Keep plan shapes in the supported subset.
-        cur.execute("SET enable_indexscan = off;")
-        cur.execute("SET enable_bitmapscan = off;")
         cur.execute(sql.SQL("SET custom_filter.policy_path = %s;"), [str(enabled_path)])
     elif baseline == "rls_with_index":
         cur.execute("SET custom_filter.enabled = off;")
