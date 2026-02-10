@@ -1,0 +1,9 @@
+-- PLACEHOLDER (dataset not included)
+--
+-- The upstream Sieve project stores this dataset using Git LFS.
+-- This monorepo does not include the Git LFS object to keep pushes/clones working
+-- without requiring LFS storage/bandwidth.
+--
+-- Original upstream LFS metadata:
+-- - oid sha256:95ea990312e395a212d3a71e88c38c3af8d6a4fc251c32e6c27cdfbc74be0d51
+-- - size: 13983 bytes

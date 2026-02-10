@@ -1,0 +1,19 @@
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  custom_filter: wrap rel=orders oid=16407 paths=1
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  custom_filter: needed_files = [customer_code_base, customer_ctid, dict/customer/c_acctbal, dict/customer/c_mktsegment, dict/customer/c_nationkey, meta/cols/customer, meta/cols/orders, meta/dict_sorted/customer/c_acctbal, meta/dict_sorted/customer/c_mktsegment, meta/dict_sorted/customer/c_nationkey, meta/dict_type/customer/c_acctbal, meta/dict_type/customer/c_mktsegment, meta/dict_type/customer/c_nationkey, meta/join_classes, orders_code_base, orders_ctid]
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  custom_filter: policy_targets = [customer, orders]
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  policy_eval: target_tables=[customer, orders]
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  policy_eval: combined_ast target=customer ast=y1 and (y3 or y4) and y5
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  policy_eval: combined_ast target=orders ast=y6 and (y2 or y4)
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  custom_filter: query_targets = [orders]
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  custom_filter: scanned_tables = [orders]
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  custom_filter: table=orders filter=on
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  custom_filter: artifact_load_ms=0.184
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  custom_filter: calling policy_run once target_count=2 atom_count=6
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: NOTICE:  policy: load_ms=0.089
+psql:/home/ng_lab/z3/logs/step1_test1.sql:8: ERROR:  policy: multi-join enforcement supports a single target table (targets=2)

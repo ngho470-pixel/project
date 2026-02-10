@@ -1,0 +1,72 @@
+[2026-02-09 11:20:28] setup_ours: build artifacts from /tmp/z3_lab/policy.txt
+[setup_ours] K=20 setup_ms=18592.475 disk=46155726
+[2026-02-09 11:20:47] setup_rls: apply policies + inferred indexes
+[index_infer] K=20 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_name:text_pattern_ops', 'customer.c_nationkey', 'customer.c_phone:text_pattern_ops', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'lineitem.l_tax', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_brand', 'part.p_partkey', 'part.p_size', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_nationkey', 'supplier.s_suppkey']
+[setup_rls] K=20 setup_ms=3681.301 disk=110084096 indexes=['cf_rls_k20_customer_c_acctbal_1', 'cf_rls_k20_customer_c_custkey_2', 'cf_rls_k20_customer_c_mktsegment_3', 'cf_rls_k20_customer_c_name_4', 'cf_rls_k20_customer_c_nationkey_5', 'cf_rls_k20_customer_c_phone_6', 'cf_rls_k20_lineitem_l_discount_7', 'cf_rls_k20_lineitem_l_extendedprice_8', 'cf_rls_k20_lineitem_l_linestatus_9', 'cf_rls_k20_lineitem_l_orderkey_10', 'cf_rls_k20_lineitem_l_partkey_11', 'cf_rls_k20_lineitem_l_quantity_12', 'cf_rls_k20_lineitem_l_returnflag_13', 'cf_rls_k20_lineitem_l_shipinstruct_14', 'cf_rls_k20_lineitem_l_shipmode_15', 'cf_rls_k20_lineitem_l_suppkey_16', 'cf_rls_k20_lineitem_l_tax_17', 'cf_rls_k20_nation_n_name_18', 'cf_rls_k20_nation_n_nationkey_19', 'cf_rls_k20_nation_n_regionkey_20', 'cf_rls_k20_orders_o_custkey_21', 'cf_rls_k20_orders_o_orderkey_22', 'cf_rls_k20_orders_o_orderpriority_23', 'cf_rls_k20_orders_o_orderstatus_24', 'cf_rls_k20_orders_o_totalprice_25', 'cf_rls_k20_part_p_brand_26', 'cf_rls_k20_part_p_partkey_27', 'cf_rls_k20_part_p_size_28', 'cf_rls_k20_partsupp_ps_partkey_29', 'cf_rls_k20_partsupp_ps_suppkey_30', 'cf_rls_k20_partsupp_ps_supplycost_31', 'cf_rls_k20_region_r_name_32', 'cf_rls_k20_region_r_regionkey_33', 'cf_rls_k20_supplier_s_nationkey_34', 'cf_rls_k20_supplier_s_suppkey_35']
+[2026-02-09 11:20:51] q1: ground truth (rls) count
+[2026-02-09 11:20:51] q1: running ours count 20x
+[2026-02-09 11:21:02] q1: OK (20/20)
+[2026-02-09 11:21:02] q2: ground truth (rls) count
+[2026-02-09 11:21:02] q2: running ours count 20x
+[2026-02-09 11:21:03] q2: OK (20/20)
+[2026-02-09 11:21:03] q3: ground truth (rls) count
+[2026-02-09 11:21:04] q3: running ours count 20x
+[2026-02-09 11:21:11] q3: OK (20/20)
+[2026-02-09 11:21:11] q4: ground truth (rls) count
+[2026-02-09 11:21:11] q4: running ours count 20x
+[2026-02-09 11:21:17] q4: OK (20/20)
+[2026-02-09 11:21:17] q5: ground truth (rls) count
+[2026-02-09 11:21:18] q5: running ours count 20x
+[2026-02-09 11:21:24] q5: OK (20/20)
+[2026-02-09 11:21:24] q6: ground truth (rls) count
+[2026-02-09 11:21:24] q6: running ours count 20x
+[2026-02-09 11:21:25] q6: OK (20/20)
+[2026-02-09 11:21:25] q7: ground truth (rls) count
+[2026-02-09 11:21:25] q7: running ours count 20x
+[2026-02-09 11:21:32] q7: OK (20/20)
+[2026-02-09 11:21:32] q8: ground truth (rls) count
+[2026-02-09 11:21:32] q8: running ours count 20x
+[2026-02-09 11:21:39] q8: OK (20/20)
+[2026-02-09 11:21:39] q9: ground truth (rls) count
+[2026-02-09 11:21:39] q9: running ours count 20x
+[2026-02-09 11:21:46] q9: OK (20/20)
+[2026-02-09 11:21:46] q10: ground truth (rls) count
+[2026-02-09 11:21:46] q10: running ours count 20x
+[2026-02-09 11:21:53] q10: OK (20/20)
+[2026-02-09 11:21:53] q11: ground truth (rls) count
+[2026-02-09 11:21:53] q11: running ours count 20x
+[2026-02-09 11:21:54] q11: OK (20/20)
+[2026-02-09 11:21:54] q12: ground truth (rls) count
+[2026-02-09 11:21:55] q12: running ours count 20x
+[2026-02-09 11:22:02] q12: OK (20/20)
+[2026-02-09 11:22:02] q13: ground truth (rls) count
+[2026-02-09 11:22:02] q13: running ours count 20x
+[2026-02-09 11:22:05] q13: OK (20/20)
+[2026-02-09 11:22:05] q14: ground truth (rls) count
+[2026-02-09 11:22:05] q14: running ours count 20x
+[2026-02-09 11:22:13] q14: OK (20/20)
+[2026-02-09 11:22:13] q15: ground truth (rls) count
+[2026-02-09 11:22:13] q15: running ours count 20x
+[2026-02-09 11:22:21] q15: OK (20/20)
+[2026-02-09 11:22:21] q16: ground truth (rls) count
+[2026-02-09 11:22:21] q16: running ours count 20x
+[2026-02-09 11:22:23] q16: OK (20/20)
+[2026-02-09 11:22:23] q17: ground truth (rls) count
+[2026-02-09 11:22:24] q17: running ours count 20x
+[2026-02-09 11:22:30] q17: OK (20/20)
+[2026-02-09 11:22:30] q18: ground truth (rls) count
+[2026-02-09 11:22:30] q18: running ours count 20x
+[2026-02-09 11:22:45] q18: OK (20/20)
+[2026-02-09 11:22:45] q19: ground truth (rls) count
+[2026-02-09 11:22:45] q19: running ours count 20x
+[2026-02-09 11:22:51] q19: OK (20/20)
+[2026-02-09 11:22:51] q20: ground truth (rls) count
+[2026-02-09 11:22:52] q20: running ours count 20x
+[2026-02-09 11:23:00] q20: OK (20/20)
+[2026-02-09 11:23:00] q21: ground truth (rls) count
+[2026-02-09 11:23:00] q21: running ours count 20x
+[2026-02-09 11:23:07] q21: OK (20/20)
+[2026-02-09 11:23:07] q22: ground truth (rls) count
+[2026-02-09 11:23:07] q22: running ours count 20x
+[2026-02-09 11:23:11] q22: OK (20/20)
+[2026-02-09 11:23:11] DONE: all q1..q22 stable for N=20

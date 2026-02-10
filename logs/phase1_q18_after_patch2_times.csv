@@ -1,0 +1,9 @@
+row_type,db,K,policy_ids,baseline,query_id,setup_ms,disk_overhead_bytes,cold_ms,cold_peak_rss_kb,hot1_ms,hot1_peak_rss_kb,hot2_ms,hot2_peak_rss_kb,hot3_ms,hot3_peak_rss_kb,hot4_ms,hot4_peak_rss_kb,hot5_ms,hot5_peak_rss_kb,hot_avg_ms,hot_avg_peak_rss_kb,status,error_type,error_msg
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,__setup__,5300.563,32161048,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,__setup__,1694.319,80003072,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,18,,,424.371,206224,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[engine_error]: malformed ctid_pairs_len for rel=lineitem len=825127023
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,18,,,121.495,111996,91.305,119628,121.407,119612,122.005,123872,91.699,123876,91.250,123880,103.533,122173,ok,,
+setup,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",ours,__setup__,6937.972,35163425,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",rls_with_index,__setup__,1791.991,91209728,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",ours,18,,,453.667,218756,,,,,,,,,,,0.000,0,error,db_error,cursor already closed
+query,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",rls_with_index,18,,,212.269,140556,212.283,142864,182.370,142664,181.869,142664,181.774,142460,182.068,142460,188.073,142622,ok,,

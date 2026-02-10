@@ -1,0 +1,17 @@
+row_type,db,K,query_id,setup_ms,cold_ms,hot1_ms,hot2_ms,hot3_ms,hot4_ms,hot5_ms,hot_avg_ms,status,error_type,error_msg
+setup,tpch0_1,5,__setup__,5028.351,,,,,,,,ok,,
+query,tpch0_1,5,1,,344.619,,,,,,0.000,ok,,
+query,tpch0_1,5,2,,223.028,,,,,,0.000,ok,,
+query,tpch0_1,5,3,,283.516,,,,,,0.000,ok,,
+setup,tpch0_1,10,__setup__,5342.021,,,,,,,,ok,,
+query,tpch0_1,10,1,,20.434,,,,,,0.000,error,db_error,ERROR:  unsupported LIKE pattern (prefix only): %-%
+query,tpch0_1,10,2,,20.368,,,,,,0.000,error,db_error,ERROR:  unsupported LIKE pattern (prefix only): %-%
+query,tpch0_1,10,3,,20.417,,,,,,0.000,error,db_error,ERROR:  unsupported LIKE pattern (prefix only): %-%
+setup,tpch0_1,15,__setup__,8064.276,,,,,,,,ok,,
+query,tpch0_1,15,1,,20.436,,,,,,0.000,error,db_error,ERROR:  unsupported LIKE pattern (prefix only): %-%
+query,tpch0_1,15,2,,20.461,,,,,,0.000,error,db_error,ERROR:  unsupported LIKE pattern (prefix only): %-%
+query,tpch0_1,15,3,,20.468,,,,,,0.000,error,db_error,ERROR:  unsupported LIKE pattern (prefix only): %-%
+setup,tpch0_1,20,__setup__,10493.037,,,,,,,,ok,,
+query,tpch0_1,20,1,,20.418,,,,,,0.000,error,db_error,ERROR:  unsupported LIKE pattern (prefix only): %-%
+query,tpch0_1,20,2,,20.558,,,,,,0.000,error,db_error,ERROR:  unsupported LIKE pattern (prefix only): %-%
+query,tpch0_1,20,3,,20.362,,,,,,0.000,error,db_error,ERROR:  unsupported LIKE pattern (prefix only): %-%

@@ -1,0 +1,4 @@
+QUERY:
+SELECT COUNT(*) FROM lineitem l JOIN orders o ON l.l_orderkey=o.o_orderkey;
+GT_SOURCE: rls
+COUNT: 2271

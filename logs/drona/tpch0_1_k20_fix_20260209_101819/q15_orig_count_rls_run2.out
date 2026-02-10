@@ -1,0 +1,13 @@
+Timing is on.
+SET
+Time: 0.117 ms
+SET
+Time: 0.038 ms
+SET
+Time: 0.032 ms
+SET
+Time: 0.037 ms
+SET
+Time: 0.033 ms
+psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_fix_20260209_101819/q15_orig_count_rls.sql:9: ERROR:  must be owner of view revenue0
+Time: 0.219 ms

@@ -1,0 +1,2 @@
+db,K,median_hot_ours_ms,median_hot_rls_ms,speedup_ratio_ours_over_rls,median_peak_ours_kb,median_peak_rls_kb,disk_ours_bytes,disk_rls_bytes,recommendation
+tpch0_1,5,181.500,166.391,1.091,130394,76568,10559488,9445376,optimize: artifact_load_ms->ctid_map_ms->filter_ms

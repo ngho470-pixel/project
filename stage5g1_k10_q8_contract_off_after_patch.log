@@ -1,0 +1,32 @@
+LOAD
+SET
+SET
+SET
+SET
+SET
+NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+NOTICE:  custom_filter: wrap rel=customer oid=74194 paths=1
+NOTICE:  custom_filter: needed_files = [customer_code_base, customer_ctid, dict/customer/c_acctbal, dict/customer/c_mktsegment, dict/customer/c_name, dict/customer/c_nationkey, dict/customer/c_phone, dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/customer, meta/cols/lineitem, meta/dict_sorted/customer/c_acctbal, meta/dict_sorted/customer/c_mktsegment, meta/dict_sorted/customer/c_name, meta/dict_sorted/customer/c_nationkey, meta/dict_sorted/customer/c_phone, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/customer/c_acctbal, meta/dict_type/customer/c_mktsegment, meta/dict_type/customer/c_name, meta/dict_type/customer/c_nationkey, meta/dict_type/customer/c_phone, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+NOTICE:  custom_filter: policy_targets = [customer, lineitem]
+NOTICE:  custom_filter: query_targets = [lineitem]
+NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+NOTICE:  custom_filter: table=lineitem filter=on
+NOTICE:  custom_filter: table=orders filter=off
+NOTICE:  custom_filter: table=customer filter=on
+NOTICE:  custom_filter: artifact_load_ms=45.622
+NOTICE:  policy: load_ms=2.487
+NOTICE:  policy: global_atoms table=lineitem count=2
+NOTICE:  policy: global_bins table=lineitem bins=3 rows=600572
+NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+NOTICE:  policy: local_bins table=lineitem atoms=2 bins=3
+NOTICE:  policy: local_ms table=lineitem stamp=11.945 bin=3.985 eval=0.150 fill=1.064
+NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=0
+NOTICE:  policy: allow_lineitem count = 299856 / 600572
+NOTICE:  policy: total_ms=21.407
+NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=3,sat=3,hits=0,ms=11.945/3.985/0.150/1.064,total_ms=17.144} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=21.407
+NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+NOTICE:  policy: load_ms=2.050
+ERROR:  policy: new atom encountered after global scan table=lineitem atom=const:lineitem.l_shipinstruct|0|DELIVER IN PERSON
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=21.407 local_ms=17.144 prop_ms=0.000 decode_ms=0.000 sat_calls=3 cache_hits=0 closure_tables=2 filtered_targets=1
+NOTICE:  policy: scan_count table=lineitem count=1
+600572

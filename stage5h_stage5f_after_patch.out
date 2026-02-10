@@ -1,0 +1,33 @@
+K	query_id	targets	ground_truth_source	ours_count	gt_count	status	error_type
+5	1		rewritten_sql	15000	15000	PASS	
+5	2		rewritten_sql	3028	3028	PASS	
+5	3		rewritten_sql	150000	150000	PASS	
+5	4		rewritten_sql	146151	146151	PASS	
+5	5	lineitem	rewritten_sql	2271	2271	PASS	
+5	6	lineitem	rewritten_sql	2271	2271	PASS	
+5	7		rewritten_sql	150000	150000	PASS	
+5	8	lineitem	rewritten_sql	2271	2271	PASS	
+10	1	customer	rewritten_sql	0	0	PASS	
+10	2	customer	rewritten_sql	0	0	PASS	
+10	3		rewritten_sql	150000	150000	PASS	
+10	4		rewritten_sql	146151	146151	PASS	
+10	5	lineitem	rewritten_sql	2271	2271	PASS	
+10	6	lineitem	rewritten_sql	2271	2271	PASS	
+10	7	customer	rewritten_sql	0	0	PASS	
+10	8	customer,lineitem	rewritten_sql	0	0	PASS	
+15	1	customer	rewritten_sql	0	0	PASS	
+15	2	customer	rewritten_sql	0	0	PASS	
+15	3	orders	rewritten_sql	2200	2200	PASS	
+15	4	orders	rewritten_sql	2200	2200	PASS	
+15	5	lineitem	rewritten_sql	2236	2236	PASS	
+15	6	lineitem	rewritten_sql	2236	2236	PASS	
+15	7	customer,orders	rewritten_sql	0	0	PASS	
+15	8	customer,lineitem,orders	rewritten_sql	0	0	PASS	
+20	1	customer	rewritten_sql	0	0	PASS	
+20	2	customer	rewritten_sql	0	0	PASS	
+20	3	orders	rewritten_sql	2200	2200	PASS	
+20	4	orders	rewritten_sql	2200	2200	PASS	
+20	5	lineitem	rewritten_sql	0	0	PASS	
+20	6	lineitem	rewritten_sql	0	0	PASS	
+20	7	customer,orders	rewritten_sql	0	0	PASS	
+20	8	customer,lineitem,orders	rewritten_sql	0	0	PASS	

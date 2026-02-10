@@ -1,0 +1,3 @@
+# NOTE: The upstream Sieve project tracks some large datasets via Git LFS.
+# In this monorepo we intentionally do NOT use LFS for these paths so that
+# a plain `git clone` works without requiring external LFS objects/quota.

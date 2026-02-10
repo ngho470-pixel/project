@@ -1,0 +1,12 @@
+[q3] policy_profile_lines=1
+NOTICE:  policy_profile: eval_ms=0.254 artifact_load_ms=41.668 artifact_parse_ms=1.952 stamp_ms=109.581 bin_ms=10.919 local_sat_ms=82.384 prop_ms=0.790 prop_iters=1 decode_ms=0.210 policy_total_ms=269.121 ctid_map_ms=1.855 filter_ms=18.471 child_exec_ms=9.179 ctid_extract_ms=2.903 ctid_to_rid_ms=0.899 allow_check_ms=0.831 projection_ms=0.036 n_scanned_tables=3 n_policy_targets=3 n_filters=3 bytes_artifacts_loaded=35163386 bytes_allow=95697 bytes_ctid=6124576 bytes_blk_index=2015304 rows_seen=75956 rows_passed=1006 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+[q3] has_new_fields=True
+[q3] filter_ms=18.471 partial_sum_ms=13.848
+[q13] policy_profile_lines=1
+NOTICE:  policy_profile: eval_ms=0.171 artifact_load_ms=4.319 artifact_parse_ms=0.122 stamp_ms=0.000 bin_ms=0.000 local_sat_ms=1.518 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=46.169 ctid_map_ms=0.374 filter_ms=41.720 child_exec_ms=22.683 ctid_extract_ms=5.433 ctid_to_rid_ms=1.901 allow_check_ms=1.788 projection_ms=0.052 n_scanned_tables=2 n_policy_targets=2 n_filters=2 bytes_artifacts_loaded=4783944 bytes_allow=20625 bytes_ctid=1320000 bytes_blk_index=431116 rows_seen=163292 rows_passed=1857 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+[q13] has_new_fields=True
+[q13] filter_ms=41.720 partial_sum_ms=31.857
+[q_no_target] policy_profile_lines=1
+NOTICE:  policy_profile: eval_ms=0.144 artifact_load_ms=0.000 artifact_parse_ms=0.000 stamp_ms=0.000 bin_ms=0.000 local_sat_ms=0.000 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=0.000 ctid_map_ms=0.000 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=0 n_policy_targets=0 n_filters=0 bytes_artifacts_loaded=0 bytes_allow=0 bytes_ctid=0 bytes_blk_index=0 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+[q_no_target] has_new_fields=True
+[q_no_target] filter_ms=0.000 partial_sum_ms=0.000

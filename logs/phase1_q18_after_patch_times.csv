@@ -1,0 +1,9 @@
+row_type,db,K,policy_ids,baseline,query_id,setup_ms,disk_overhead_bytes,cold_ms,cold_peak_rss_kb,hot1_ms,hot1_peak_rss_kb,hot2_ms,hot2_peak_rss_kb,hot3_ms,hot3_peak_rss_kb,hot4_ms,hot4_peak_rss_kb,hot5_ms,hot5_peak_rss_kb,hot_avg_ms,hot_avg_peak_rss_kb,status,error_type,error_msg
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,__setup__,5295.362,32161048,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,__setup__,1646.825,80003072,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,18,,,333.683,114428,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[engine_error]: ctid length mismatch for rel=lineitem len=0 rows=600572
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,18,,,121.334,96776,91.153,122776,91.115,122760,91.031,122764,91.152,122768,91.070,122772,91.104,122768,ok,,
+setup,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",ours,__setup__,6895.831,35163425,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",rls_with_index,__setup__,1766.956,91209728,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",ours,18,,,363.472,120784,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[engine_error]: ctid length mismatch for rel=lineitem len=0 rows=600572
+query,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",rls_with_index,18,,,212.072,140124,211.917,142432,181.874,142232,181.729,142232,181.884,142236,182.033,142236,187.887,142273,ok,,

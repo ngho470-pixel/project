@@ -1,0 +1,3 @@
+row_type,db,K,baseline,query_id,setup_ms,disk_overhead_bytes,cold_ms,cold_rss_kb,hot1_ms,hot1_rss_kb,hot2_ms,hot2_rss_kb,hot3_ms,hot3_rss_kb,hot4_ms,hot4_rss_kb,hot5_ms,hot5_rss_kb,hot_avg_ms,hot_avg_rss_kb,status,error_type,error_msg
+setup,tpch0_1,1,ours,__setup__,930.227,4726784,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,1,rls_with_index,__setup__,428.802,8372224,,,,,,,,,,,,,,,ok,,

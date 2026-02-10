@@ -1,0 +1,132 @@
+TEST: B (join policy single target with closure)
+QUERY:
+SELECT COUNT(*) FROM orders o JOIN customer c ON o.o_custkey=c.c_custkey;
+
+ENABLED POLICIES:
+orders : orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD')
+
+EXPLAIN OFF (custom_filter.enabled=off):
+Aggregate
+  ->  Hash Join
+        Hash Cond: (o.o_custkey = c.c_custkey)
+        ->  Index Only Scan using idx_orders_custkey on orders o
+        ->  Hash
+              ->  Seq Scan on customer c
+
+EXPLAIN ON (custom_filter.enabled=on):
+Aggregate
+  ->  Hash Join
+        Hash Cond: (o.o_custkey = c.c_custkey)
+        ->  Custom Scan (custom_filter) on orders o
+              custom_filter: 
+              ->  Seq Scan on orders o
+        ->  Hash
+              ->  Seq Scan on customer c
+--- ON notices ---
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_mktsegment bytes=4
+NOTICE:  policy_contract: artifact name=meta/join_classes bytes=49
+NOTICE:  policy_contract: artifact name=orders_code_base bytes=1200000
+NOTICE:  policy_contract: artifact name=orders_ctid bytes=1200000
+NOTICE:  policy_contract: join_class=0 cols=[customer.c_custkey, orders.o_custkey]
+NOTICE:  policy_contract: meta/cols/customer=[customer.c_custkey, customer.c_mktsegment]
+NOTICE:  policy_contract: customer_code_base stride=3 rows=15000
+NOTICE:  policy_contract: meta/cols/orders=[orders.o_custkey]
+NOTICE:  policy_contract: orders_code_base stride=2 rows=150000
+NOTICE:  policy_contract: offset const:customer.c_mktsegment = 2 stride=3
+NOTICE:  policy_contract: offset join:customer.c_custkey class=0 = 1 stride=3
+NOTICE:  policy_contract: offset join:orders.o_custkey class=0 = 1 stride=2
+NOTICE:  policy_contract: atom y1 type=COL_CONST col=customer.c_mktsegment op=0 join_class=-1 dict=dict/customer/c_mktsegment dict_present=1 eval=exact vals=[AUTOMOBILE] toks=[0]
+NOTICE:  policy_contract: atom y2 type=COL_CONST col=customer.c_mktsegment op=0 join_class=-1 dict=dict/customer/c_mktsegment dict_present=1 eval=exact vals=[HOUSEHOLD] toks=[3]
+NOTICE:  policy_contract: atom y3 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
+NOTICE:  policy_contract: AST(orders)=(customer.c_custkey = orders.o_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD'))
+NOTICE:  policy: load_ms=0.141
+NOTICE:  policy: global_atoms table=customer count=2
+NOTICE:  policy: global_bins table=customer bins=3 rows=15000
+NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=2
+NOTICE:  policy: local_bins table=customer atoms=2 bins=3
+NOTICE:  policy: local_ms table=customer stamp=2.192 bin=1.404 eval=0.165 fill=0.119
+NOTICE:  policy: local_eval table=customer sat_calls=3 cache_hits=0
+NOTICE:  policy: local_ok source=bins table=customer
+NOTICE:  policy: multi_join local_ok customer = 6022 / 15000
+NOTICE:  policy: multi_join local_ok orders = 150000 / 150000
+NOTICE:  policy: multi_join class=0 allowed=3980 / 15000
+NOTICE:  policy: allow_orders count = 59321 / 150000
+NOTICE:  policy: total_ms=67.537
+NOTICE:  policy_profile: bundle=1 target=orders K=0 query= local={customer:atoms=2,bins=3,sat=3,hits=0,ms=2.192/1.404/0.165/0.119,total_ms=3.880} prop={iter=1,ms=12.724,classes=[0:3980/15000]} decode={orders:59321/150000,ms=49.712,total_ms=49.712} total_ms=67.537
+NOTICE:  custom_filter: bundle target=orders allow_count=59321/150000
+NOTICE:  custom_filter: final_allow_orders count=59321/150000
+NOTICE:  custom_filter: allow_orders popcount=59321/150000
+NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+NOTICE:  custom_filter: ctid_index_ms=4.524 rel=orders
+NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
+NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: allow_bits pre_exec rel=orders count=59321/150000 ptr=0x581a13e08e10 canary=ok mctx=0x581a13c8a910 qctx=0x581a13c8a910 qs=0x581a13c8bae0
+NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
+NOTICE:  custom_filter: allow_bits mismatch rel=orders allow=59321 passed=0
+NOTICE:  custom_filter exec: rel=orders oid=74197 seen=0 passed=0 misses=0 mode=contract
+NOTICE:  custom_filter: row validation time = 0.000 ms
+NOTICE:  policy_metrics: eval_ms=0.047 artifact_load_ms=2.520 artifact_parse_ms=0.141 stamp_ms=2.192 bin_ms=1.404 local_sat_ms=0.165 prop_ms=12.724 prop_iters=1 decode_ms=49.712 ctid_map_ms=4.524 filter_ms=0.000 rows_seen=0 rows_passed=0 policy_total_ms=67.537
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=67.537 local_ms=3.880 prop_ms=12.724 decode_ms=49.712 sat_calls=3 cache_hits=0 closure_tables=2 filtered_targets=1
+NOTICE:  policy: scan_count table=customer count=1
+
+OURS EXECUTION:
+COUNT: 59321
+--- Ours notices ---
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_mktsegment bytes=4
+NOTICE:  policy_contract: artifact name=meta/join_classes bytes=49
+NOTICE:  policy_contract: artifact name=orders_code_base bytes=1200000
+NOTICE:  policy_contract: artifact name=orders_ctid bytes=1200000
+NOTICE:  policy_contract: join_class=0 cols=[customer.c_custkey, orders.o_custkey]
+NOTICE:  policy_contract: meta/cols/customer=[customer.c_custkey, customer.c_mktsegment]
+NOTICE:  policy_contract: customer_code_base stride=3 rows=15000
+NOTICE:  policy_contract: meta/cols/orders=[orders.o_custkey]
+NOTICE:  policy_contract: orders_code_base stride=2 rows=150000
+NOTICE:  policy_contract: offset const:customer.c_mktsegment = 2 stride=3
+NOTICE:  policy_contract: offset join:customer.c_custkey class=0 = 1 stride=3
+NOTICE:  policy_contract: offset join:orders.o_custkey class=0 = 1 stride=2
+NOTICE:  policy_contract: atom y1 type=COL_CONST col=customer.c_mktsegment op=0 join_class=-1 dict=dict/customer/c_mktsegment dict_present=1 eval=exact vals=[AUTOMOBILE] toks=[0]
+NOTICE:  policy_contract: atom y2 type=COL_CONST col=customer.c_mktsegment op=0 join_class=-1 dict=dict/customer/c_mktsegment dict_present=1 eval=exact vals=[HOUSEHOLD] toks=[3]
+NOTICE:  policy_contract: atom y3 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
+NOTICE:  policy_contract: AST(orders)=(customer.c_custkey = orders.o_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD'))
+NOTICE:  policy: load_ms=0.141
+NOTICE:  policy: global_atoms table=customer count=2
+NOTICE:  policy: global_bins table=customer bins=3 rows=15000
+NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=2
+NOTICE:  policy: local_bins table=customer atoms=2 bins=3
+NOTICE:  policy: local_ms table=customer stamp=2.180 bin=1.337 eval=0.160 fill=0.121
+NOTICE:  policy: local_eval table=customer sat_calls=3 cache_hits=0
+NOTICE:  policy: local_ok source=bins table=customer
+NOTICE:  policy: multi_join local_ok customer = 6022 / 15000
+NOTICE:  policy: multi_join local_ok orders = 150000 / 150000
+NOTICE:  policy: multi_join class=0 allowed=3980 / 15000
+NOTICE:  policy: allow_orders count = 59321 / 150000
+NOTICE:  policy: total_ms=66.841
+NOTICE:  policy_profile: bundle=1 target=orders K=0 query= local={customer:atoms=2,bins=3,sat=3,hits=0,ms=2.180/1.337/0.160/0.121,total_ms=3.798} prop={iter=1,ms=12.737,classes=[0:3980/15000]} decode={orders:59321/150000,ms=49.031,total_ms=49.031} total_ms=66.841
+NOTICE:  custom_filter: bundle target=orders allow_count=59321/150000
+NOTICE:  custom_filter: final_allow_orders count=59321/150000
+NOTICE:  custom_filter: allow_orders popcount=59321/150000
+NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+NOTICE:  custom_filter: ctid_index_ms=4.807 rel=orders
+NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
+NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: allow_bits pre_exec rel=orders count=59321/150000 ptr=0x581a13e031b0 canary=ok mctx=0x581a13c85d50 qctx=0x581a13c85d50 qs=0x581a13c86f20
+NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
+NOTICE:  custom_filter: tid_source rel=orders scan=SeqScan source=tts_tid
+NOTICE:  custom_filter exec: rel=orders oid=74197 seen=150000 passed=59321 misses=0 mode=contract
+NOTICE:  custom_filter: row validation time = 16.119 ms
+NOTICE:  policy_metrics: eval_ms=0.048 artifact_load_ms=2.728 artifact_parse_ms=0.141 stamp_ms=2.180 bin_ms=1.337 local_sat_ms=0.160 prop_ms=12.737 prop_iters=1 decode_ms=49.031 ctid_map_ms=4.807 filter_ms=16.119 rows_seen=150000 rows_passed=59321 policy_total_ms=66.841
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=66.841 local_ms=3.798 prop_ms=12.737 decode_ms=49.031 sat_calls=3 cache_hits=0 closure_tables=2 filtered_targets=1
+NOTICE:  policy: scan_count table=customer count=1
+
+GROUND TRUTH SOURCE: rls
+GT COUNT: 59321

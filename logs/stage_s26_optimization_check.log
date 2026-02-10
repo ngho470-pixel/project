@@ -1,0 +1,16 @@
+[setup_ours] K=5 setup_ms=4591.442 disk=10559488
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=1577.141 disk=75563008 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+setup ours_ms=4591.442 ours_disk=10559488 rls_ms=1577.141 rls_disk=75563008 idx=8
+correctness_single: ours=150000 rls=150000 match=True
+correctness_join: ours=150000 rls=150000 match=True
+new_profile_q1: artifact_load_ms=29.931 ctid_map_ms=1.250 filter_ms=70.973 peak_rss_kb_end=182516 rows_seen=600569 rows_passed=2271 ctid_misses=0
+sanity_q1: ctid_misses_zero=True rows_passed_le_rows_seen=True
+new_profile_q9: artifact_load_ms=30.490 ctid_map_ms=1.513 filter_ms=75.158 peak_rss_kb_end=196184 rows_seen=682819 rows_passed=84518 ctid_misses=0
+sanity_q9: ctid_misses_zero=True rows_passed_le_rows_seen=True
+new_hot_q1: cold_ms=302.695 hot_avg_ms=121.214 hot_vals=[121.245, 121.164, 121.252, 121.155, 121.253]
+new_hot_q9: cold_ms=332.803 hot_avg_ms=127.263 hot_vals=[151.454, 121.543, 120.928, 121.214, 121.176]
+compare_hot_q1: old=175.643 new=121.2137296795845 ratio=0.6901142071109267
+compare_profile_q1: old_artifact_load_ms=27.579 new_artifact_load_ms=29.931 old_filter_ms=87.135 new_filter_ms=70.973 old_peak_rss=231784 new_peak_rss=182516 old_blk_bytes=135192 new_blk_bytes=1584188
+compare_hot_q9: old=151.43 new=127.26279329508543 ratio=0.8404067443378817
+compare_profile_q9: old_artifact_load_ms=26.717 new_artifact_load_ms=30.490 old_filter_ms=87.196 new_filter_ms=75.158 old_peak_rss=240796 new_peak_rss=196184 old_blk_bytes=135192 new_blk_bytes=1584188

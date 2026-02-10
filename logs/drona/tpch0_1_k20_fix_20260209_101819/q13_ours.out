@@ -1,0 +1,26 @@
+Timing is on.
+SET
+Time: 0.150 ms
+SET
+Time: 0.056 ms
+SET
+Time: 0.050 ms
+SET
+Time: 0.054 ms
+LOAD
+Time: 2.103 ms
+SET
+Time: 0.077 ms
+SET
+Time: 0.051 ms
+SET
+Time: 0.052 ms
+SET
+Time: 0.051 ms
+psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_fix_20260209_101819/q13_ours.sql:16: NOTICE:  policy_profile: eval_ms=0.739 artifact_load_ms=17.235 artifact_parse_ms=1.393 stamp_ms=4.906 bin_ms=0.430 local_sat_ms=7.004 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=114.909 ctid_map_ms=0.656 filter_ms=4.927 child_exec_ms=1.655 ctid_extract_ms=0.785 ctid_to_rid_ms=0.345 allow_check_ms=0.314 projection_ms=0.000 n_scanned_tables=2 n_policy_targets=2 n_filters=2 bytes_artifacts_loaded=6119166 bytes_allow=20625 bytes_ctid=1320000 bytes_blk_index=431116 rows_seen=15000 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+ cnt 
+-----
+   0
+(1 row)
+
+Time: 142.791 ms

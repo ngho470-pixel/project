@@ -1,0 +1,124 @@
+TEST: E (OR across tables)
+QUERY:
+SELECT COUNT(*) FROM orders;
+
+ENABLED POLICIES:
+orders : orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND lineitem.l_orderkey = orders.o_orderkey AND ((region.r_name IN ('EUROPE','ASIA') AND orders.o_orderstatus IN ('O','F')) OR (lineitem.l_shipmode IN ('MAIL','SHIP') AND orders.o_orderpriority IN ('1-URGENT','2-HIGH')))
+
+EXPLAIN OFF (custom_filter.enabled=off):
+Aggregate
+  ->  Index Only Scan using orders_o_orderstatus_idx on orders
+
+EXPLAIN ON (custom_filter.enabled=on):
+Aggregate
+  ->  Custom Scan (custom_filter) on orders
+        custom_filter: 
+        ->  Seq Scan on orders
+--- ON notices ---
+NOTICE:  policy_contract: atom y4 type=COL_CONST col=region.r_name op=6 join_class=-1 dict=dict/region/r_name dict_present=1 eval=exact vals=[ASIA,EUROPE] toks=[2,3]
+NOTICE:  policy_contract: atom y5 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
+NOTICE:  policy_contract: atom y6 type=JOIN_EQ lhs=customer.c_nationkey rhs=nation.n_nationkey join_class=1 meta_lhs=1 meta_rhs=1 class_cols=[customer.c_nationkey, nation.n_nationkey]
+NOTICE:  policy_contract: atom y7 type=JOIN_EQ lhs=lineitem.l_orderkey rhs=orders.o_orderkey join_class=2 meta_lhs=2 meta_rhs=2 class_cols=[lineitem.l_orderkey, orders.o_orderkey]
+NOTICE:  policy_contract: atom y8 type=JOIN_EQ lhs=nation.n_regionkey rhs=region.r_regionkey join_class=3 meta_lhs=3 meta_rhs=3 class_cols=[nation.n_regionkey, region.r_regionkey]
+NOTICE:  policy_contract: AST(orders)=((((customer.c_custkey = orders.o_custkey AND customer.c_nationkey = nation.n_nationkey) AND nation.n_regionkey = region.r_regionkey) AND lineitem.l_orderkey = orders.o_orderkey) AND ((region.r_name IN ('ASIA','EUROPE') AND orders.o_orderstatus IN ('F','O')) OR (lineitem.l_shipmode IN ('MAIL','SHIP') AND orders.o_orderpriority IN ('1-URGENT','2-HIGH'))))
+NOTICE:  policy: load_ms=0.305
+NOTICE:  policy: extract_local table=region z=9 atoms=1
+NOTICE:  policy: extract_local table=lineitem z=10 atoms=1
+NOTICE:  policy: global_ast=((((y5 and y6) and y8) and y7) and ((y9 and y3) or (y10 and y2)))
+NOTICE:  policy: global_atoms table=region count=1
+NOTICE:  policy: global_bins table=region bins=2 rows=5
+NOTICE:  policy: bundle_eval target=region bundle_id=1 uses_atoms=1
+NOTICE:  policy: local_bins table=region atoms=1 bins=2
+NOTICE:  policy: local_ms table=region stamp=0.002 bin=0.004 eval=0.000 fill=0.000
+NOTICE:  policy: local_eval table=region sat_calls=0 cache_hits=0
+NOTICE:  policy: z_eval table=region z=9 bins=2 sat_calls=0 allowed_sigs=1
+NOTICE:  policy: z_token_truth z=9 domain=15000 true=5982
+NOTICE:  policy: global_atoms table=lineitem count=1
+NOTICE:  policy: global_bins table=lineitem bins=2 rows=600572
+NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=1
+NOTICE:  policy: local_bins table=lineitem atoms=1 bins=2
+NOTICE:  policy: local_ms table=lineitem stamp=42.589 bin=42.443 eval=0.000 fill=3.495
+NOTICE:  policy: local_eval table=lineitem sat_calls=0 cache_hits=0
+NOTICE:  policy: z_eval table=lineitem z=10 bins=2 sat_calls=0 allowed_sigs=1
+NOTICE:  policy: z_token_truth z=10 domain=150000 true=101625
+NOTICE:  policy: allow_orders count = 83472 / 150000
+NOTICE:  policy: total_ms=621.324
+NOTICE:  policy_profile: bundle=1 target=orders K=0 query= local={region:atoms=1,bins=2,sat=0,hits=0,ms=0.002/0.004/0.000/0.000|lineitem:atoms=1,bins=2,sat=0,hits=0,ms=42.589/42.443/0.000/3.495,total_ms=88.533} prop={iter=0,ms=0.000,classes=[]} decode={orders:83472/150000,ms=0.000,total_ms=0.000} total_ms=621.324
+NOTICE:  custom_filter: bundle target=orders allow_count=83472/150000
+NOTICE:  custom_filter: final_allow_orders count=83472/150000
+NOTICE:  custom_filter: allow_orders popcount=83472/150000
+NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+NOTICE:  custom_filter: ctid_index_ms=4.193 rel=orders
+NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
+NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: allow_bits pre_exec rel=orders count=83472/150000 ptr=0x581a13dc0970 canary=ok mctx=0x581a13c80800 qctx=0x581a13c80800 qs=0x581a13c81a50
+NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
+NOTICE:  custom_filter: allow_bits mismatch rel=orders allow=83472 passed=0
+NOTICE:  custom_filter exec: rel=orders oid=74197 seen=0 passed=0 misses=0 mode=contract
+NOTICE:  custom_filter: row validation time = 0.000 ms
+NOTICE:  policy_metrics: eval_ms=0.101 artifact_load_ms=20.204 artifact_parse_ms=0.305 stamp_ms=42.591 bin_ms=42.447 local_sat_ms=0.000 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=4.193 filter_ms=0.000 rows_seen=0 rows_passed=0 policy_total_ms=621.324
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=621.324 local_ms=88.533 prop_ms=0.000 decode_ms=0.000 sat_calls=0 cache_hits=0 closure_tables=5 filtered_targets=1
+NOTICE:  policy: scan_count table=lineitem count=1
+NOTICE:  policy: scan_count table=region count=1
+
+OURS EXECUTION:
+COUNT: 83472
+--- Ours notices ---
+NOTICE:  policy_contract: atom y4 type=COL_CONST col=region.r_name op=6 join_class=-1 dict=dict/region/r_name dict_present=1 eval=exact vals=[ASIA,EUROPE] toks=[2,3]
+NOTICE:  policy_contract: atom y5 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
+NOTICE:  policy_contract: atom y6 type=JOIN_EQ lhs=customer.c_nationkey rhs=nation.n_nationkey join_class=1 meta_lhs=1 meta_rhs=1 class_cols=[customer.c_nationkey, nation.n_nationkey]
+NOTICE:  policy_contract: atom y7 type=JOIN_EQ lhs=lineitem.l_orderkey rhs=orders.o_orderkey join_class=2 meta_lhs=2 meta_rhs=2 class_cols=[lineitem.l_orderkey, orders.o_orderkey]
+NOTICE:  policy_contract: atom y8 type=JOIN_EQ lhs=nation.n_regionkey rhs=region.r_regionkey join_class=3 meta_lhs=3 meta_rhs=3 class_cols=[nation.n_regionkey, region.r_regionkey]
+NOTICE:  policy_contract: AST(orders)=((((customer.c_custkey = orders.o_custkey AND customer.c_nationkey = nation.n_nationkey) AND nation.n_regionkey = region.r_regionkey) AND lineitem.l_orderkey = orders.o_orderkey) AND ((region.r_name IN ('ASIA','EUROPE') AND orders.o_orderstatus IN ('F','O')) OR (lineitem.l_shipmode IN ('MAIL','SHIP') AND orders.o_orderpriority IN ('1-URGENT','2-HIGH'))))
+NOTICE:  policy: load_ms=0.331
+NOTICE:  policy: extract_local table=region z=9 atoms=1
+NOTICE:  policy: extract_local table=lineitem z=10 atoms=1
+NOTICE:  policy: global_ast=((((y5 and y6) and y8) and y7) and ((y9 and y3) or (y10 and y2)))
+NOTICE:  policy: global_atoms table=region count=1
+NOTICE:  policy: global_bins table=region bins=2 rows=5
+NOTICE:  policy: bundle_eval target=region bundle_id=1 uses_atoms=1
+NOTICE:  policy: local_bins table=region atoms=1 bins=2
+NOTICE:  policy: local_ms table=region stamp=0.001 bin=0.004 eval=0.000 fill=0.000
+NOTICE:  policy: local_eval table=region sat_calls=0 cache_hits=0
+NOTICE:  policy: z_eval table=region z=9 bins=2 sat_calls=0 allowed_sigs=1
+NOTICE:  policy: z_token_truth z=9 domain=15000 true=5982
+NOTICE:  policy: global_atoms table=lineitem count=1
+NOTICE:  policy: global_bins table=lineitem bins=2 rows=600572
+NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=1
+NOTICE:  policy: local_bins table=lineitem atoms=1 bins=2
+NOTICE:  policy: local_ms table=lineitem stamp=42.750 bin=41.850 eval=0.000 fill=3.447
+NOTICE:  policy: local_eval table=lineitem sat_calls=0 cache_hits=0
+NOTICE:  policy: z_eval table=lineitem z=10 bins=2 sat_calls=0 allowed_sigs=1
+NOTICE:  policy: z_token_truth z=10 domain=150000 true=101625
+NOTICE:  policy: allow_orders count = 83472 / 150000
+NOTICE:  policy: total_ms=626.960
+NOTICE:  policy_profile: bundle=1 target=orders K=0 query= local={region:atoms=1,bins=2,sat=0,hits=0,ms=0.001/0.004/0.000/0.000|lineitem:atoms=1,bins=2,sat=0,hits=0,ms=42.750/41.850/0.000/3.447,total_ms=88.053} prop={iter=0,ms=0.000,classes=[]} decode={orders:83472/150000,ms=0.000,total_ms=0.000} total_ms=626.960
+NOTICE:  custom_filter: bundle target=orders allow_count=83472/150000
+NOTICE:  custom_filter: final_allow_orders count=83472/150000
+NOTICE:  custom_filter: allow_orders popcount=83472/150000
+NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+NOTICE:  custom_filter: ctid_index_ms=4.621 rel=orders
+NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
+NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: allow_bits pre_exec rel=orders count=83472/150000 ptr=0x581a13db6d60 canary=ok mctx=0x581a13c76730 qctx=0x581a13c76730 qs=0x581a13c77980
+NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
+NOTICE:  custom_filter: tid_source rel=orders scan=SeqScan source=tts_tid
+NOTICE:  custom_filter exec: rel=orders oid=74197 seen=150000 passed=83472 misses=0 mode=contract
+NOTICE:  custom_filter: row validation time = 15.351 ms
+NOTICE:  policy_metrics: eval_ms=0.103 artifact_load_ms=20.358 artifact_parse_ms=0.331 stamp_ms=42.752 bin_ms=41.853 local_sat_ms=0.000 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=4.621 filter_ms=15.351 rows_seen=150000 rows_passed=83472 policy_total_ms=626.960
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=626.960 local_ms=88.053 prop_ms=0.000 decode_ms=0.000 sat_calls=0 cache_hits=0 closure_tables=5 filtered_targets=1
+NOTICE:  policy: scan_count table=lineitem count=1
+NOTICE:  policy: scan_count table=region count=1
+
+GROUND TRUTH SOURCE: sql
+GT COUNT: 83472

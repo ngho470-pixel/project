@@ -1,0 +1,64 @@
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: wrap rel=orders oid=74197 paths=1
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: needed_files = [customer_code_base, customer_ctid, dict/customer/c_acctbal, dict/customer/c_mktsegment, dict/customer/c_nationkey, meta/cols/customer, meta/cols/orders, meta/dict_sorted/customer/c_acctbal, meta/dict_sorted/customer/c_mktsegment, meta/dict_sorted/customer/c_nationkey, meta/dict_type/customer/c_acctbal, meta/dict_type/customer/c_mktsegment, meta/dict_type/customer/c_nationkey, meta/join_classes, orders_code_base, orders_ctid]
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: policy_targets = [customer, orders]
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy_eval: target_tables=[customer, orders]
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy_eval: combined_ast target=customer ast=y1 and (y3 or y4) and y5
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy_eval: combined_ast target=orders ast=y6 and (y2 or y4)
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: query_targets = [orders]
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: scanned_tables = [orders]
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: table=orders filter=on
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: artifact_load_ms=8.180
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: calling policy_run once target_count=2 atom_count=6
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: load_ms=0.560
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: global_atoms table=customer count=5
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: global_bins table=customer bins=16 rows=15000
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=4
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: local_bins table=customer atoms=4 bins=16
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: local_ms table=customer stamp=1.176 bin=0.691 eval=0.447 fill=0.085
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: local_eval table=customer sat_calls=12 cache_hits=4
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: allow_customer count = 2171 / 15000
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=2
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: local_bins table=customer atoms=2 bins=16
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=0.218 fill=0.121
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: local_eval table=customer sat_calls=3 cache_hits=13
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: local_ok source=bins table=customer
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: multi_join local_ok customer = 6022 / 15000
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: multi_join local_ok orders = 150000 / 150000
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: multi_join class=0 allowed=735 / 15000
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: allow_orders count = 11168 / 150000
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: total_ms=14.769
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy_profile: bundle=1 target=customer K=0 query= local={customer:atoms=4,bins=16,sat=12,hits=4,ms=1.176/0.691/0.447/0.085|customer:atoms=2,bins=16,sat=3,hits=13,ms=0.000/0.000/0.218/0.121,total_ms=2.739} prop={iter=1,ms=2.227,classes=[0:735/15000]} decode={orders:11168/150000,ms=5.481,total_ms=5.481} total_ms=14.769
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: allow_customer count=2171/15000
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: allow_orders count=11168/150000
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: allow_orders popcount=11168/150000
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: ctid_index_ms=4.471 rel=orders
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter exec: rel=orders oid=74197 seen=150000 passed=11168 misses=0 mode=off
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  custom_filter: row validation time = 9.888 ms
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy_metrics: eval_ms=0.114 artifact_load_ms=8.180 artifact_parse_ms=0.560 stamp_ms=1.176 bin_ms=0.691 local_sat_ms=0.665 prop_ms=2.227 prop_iters=1 decode_ms=5.481 ctid_map_ms=4.471 filter_ms=9.888 rows_seen=150000 rows_passed=11168 policy_total_ms=14.769
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy_profile_query: K=0 query_id= total_ms=14.769 local_ms=2.739 prop_ms=2.227 decode_ms=5.481 sat_calls=15 cache_hits=17 closure_tables=2 filtered_targets=2
+psql:/home/ng_lab/z3/logs/step2_testB.sql:8: NOTICE:  policy: scan_count table=customer count=1
+      src      |  cnt  
+---------------+-------
+ custom_filter | 11168
+(1 row)
+
+SET
+       src        |  cnt  
+------------------+-------
+ sql_ground_truth | 11168
+(1 row)
+

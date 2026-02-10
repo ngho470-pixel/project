@@ -1,0 +1,2 @@
+customer : customer.c_acctbal > 0 AND ((customer.c_mktsegment = 'FURNITURE') OR (customer.c_mktsegment = 'HOUSEHOLD')) AND (customer.c_nationkey < 10)
+customer : customer.c_acctbal < 9000 AND ((customer.c_mktsegment = 'MACHINERY') OR (customer.c_mktsegment = 'HOUSEHOLD'))

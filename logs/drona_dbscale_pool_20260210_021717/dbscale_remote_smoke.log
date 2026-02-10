@@ -1,0 +1,10 @@
+[smoke] Running K=11 (pool-full), queries {3,13}, hot-runs=2
+[smoke] enabled_ids=[1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15]
+[setup_ours] K=11 setup_ms=13774.573 disk=35163425
+[index_infer] K=11 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'region.r_name', 'region.r_regionkey']
+[setup_rls] K=11 setup_ms=3018.554 disk=91209728 indexes=['cf_rls_k11_customer_c_acctbal_1', 'cf_rls_k11_customer_c_custkey_2', 'cf_rls_k11_customer_c_mktsegment_3', 'cf_rls_k11_customer_c_nationkey_4', 'cf_rls_k11_lineitem_l_discount_5', 'cf_rls_k11_lineitem_l_extendedprice_6', 'cf_rls_k11_lineitem_l_linestatus_7', 'cf_rls_k11_lineitem_l_orderkey_8', 'cf_rls_k11_lineitem_l_quantity_9', 'cf_rls_k11_lineitem_l_returnflag_10', 'cf_rls_k11_lineitem_l_shipinstruct_11', 'cf_rls_k11_lineitem_l_shipmode_12', 'cf_rls_k11_lineitem_l_tax_13', 'cf_rls_k11_nation_n_name_14', 'cf_rls_k11_nation_n_nationkey_15', 'cf_rls_k11_nation_n_regionkey_16', 'cf_rls_k11_orders_o_custkey_17', 'cf_rls_k11_orders_o_orderkey_18', 'cf_rls_k11_orders_o_orderpriority_19', 'cf_rls_k11_orders_o_orderstatus_20', 'cf_rls_k11_region_r_name_21', 'cf_rls_k11_region_r_regionkey_22']
+[smoke] K=11 q=3 hot_ours=[241.924, 211.474] hot_rls=[181.041, 180.956]
+[smoke] K=11 q=3 policy_ids=1,2,3,4,5,10,11,12,13,14,15 ours_count=0 rls_count=0
+[smoke] K=11 q=13 hot_ours=[211.315, 211.279] hot_rls=[90.873, 90.543]
+[smoke] K=11 q=13 policy_ids=1,2,3,4,5,10,11,12,13,14,15 ours_count=18 rls_count=18
+[smoke] profile_found=True policy_profile_lines=1 ctid_misses=0 status=ok

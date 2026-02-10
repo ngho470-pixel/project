@@ -1,0 +1,25 @@
+# Eclipse
+.classpath
+.project
+.settings/
+ 
+# Intellij
+.idea/
+*.iml
+*.iws
+ 
+# Mac
+.DS_Store
+ 
+# Maven
+log/
+target/
+
+#results/
+#.csv
+#.swp
+#
+#data/
+
+*credentials/
+src/main/resources/credentials/sample/sample.properties

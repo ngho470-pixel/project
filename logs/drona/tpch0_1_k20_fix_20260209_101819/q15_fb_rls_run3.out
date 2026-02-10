@@ -1,0 +1,17 @@
+Timing is on.
+SET
+Time: 0.103 ms
+SET
+Time: 0.036 ms
+SET
+Time: 0.032 ms
+SET
+Time: 0.036 ms
+SET
+Time: 0.034 ms
+ cnt 
+-----
+   0
+(1 row)
+
+Time: 169.481 ms

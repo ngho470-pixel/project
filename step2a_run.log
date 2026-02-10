@@ -1,0 +1,195 @@
+You are now connected to database "tpch0_1" as user "ng_lab".
+SET
+SET
+SET
+SET
+SET
+SET
+SET
+LOAD
+TRUNCATE TABLE
+psql:/tmp/step2a.sql:12: NOTICE:  relation "files" already exists, skipping
+psql:/tmp/step2a.sql:12: NOTICE:  table "tmp_jc_0" does not exist, skipping
+psql:/tmp/step2a.sql:12: NOTICE:  table "tmp_jc_1" does not exist, skipping
+psql:/tmp/step2a.sql:12: NOTICE:  table "tmp_jc_2" does not exist, skipping
+psql:/tmp/step2a.sql:12: NOTICE:  table "tmp_jc_3" does not exist, skipping
+psql:/tmp/step2a.sql:12: NOTICE:  table "tmp_dict_0" does not exist, skipping
+psql:/tmp/step2a.sql:12: NOTICE:  table "tmp_dict_1" does not exist, skipping
+psql:/tmp/step2a.sql:12: NOTICE:  table "tmp_dict_2" does not exist, skipping
+ build_base 
+------------
+ 
+(1 row)
+
+           name            | length  
+---------------------------+---------
+ customer_code_base        |  180000
+ customer_ctid             |  120000
+ dict/lineitem/l_shipmode  |      58
+ dict/orders/o_orderstatus |      15
+ dict/region/r_name        |      54
+ lineitem_code_base        | 7206864
+ lineitem_ctid             | 4804576
+ meta/cols/customer        |      40
+ meta/cols/lineitem        |      40
+ meta/cols/nation          |      38
+ meta/cols/orders          |      56
+ meta/cols/region          |      33
+ meta/join_classes         |     204
+ meta/tables               |      39
+ nation_code_base          |     300
+ nation_ctid               |     200
+ orders_code_base          | 2400000
+ orders_ctid               | 1200000
+ region_code_base          |      60
+ region_ctid               |      40
+(20 rows)
+
+LOAD
+SET
+SET
+SET
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' OR:or IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) AND:and IDENT:orders.o_orderstatus OP:in LPAREN:( STRING:'O' COMMA:, STRING:'F' RPAREN:) AND:and IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) RPAREN:) RPAREN:)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: target=orders join_classes=[0, 1, 2, 3]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND (region.r_name = 'EUROPE' OR region.r_name = 'ASIA') AND orders.o_orderstatus IN ('O','F') AND lineitem.l_orderkey = orders.o_orderkey AND ((lineitem.l_shipmode IN ('MAIL','SHIP')) OR (lineitem.l_shipmode IN ('TRUCK','RAIL'))) ast=y1 and y2 and y6 and (y9 or y8) and y7 and y3 and (y4 or y5)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y1 = customer.c_custkey = orders.o_custkey
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y2 = customer.c_nationkey = nation.n_nationkey
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y3 = lineitem.l_orderkey = orders.o_orderkey
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y4 = lineitem.l_shipmode in (MAIL,SHIP)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y5 = lineitem.l_shipmode in (TRUCK,RAIL)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y6 = nation.n_regionkey = region.r_regionkey
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y7 = orders.o_orderstatus in (O,F)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y8 = region.r_name = ASIA
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y9 = region.r_name = EUROPE
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: combined_ast target=orders ast=y1 and y2 and y6 and (y9 or y8) and y7 and y3 and (y4 or y5)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: closure_count=5
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: wrap rel=orders oid=74197 path=SeqScan
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: policy_path=/home/ng_lab/z3/policy_step2a.txt size=368
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: policy_path=/home/ng_lab/z3/policy_step2a.txt md5=b063cde785a224874fe4805da47ecf23
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' OR:or IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) AND:and IDENT:orders.o_orderstatus OP:in LPAREN:( STRING:'O' COMMA:, STRING:'F' RPAREN:) AND:and IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) RPAREN:) RPAREN:)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: target=orders join_classes=[0, 1, 2, 3]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND (region.r_name = 'EUROPE' OR region.r_name = 'ASIA') AND orders.o_orderstatus IN ('O','F') AND lineitem.l_orderkey = orders.o_orderkey AND ((lineitem.l_shipmode IN ('MAIL','SHIP')) OR (lineitem.l_shipmode IN ('TRUCK','RAIL'))) ast=y1 and y2 and y6 and (y9 or y8) and y7 and y3 and (y4 or y5)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y1 = customer.c_custkey = orders.o_custkey
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y2 = customer.c_nationkey = nation.n_nationkey
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y3 = lineitem.l_orderkey = orders.o_orderkey
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y4 = lineitem.l_shipmode in (MAIL,SHIP)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y5 = lineitem.l_shipmode in (TRUCK,RAIL)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y6 = nation.n_regionkey = region.r_regionkey
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y7 = orders.o_orderstatus in (O,F)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y8 = region.r_name = ASIA
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: atom y9 = region.r_name = EUROPE
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: combined_ast target=orders ast=y1 and y2 and y6 and (y9 or y8) and y7 and y3 and (y4 or y5)
+psql:/tmp/step2a.sql:20: NOTICE:  policy_eval: closure_count=5
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: needed_files = [customer_code_base, customer_ctid, dict/lineitem/l_shipmode, dict/orders/o_orderstatus, dict/region/r_name, lineitem_code_base, lineitem_ctid, meta/cols/customer, meta/cols/lineitem, meta/cols/nation, meta/cols/orders, meta/cols/region, meta/join_classes, nation_code_base, nation_ctid, orders_code_base, orders_ctid, region_code_base, region_ctid]
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: policy_targets = [orders]
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: closure_tables = [customer, lineitem, nation, orders, region]
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: query_targets = [orders]
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: scanned_tables = [orders]
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: table=orders filter=on
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: target=orders joinclass_count=4 joinclasses=[0, 1, 2, 3]
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: wrapped_tables = [orders]
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact_load_ms=17.501
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact customer_code_base bytes=180000
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact customer_ctid bytes=120000
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact dict/lineitem/l_shipmode bytes=58
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact dict/orders/o_orderstatus bytes=15
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact dict/region/r_name bytes=54
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact lineitem_code_base bytes=7206864
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact lineitem_ctid bytes=4804576
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact meta/cols/customer bytes=40
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact meta/cols/lineitem bytes=40
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact meta/cols/nation bytes=38
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact meta/cols/orders bytes=56
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact meta/cols/region bytes=33
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact meta/join_classes bytes=204
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact nation_code_base bytes=300
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact nation_ctid bytes=200
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact orders_code_base bytes=2400000
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact orders_ctid bytes=1200000
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact region_code_base bytes=60
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: artifact region_ctid bytes=40
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=customer_code_base bytes=180000
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=customer_ctid bytes=120000
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=dict/lineitem/l_shipmode bytes=58
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=dict/orders/o_orderstatus bytes=15
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=dict/region/r_name bytes=54
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=lineitem_code_base bytes=7206864
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=lineitem_ctid bytes=4804576
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=meta/cols/customer bytes=40
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=meta/cols/lineitem bytes=40
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=meta/cols/nation bytes=38
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=meta/cols/orders bytes=56
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=meta/cols/region bytes=33
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=meta/join_classes bytes=204
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=nation_code_base bytes=300
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=nation_ctid bytes=200
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=orders_code_base bytes=2400000
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=orders_ctid bytes=1200000
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=region_code_base bytes=60
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: artifact name=region_ctid bytes=40
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi-join target=orders classes=[0, 1, 2, 3]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: join_class=0 cols=[customer.c_custkey, orders.o_custkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: join_class=1 cols=[customer.c_nationkey, nation.n_nationkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: join_class=2 cols=[lineitem.l_orderkey, orders.o_orderkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: join_class=3 cols=[nation.n_regionkey, region.r_regionkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: meta/cols/customer=[customer.c_custkey, customer.c_nationkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: customer_code_base stride=3 rows=15000
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: meta/cols/lineitem=[lineitem.l_orderkey, lineitem.l_shipmode]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: lineitem_code_base stride=3 rows=600572
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: meta/cols/nation=[nation.n_nationkey, nation.n_regionkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: nation_code_base stride=3 rows=25
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: meta/cols/orders=[orders.o_custkey, orders.o_orderkey, orders.o_orderstatus]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: orders_code_base stride=4 rows=150000
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: meta/cols/region=[region.r_regionkey, region.r_name]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: region_code_base stride=3 rows=5
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset join:customer.c_custkey class=0 = 1 stride=3
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset join:orders.o_custkey class=0 = 1 stride=4
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset join:customer.c_nationkey class=1 = 2 stride=3
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset join:nation.n_nationkey class=1 = 1 stride=3
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset join:lineitem.l_orderkey class=2 = 1 stride=3
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset join:orders.o_orderkey class=2 = 2 stride=4
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset const:lineitem.l_shipmode = 2 stride=3
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset join:nation.n_regionkey class=3 = 2 stride=3
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset join:region.r_regionkey class=3 = 1 stride=3
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset const:orders.o_orderstatus = 3 stride=4
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: offset const:region.r_name = 2 stride=3
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: atom y1 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: atom y2 type=JOIN_EQ lhs=customer.c_nationkey rhs=nation.n_nationkey join_class=1 meta_lhs=1 meta_rhs=1 class_cols=[customer.c_nationkey, nation.n_nationkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: atom y3 type=JOIN_EQ lhs=lineitem.l_orderkey rhs=orders.o_orderkey join_class=2 meta_lhs=2 meta_rhs=2 class_cols=[lineitem.l_orderkey, orders.o_orderkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: atom y4 type=COL_CONST col=lineitem.l_shipmode op=5 join_class=-1 dict=dict/lineitem/l_shipmode dict_present=1 eval=exact vals=[MAIL,SHIP] toks=[2,5]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: atom y5 type=COL_CONST col=lineitem.l_shipmode op=5 join_class=-1 dict=dict/lineitem/l_shipmode dict_present=1 eval=exact vals=[TRUCK,RAIL] toks=[6,3]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: atom y6 type=JOIN_EQ lhs=nation.n_regionkey rhs=region.r_regionkey join_class=3 meta_lhs=3 meta_rhs=3 class_cols=[nation.n_regionkey, region.r_regionkey]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: atom y7 type=COL_CONST col=orders.o_orderstatus op=5 join_class=-1 dict=dict/orders/o_orderstatus dict_present=1 eval=exact vals=[O,F] toks=[1,0]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: atom y8 type=COL_CONST col=region.r_name op=0 join_class=-1 dict=dict/region/r_name dict_present=1 eval=exact vals=[ASIA] toks=[2]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: atom y9 type=COL_CONST col=region.r_name op=0 join_class=-1 dict=dict/region/r_name dict_present=1 eval=exact vals=[EUROPE] toks=[3]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: AST(orders)=((((((customer.c_custkey = orders.o_custkey AND customer.c_nationkey = nation.n_nationkey) AND nation.n_regionkey = region.r_regionkey) AND (region.r_name = 'EUROPE' OR region.r_name = 'ASIA')) AND orders.o_orderstatus IN ('O','F')) AND lineitem.l_orderkey = orders.o_orderkey) AND (lineitem.l_shipmode IN ('MAIL','SHIP') OR lineitem.l_shipmode IN ('TRUCK','RAIL')))
+psql:/tmp/step2a.sql:20: NOTICE:  policy: load_ms=0.113
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join local_ok customer = 15000 / 15000
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join local_ok lineitem = 343608 / 600572
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join local_ok nation = 25 / 25
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join local_ok orders = 146151 / 150000
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join local_ok region = 2 / 5
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join class=0 allowed=3991 / 15000 tokens=[6,10,18,19,24,25,27,30]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join class=1 allowed=10 / 25 tokens=[6,7,8,9,12,18,19,21]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join class=2 allowed=52176 / 150000 tokens=[2,5,10,12,13,14,17,20]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join class=3 allowed=2 / 5 tokens=[2,3]
+psql:/tmp/step2a.sql:20: NOTICE:  policy_contract: multi_join iterations=4
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: multi-join contract mode, skip allow bits for orders (allow-all)
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: ctid_index_ms=3.356 rel=orders
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: tid_source rel=orders scan=SeqScan source=tts_tid
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter exec: rel=orders oid=74197 seen=150000 passed=150000 misses=0 mode=contract
+psql:/tmp/step2a.sql:20: NOTICE:  custom_filter: row validation time = 11.469 ms
+ count  
+--------
+ 150000
+(1 row)
+

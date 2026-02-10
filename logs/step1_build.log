@@ -1,0 +1,13 @@
+SET
+LOAD
+TRUNCATE TABLE
+NOTICE:  relation "files" already exists, skipping
+NOTICE:  table "tmp_jc_0" does not exist, skipping
+NOTICE:  table "tmp_dict_0" does not exist, skipping
+NOTICE:  table "tmp_dict_1" does not exist, skipping
+NOTICE:  table "tmp_dict_2" does not exist, skipping
+ build_base 
+------------
+ 
+(1 row)
+

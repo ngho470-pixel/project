@@ -1,0 +1,20 @@
+[policy_set] K=1 enabled_ids=[1]
+[setup_ours] K=1 setup_ms=919.878 disk=4726784
+[index_infer] K=1 specs=['lineitem.l_linestatus', 'lineitem.l_returnflag']
+[setup_rls] K=1 setup_ms=284.565 disk=8372224 indexes=['cf_rls_k1_lineitem_l_linestatus_1', 'cf_rls_k1_lineitem_l_returnflag_2']
+[progress] K=1 baseline=ours query=1
+[progress] K=1 baseline=rls_with_index query=1
+[progress] K=1 baseline=ours query=2
+[progress] K=1 baseline=rls_with_index query=2
+[progress] K=1 baseline=ours query=3
+[progress] K=1 baseline=rls_with_index query=3
+[progress] K=1 baseline=ours query=4
+[progress] K=1 baseline=rls_with_index query=4
+[progress] K=1 baseline=ours query=5
+[progress] K=1 baseline=rls_with_index query=5
+[summary] K=1 median_hot ours=60.672ms rls=54.553ms ratio=1.112 disk ours=4726784 rls=8372224 median_rss ours=161445KB rls=140968KB
+[done] times_csv=/home/ng_lab/z3/logs/policy_scaling_pool_progress_times.csv
+[done] profile_csv=/home/ng_lab/z3/logs/policy_scaling_pool_progress_profile.csv
+[done] correctness_csv=/home/ng_lab/z3/logs/policy_scaling_pool_progress_correctness.csv
+[done] summary_csv=/home/ng_lab/z3/logs/policy_scaling_pool_progress_summary.csv
+[done] plots_dir=/home/ng_lab/z3/logs/policy_scaling_pool_progress_plots

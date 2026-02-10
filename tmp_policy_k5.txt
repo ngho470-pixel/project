@@ -1,0 +1,5 @@
+1. lineitem : (l_returnflag = 'R') OR (l_linestatus = 'F')
+2. lineitem : (l_shipinstruct = 'DELIVER IN PERSON') AND ((l_shipmode IN ('MAIL','SHIP')) OR (l_shipmode IN ('TRUCK','RAIL')))
+3. lineitem : ((l_discount >= 0.02 AND l_discount <= 0.05 AND l_quantity <= 25) OR (l_discount >= 0.06 AND l_discount <= 0.08 AND l_quantity <= 10))
+4. lineitem : (l_shipinstruct = 'DELIVER IN PERSON') AND ((l_returnflag = 'R') OR (l_returnflag = 'A')) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > 0)
+5. lineitem : ((l_shipmode IN ('AIR','REG AIR') AND l_quantity <= 15 AND l_discount <= 0.05 AND l_linestatus = 'F') OR (l_shipmode IN ('MAIL','SHIP') AND l_quantity <= 30 AND l_discount <= 0.07 AND l_returnflag = 'R')) AND (l_extendedprice > 0)

@@ -1,0 +1,148 @@
+[db] start db=tpch0_1
+[policy_set] db=tpch0_1 K=1 enabled_ids=[1]
+[setup_ours] K=1 setup_ms=1838.352 disk=12011528
+[index_infer] K=1 specs=['lineitem.l_linestatus', 'lineitem.l_returnflag']
+[setup_rls] K=1 setup_ms=474.612 disk=8372224 indexes=['cf_rls_k1_lineitem_l_linestatus_1', 'cf_rls_k1_lineitem_l_returnflag_2']
+[correctness_sample] db=tpch0_1 K=1 queries=['5', '12', '8']
+[progress] db=tpch0_1 K=1 baseline=ours query=3
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=3
+[progress] db=tpch0_1 K=1 baseline=ours query=5
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=5
+[progress] db=tpch0_1 K=1 baseline=ours query=7
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=7
+[progress] db=tpch0_1 K=1 baseline=ours query=8
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=8
+[progress] db=tpch0_1 K=1 baseline=ours query=10
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=10
+[progress] db=tpch0_1 K=1 baseline=ours query=12
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=12
+[progress] db=tpch0_1 K=1 baseline=ours query=13
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=13
+[progress] db=tpch0_1 K=1 baseline=ours query=18
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=18
+[progress] db=tpch0_1 K=1 baseline=ours query=22
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=22
+[policy_set] db=tpch0_1 K=5 enabled_ids=[1, 2, 3, 4, 5]
+[setup_ours] K=5 setup_ms=9266.289 disk=27977143
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=2619.812 disk=75563008 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[correctness_sample] db=tpch0_1 K=5 queries=['8', '10', '3']
+[progress] db=tpch0_1 K=5 baseline=ours query=3
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=3
+[progress] db=tpch0_1 K=5 baseline=ours query=5
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=5
+[progress] db=tpch0_1 K=5 baseline=ours query=7
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=7
+[progress] db=tpch0_1 K=5 baseline=ours query=8
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=8
+[progress] db=tpch0_1 K=5 baseline=ours query=10
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=10
+[progress] db=tpch0_1 K=5 baseline=ours query=12
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=12
+[progress] db=tpch0_1 K=5 baseline=ours query=13
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=13
+[progress] db=tpch0_1 K=5 baseline=ours query=18
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=18
+[progress] db=tpch0_1 K=5 baseline=ours query=22
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=22
+[policy_set] db=tpch0_1 K=10 enabled_ids=[1, 2, 3, 4, 5, 10, 11, 12, 13, 14]
+[setup_ours] K=10 setup_ms=10673.513 disk=32161048
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'region.r_name', 'region.r_regionkey']
+[setup_rls] K=10 setup_ms=2875.529 disk=80003072 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_custkey_2', 'cf_rls_k10_customer_c_mktsegment_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_lineitem_l_discount_5', 'cf_rls_k10_lineitem_l_extendedprice_6', 'cf_rls_k10_lineitem_l_linestatus_7', 'cf_rls_k10_lineitem_l_quantity_8', 'cf_rls_k10_lineitem_l_returnflag_9', 'cf_rls_k10_lineitem_l_shipinstruct_10', 'cf_rls_k10_lineitem_l_shipmode_11', 'cf_rls_k10_lineitem_l_tax_12', 'cf_rls_k10_nation_n_name_13', 'cf_rls_k10_nation_n_nationkey_14', 'cf_rls_k10_nation_n_regionkey_15', 'cf_rls_k10_orders_o_custkey_16', 'cf_rls_k10_orders_o_orderpriority_17', 'cf_rls_k10_orders_o_orderstatus_18', 'cf_rls_k10_region_r_name_19', 'cf_rls_k10_region_r_regionkey_20']
+[correctness_sample] db=tpch0_1 K=10 queries=['8', '3', '13']
+[progress] db=tpch0_1 K=10 baseline=ours query=3
+[progress] db=tpch0_1 K=10 baseline=rls_with_index query=3
+[progress] db=tpch0_1 K=10 baseline=ours query=5
+[progress] db=tpch0_1 K=10 baseline=rls_with_index query=5
+[progress] db=tpch0_1 K=10 baseline=ours query=7
+[progress] db=tpch0_1 K=10 baseline=rls_with_index query=7
+[progress] db=tpch0_1 K=10 baseline=ours query=8
+[progress] db=tpch0_1 K=10 baseline=rls_with_index query=8
+[progress] db=tpch0_1 K=10 baseline=ours query=10
+[progress] db=tpch0_1 K=10 baseline=rls_with_index query=10
+[progress] db=tpch0_1 K=10 baseline=ours query=12
+[progress] db=tpch0_1 K=10 baseline=rls_with_index query=12
+[progress] db=tpch0_1 K=10 baseline=ours query=13
+[progress] db=tpch0_1 K=10 baseline=rls_with_index query=13
+[progress] db=tpch0_1 K=10 baseline=ours query=18
+[progress] db=tpch0_1 K=10 baseline=rls_with_index query=18
+[progress] db=tpch0_1 K=10 baseline=ours query=22
+[progress] db=tpch0_1 K=10 baseline=rls_with_index query=22
+[policy_set] db=tpch0_1 K=11 enabled_ids=[1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15]
+[setup_ours] K=11 setup_ms=13856.072 disk=35163425
+[index_infer] K=11 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'region.r_name', 'region.r_regionkey']
+[setup_rls] K=11 setup_ms=3039.454 disk=91209728 indexes=['cf_rls_k11_customer_c_acctbal_1', 'cf_rls_k11_customer_c_custkey_2', 'cf_rls_k11_customer_c_mktsegment_3', 'cf_rls_k11_customer_c_nationkey_4', 'cf_rls_k11_lineitem_l_discount_5', 'cf_rls_k11_lineitem_l_extendedprice_6', 'cf_rls_k11_lineitem_l_linestatus_7', 'cf_rls_k11_lineitem_l_orderkey_8', 'cf_rls_k11_lineitem_l_quantity_9', 'cf_rls_k11_lineitem_l_returnflag_10', 'cf_rls_k11_lineitem_l_shipinstruct_11', 'cf_rls_k11_lineitem_l_shipmode_12', 'cf_rls_k11_lineitem_l_tax_13', 'cf_rls_k11_nation_n_name_14', 'cf_rls_k11_nation_n_nationkey_15', 'cf_rls_k11_nation_n_regionkey_16', 'cf_rls_k11_orders_o_custkey_17', 'cf_rls_k11_orders_o_orderkey_18', 'cf_rls_k11_orders_o_orderpriority_19', 'cf_rls_k11_orders_o_orderstatus_20', 'cf_rls_k11_region_r_name_21', 'cf_rls_k11_region_r_regionkey_22']
+[correctness_sample] db=tpch0_1 K=11 queries=['8', '10', '18']
+[progress] db=tpch0_1 K=11 baseline=ours query=3
+[progress] db=tpch0_1 K=11 baseline=rls_with_index query=3
+[progress] db=tpch0_1 K=11 baseline=ours query=5
+[progress] db=tpch0_1 K=11 baseline=rls_with_index query=5
+[progress] db=tpch0_1 K=11 baseline=ours query=7
+[progress] db=tpch0_1 K=11 baseline=rls_with_index query=7
+[progress] db=tpch0_1 K=11 baseline=ours query=8
+[progress] db=tpch0_1 K=11 baseline=rls_with_index query=8
+[progress] db=tpch0_1 K=11 baseline=ours query=10
+[progress] db=tpch0_1 K=11 baseline=rls_with_index query=10
+[progress] db=tpch0_1 K=11 baseline=ours query=12
+[progress] db=tpch0_1 K=11 baseline=rls_with_index query=12
+[progress] db=tpch0_1 K=11 baseline=ours query=13
+[progress] db=tpch0_1 K=11 baseline=rls_with_index query=13
+[progress] db=tpch0_1 K=11 baseline=ours query=18
+[progress] db=tpch0_1 K=11 baseline=rls_with_index query=18
+[progress] db=tpch0_1 K=11 baseline=ours query=22
+[progress] db=tpch0_1 K=11 baseline=rls_with_index query=22
+[db] done db=tpch0_1
+[db] start db=tpch1
+[policy_set] db=tpch1 K=1 enabled_ids=[1]
+[setup_ours] K=1 setup_ms=18581.018 disk=120024388
+[index_infer] K=1 specs=['lineitem.l_linestatus', 'lineitem.l_returnflag']
+[setup_rls] K=1 setup_ms=5099.553 disk=83214336 indexes=['cf_rls_k1_lineitem_l_linestatus_1', 'cf_rls_k1_lineitem_l_returnflag_2']
+[correctness_sample] db=tpch1 K=1 queries=['5', '7', '12']
+[progress] db=tpch1 K=1 baseline=ours query=3
+[progress] db=tpch1 K=1 baseline=rls_with_index query=3
+[progress] db=tpch1 K=1 baseline=ours query=5
+[progress] db=tpch1 K=1 baseline=rls_with_index query=5
+[progress] db=tpch1 K=1 baseline=ours query=7
+[progress] db=tpch1 K=1 baseline=rls_with_index query=7
+[progress] db=tpch1 K=1 baseline=ours query=8
+[progress] db=tpch1 K=1 baseline=rls_with_index query=8
+[progress] db=tpch1 K=1 baseline=ours query=10
+[progress] db=tpch1 K=1 baseline=rls_with_index query=10
+[progress] db=tpch1 K=1 baseline=ours query=12
+[progress] db=tpch1 K=1 baseline=rls_with_index query=12
+[progress] db=tpch1 K=1 baseline=ours query=13
+[progress] db=tpch1 K=1 baseline=rls_with_index query=13
+[progress] db=tpch1 K=1 baseline=ours query=18
+[progress] db=tpch1 K=1 baseline=rls_with_index query=18
+[progress] db=tpch1 K=1 baseline=ours query=22
+[progress] db=tpch1 K=1 baseline=rls_with_index query=22
+[policy_set] db=tpch1 K=5 enabled_ids=[1, 2, 3, 4, 5]
+[setup_ours] K=5 setup_ms=81028.967 disk=275135056
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=29408.710 disk=753713152 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[correctness_sample] db=tpch1 K=5 queries=['10', '8', '12']
+[progress] db=tpch1 K=5 baseline=ours query=3
+[progress] db=tpch1 K=5 baseline=rls_with_index query=3
+[progress] db=tpch1 K=5 baseline=ours query=5
+[progress] db=tpch1 K=5 baseline=rls_with_index query=5
+[progress] db=tpch1 K=5 baseline=ours query=7
+[progress] db=tpch1 K=5 baseline=rls_with_index query=7
+[progress] db=tpch1 K=5 baseline=ours query=8
+[progress] db=tpch1 K=5 baseline=rls_with_index query=8
+[progress] db=tpch1 K=5 baseline=ours query=10
+[progress] db=tpch1 K=5 baseline=rls_with_index query=10
+[progress] db=tpch1 K=5 baseline=ours query=12
+[progress] db=tpch1 K=5 baseline=rls_with_index query=12
+[progress] db=tpch1 K=5 baseline=ours query=13
+[progress] db=tpch1 K=5 baseline=rls_with_index query=13
+[progress] db=tpch1 K=5 baseline=ours query=18
+[progress] db=tpch1 K=5 baseline=rls_with_index query=18
+[progress] db=tpch1 K=5 baseline=ours query=22
+[progress] db=tpch1 K=5 baseline=rls_with_index query=22
+[policy_set] db=tpch1 K=10 enabled_ids=[1, 2, 3, 4, 5, 10, 11, 12, 13, 14]
+[setup_ours] K=10 setup_ms=89776.098 disk=316863442
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'region.r_name', 'region.r_regionkey']
+[setup_rls] K=10 setup_ms=31255.015 disk=796368896 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_custkey_2', 'cf_rls_k10_customer_c_mktsegment_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_lineitem_l_discount_5', 'cf_rls_k10_lineitem_l_extendedprice_6', 'cf_rls_k10_lineitem_l_linestatus_7', 'cf_rls_k10_lineitem_l_quantity_8', 'cf_rls_k10_lineitem_l_returnflag_9', 'cf_rls_k10_lineitem_l_shipinstruct_10', 'cf_rls_k10_lineitem_l_shipmode_11', 'cf_rls_k10_lineitem_l_tax_12', 'cf_rls_k10_nation_n_name_13', 'cf_rls_k10_nation_n_nationkey_14', 'cf_rls_k10_nation_n_regionkey_15', 'cf_rls_k10_orders_o_custkey_16', 'cf_rls_k10_orders_o_orderpriority_17', 'cf_rls_k10_orders_o_orderstatus_18', 'cf_rls_k10_region_r_name_19', 'cf_rls_k10_region_r_regionkey_20']
+[correctness_sample] db=tpch1 K=10 queries=['10', '12', '22']
+[progress] db=tpch1 K=10 baseline=ours query=3
+[progress] db=tpch1 K=10 baseline=rls_with_index query=3

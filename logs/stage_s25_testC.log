@@ -1,0 +1,10 @@
+[setup_ours] K=5 setup_ms=5127.274 disk=10559488
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=1502.620 disk=75563008 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[progress] K=5 baseline=ours query=1
+[progress] K=5 baseline=rls_with_index query=1
+[summary] K=5 median_hot ours=151.429ms rls=90.868ms ratio=1.666 disk ours=10559488 rls=75563008 median_rss ours=226186KB rls=132460KB
+[done] times_csv=/home/ng_lab/z3/logs/stage_s25_testC_times.csv
+[done] correctness_csv=/home/ng_lab/z3/logs/stage_s25_testC_correctness.csv
+[done] summary_csv=/home/ng_lab/z3/logs/stage_s25_testC_summary.csv
+[done] plots_dir=/home/ng_lab/z3/logs/stage_s25_testC_plots

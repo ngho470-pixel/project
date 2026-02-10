@@ -1,0 +1,72 @@
+=== q3 ours run 1 ===
+exit_code=0
+  Time: 0.050 ms
+  SET
+  Time: 0.058 ms
+  LOAD
+  Time: 2.093 ms
+  SET
+  Time: 0.079 ms
+  SET
+  Time: 0.053 ms
+  SET
+  Time: 0.062 ms
+  SET
+  Time: 0.051 ms
+  psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_fix_20260209_101819/q3_ours.sql:24: NOTICE:  policy_profile: eval_ms=1.092 artifact_load_ms=99.823 artifact_parse_ms=10.067 stamp_ms=4.840 bin_ms=0.431 local_sat_ms=10.257 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=180.540 ctid_map_ms=3.283 filter_ms=37.301 child_exec_ms=19.146 ctid_extract_ms=5.989 ctid_to_rid_ms=1.721 allow_check_ms=1.550 projection_ms=0.000 n_scanned_tables=3 n_policy_targets=3 n_filters=3 bytes_artifacts_loaded=43691660 bytes_allow=95697 bytes_ctid=6124576 bytes_blk_index=2015304 rows_seen=73068 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+   cnt 
+  -----
+     0
+  (1 row)
+  
+  Time: 332.335 ms
+cnt=
+policy_profile_lines=
+=== q3 ours run 2 ===
+exit_code=0
+  Time: 0.050 ms
+  SET
+  Time: 0.054 ms
+  LOAD
+  Time: 2.092 ms
+  SET
+  Time: 0.077 ms
+  SET
+  Time: 0.052 ms
+  SET
+  Time: 0.053 ms
+  SET
+  Time: 0.050 ms
+  psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_fix_20260209_101819/q3_ours.sql:24: NOTICE:  policy_profile: eval_ms=1.090 artifact_load_ms=98.374 artifact_parse_ms=9.637 stamp_ms=4.730 bin_ms=0.429 local_sat_ms=10.218 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=177.711 ctid_map_ms=3.090 filter_ms=37.233 child_exec_ms=19.053 ctid_extract_ms=6.003 ctid_to_rid_ms=1.729 allow_check_ms=1.550 projection_ms=0.000 n_scanned_tables=3 n_policy_targets=3 n_filters=3 bytes_artifacts_loaded=43691660 bytes_allow=95697 bytes_ctid=6124576 bytes_blk_index=2015304 rows_seen=73068 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+   cnt 
+  -----
+     0
+  (1 row)
+  
+  Time: 327.538 ms
+cnt=
+policy_profile_lines=
+=== q3 ours run 3 ===
+exit_code=0
+  Time: 0.046 ms
+  SET
+  Time: 0.052 ms
+  LOAD
+  Time: 2.084 ms
+  SET
+  Time: 0.077 ms
+  SET
+  Time: 0.052 ms
+  SET
+  Time: 0.051 ms
+  SET
+  Time: 0.051 ms
+  psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_fix_20260209_101819/q3_ours.sql:24: NOTICE:  policy_profile: eval_ms=1.084 artifact_load_ms=98.467 artifact_parse_ms=10.117 stamp_ms=4.708 bin_ms=0.429 local_sat_ms=10.251 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=179.515 ctid_map_ms=3.065 filter_ms=37.140 child_exec_ms=18.953 ctid_extract_ms=5.989 ctid_to_rid_ms=1.723 allow_check_ms=1.547 projection_ms=0.000 n_scanned_tables=3 n_policy_targets=3 n_filters=3 bytes_artifacts_loaded=43691660 bytes_allow=95697 bytes_ctid=6124576 bytes_blk_index=2015304 rows_seen=73068 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+   cnt 
+  -----
+     0
+  (1 row)
+  
+  Time: 329.255 ms
+cnt=
+policy_profile_lines=

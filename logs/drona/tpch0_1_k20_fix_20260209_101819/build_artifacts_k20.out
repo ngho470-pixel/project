@@ -1,0 +1,33 @@
+Timing is on.
+SET
+Time: 0.142 ms
+SET
+Time: 0.065 ms
+SET
+Time: 0.050 ms
+SET
+Time: 0.050 ms
+SET
+Time: 0.054 ms
+LOAD
+Time: 0.404 ms
+CREATE TABLE
+Time: 0.173 ms
+DROP FUNCTION
+Time: 0.759 ms
+CREATE FUNCTION
+Time: 0.512 ms
+TRUNCATE TABLE
+Time: 4.430 ms
+ build_base 
+------------
+ 
+(1 row)
+
+Time: 19535.298 ms (00:19.535)
+ artifacts |  bytes   
+-----------+----------
+        89 | 46155726
+(1 row)
+
+Time: 0.579 ms

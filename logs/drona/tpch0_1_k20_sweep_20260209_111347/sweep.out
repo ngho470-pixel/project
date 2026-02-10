@@ -1,0 +1,50 @@
+[2026-02-09 11:18:41] setup_ours: build artifacts from /tmp/z3_lab/policy.txt
+[setup_ours] K=20 setup_ms=18601.796 disk=46155726
+[2026-02-09 11:19:00] setup_rls: apply policies + inferred indexes
+[index_infer] K=20 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_name:text_pattern_ops', 'customer.c_nationkey', 'customer.c_phone:text_pattern_ops', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'lineitem.l_tax', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_brand', 'part.p_partkey', 'part.p_size', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_nationkey', 'supplier.s_suppkey']
+[setup_rls] K=20 setup_ms=3631.573 disk=110084096 indexes=['cf_rls_k20_customer_c_acctbal_1', 'cf_rls_k20_customer_c_custkey_2', 'cf_rls_k20_customer_c_mktsegment_3', 'cf_rls_k20_customer_c_name_4', 'cf_rls_k20_customer_c_nationkey_5', 'cf_rls_k20_customer_c_phone_6', 'cf_rls_k20_lineitem_l_discount_7', 'cf_rls_k20_lineitem_l_extendedprice_8', 'cf_rls_k20_lineitem_l_linestatus_9', 'cf_rls_k20_lineitem_l_orderkey_10', 'cf_rls_k20_lineitem_l_partkey_11', 'cf_rls_k20_lineitem_l_quantity_12', 'cf_rls_k20_lineitem_l_returnflag_13', 'cf_rls_k20_lineitem_l_shipinstruct_14', 'cf_rls_k20_lineitem_l_shipmode_15', 'cf_rls_k20_lineitem_l_suppkey_16', 'cf_rls_k20_lineitem_l_tax_17', 'cf_rls_k20_nation_n_name_18', 'cf_rls_k20_nation_n_nationkey_19', 'cf_rls_k20_nation_n_regionkey_20', 'cf_rls_k20_orders_o_custkey_21', 'cf_rls_k20_orders_o_orderkey_22', 'cf_rls_k20_orders_o_orderpriority_23', 'cf_rls_k20_orders_o_orderstatus_24', 'cf_rls_k20_orders_o_totalprice_25', 'cf_rls_k20_part_p_brand_26', 'cf_rls_k20_part_p_partkey_27', 'cf_rls_k20_part_p_size_28', 'cf_rls_k20_partsupp_ps_partkey_29', 'cf_rls_k20_partsupp_ps_suppkey_30', 'cf_rls_k20_partsupp_ps_supplycost_31', 'cf_rls_k20_region_r_name_32', 'cf_rls_k20_region_r_regionkey_33', 'cf_rls_k20_supplier_s_nationkey_34', 'cf_rls_k20_supplier_s_suppkey_35']
+[2026-02-09 11:19:04] q1: running ours count
+[2026-02-09 11:19:04] q1: running rls count
+[2026-02-09 11:19:04] q2: running ours count
+[2026-02-09 11:19:04] q2: running rls count
+[2026-02-09 11:19:04] q3: running ours count
+[2026-02-09 11:19:05] q3: running rls count
+[2026-02-09 11:19:05] q4: running ours count
+[2026-02-09 11:19:05] q4: running rls count
+[2026-02-09 11:19:06] q5: running ours count
+[2026-02-09 11:19:06] q5: running rls count
+[2026-02-09 11:19:06] q6: running ours count
+[2026-02-09 11:19:06] q6: running rls count
+[2026-02-09 11:19:06] q7: running ours count
+[2026-02-09 11:19:07] q7: running rls count
+[2026-02-09 11:19:07] q8: running ours count
+[2026-02-09 11:19:07] q8: running rls count
+[2026-02-09 11:19:07] q9: running ours count
+[2026-02-09 11:19:08] q9: running rls count
+[2026-02-09 11:19:08] q10: running ours count
+[2026-02-09 11:19:08] q10: running rls count
+[2026-02-09 11:19:09] q11: running ours count
+[2026-02-09 11:19:09] q11: running rls count
+[2026-02-09 11:19:09] q12: running ours count
+[2026-02-09 11:19:09] q12: running rls count
+[2026-02-09 11:19:09] q13: running ours count
+[2026-02-09 11:19:09] q13: running rls count
+[2026-02-09 11:19:10] q14: running ours count
+[2026-02-09 11:19:10] q14: running rls count
+[2026-02-09 11:19:10] q15: running ours count
+[2026-02-09 11:19:10] q15: running rls count
+[2026-02-09 11:19:11] q16: running ours count
+[2026-02-09 11:19:11] q16: running rls count
+[2026-02-09 11:19:11] q17: running ours count
+[2026-02-09 11:19:11] q17: running rls count
+[2026-02-09 11:19:12] q18: running ours count
+[2026-02-09 11:19:12] q18: running rls count
+[2026-02-09 11:19:13] q19: running ours count
+[2026-02-09 11:19:13] q19: running rls count
+[2026-02-09 11:19:13] q20: running ours count
+[2026-02-09 11:19:13] q20: running rls count
+[2026-02-09 11:19:14] q21: running ours count
+[2026-02-09 11:19:14] q21: running rls count
+[2026-02-09 11:19:15] q22: running ours count
+[2026-02-09 11:19:15] q22: running rls count
+[2026-02-09 11:19:15] DONE: q1..q22 all passed

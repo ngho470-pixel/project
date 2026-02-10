@@ -1,0 +1,41 @@
+Failed to open /var/lib/systemd/coredump/core.postgres.122.b62675ed126d49d98673bee7f6b9cb4e.2760795.1770585553000000.zst: Permission denied
+           PID: 2760795 (postgres)
+           UID: 122 (postgres)
+           GID: 126 (postgres)
+        Signal: 11 (SEGV)
+     Timestamp: Mon 2026-02-09 02:49:13 IST (32s ago)
+  Command Line: $'postgres: 16/main: postgres tpch0_1 127.0.0.1(41472) SELECT'
+    Executable: /usr/lib/postgresql/16/bin/postgres
+ Control Group: /system.slice/system-postgresql.slice/postgresql@16-main.service
+          Unit: postgresql@16-main.service
+         Slice: system-postgresql.slice
+       Boot ID: b62675ed126d49d98673bee7f6b9cb4e
+    Machine ID: 496edadef69644c1828e1acd9587ceae
+      Hostname: lab
+       Storage: /var/lib/systemd/coredump/core.postgres.122.b62675ed126d49d98673bee7f6b9cb4e.2760795.1770585553000000.zst (inaccessible)
+       Message: Process 2760795 (postgres) of user 122 dumped core.
+                
+                Module libgcc_s.so.1 from deb gcc-14-14.2.0-4ubuntu2~24.04.amd64
+                Module libstdc++.so.6 from deb gcc-14-14.2.0-4ubuntu2~24.04.amd64
+                Module libsystemd.so.0 from deb systemd-255.4-1ubuntu8.11.amd64
+                Module libzstd.so.1 from deb libzstd-1.5.5+dfsg2-2build1.1.amd64
+                Stack trace of thread 2760795:
+                #0  0x000072ed43dfe5f6 n/a (/home/ng_lab/z3/custom_filter/custom_filter.so + 0x155f6)
+                #1  0x0000581a0ab54722 MultiExecHash (postgres + 0x373722)
+                #2  0x0000581a0ab5965b n/a (postgres + 0x37865b)
+                #3  0x0000581a0ab64ae5 n/a (postgres + 0x383ae5)
+                #4  0x0000581a0ab46c9c n/a (postgres + 0x365c9c)
+                #5  0x0000581a0ab492f2 n/a (postgres + 0x3682f2)
+                #6  0x0000581a0ab328d3 standard_ExecutorRun (postgres + 0x3518d3)
+                #7  0x0000581a0ad12b55 n/a (postgres + 0x531b55)
+                #8  0x0000581a0ad0da08 PortalRun (postgres + 0x52ca08)
+                #9  0x0000581a0ad0e3a9 n/a (postgres + 0x52d3a9)
+                #10 0x0000581a0ad0f30b PostgresMain (postgres + 0x52e30b)
+                #11 0x0000581a0aef0b0a n/a (postgres + 0x70fb0a)
+                #12 0x0000581a0ac76b59 PostmasterMain (postgres + 0x495b59)
+                #13 0x0000581a0a940287 main (postgres + 0x15f287)
+                #14 0x000072ed4642a1ca __libc_start_call_main (libc.so.6 + 0x2a1ca)
+                #15 0x000072ed4642a28b __libc_start_main_impl (libc.so.6 + 0x2a28b)
+                #16 0x0000581a0a940845 _start (postgres + 0x15f845)
+                ELF object binary architecture: AMD x86-64
+

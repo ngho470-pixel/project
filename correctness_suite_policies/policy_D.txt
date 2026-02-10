@@ -1,0 +1,1 @@
+orders : orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND region.r_name IN ('EUROPE','ASIA')

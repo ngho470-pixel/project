@@ -1,0 +1,1 @@
+db,K,query_id,ctid_misses,rows_seen,rows_passed,sanity_status,sanity_reason,eval_ms,artifact_load_ms,policy_total_ms,ctid_map_ms,filter_ms,bytes_artifacts_loaded,bytes_allow,bytes_ctid,bytes_blk_index,peak_rss_kb_end

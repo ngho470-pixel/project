@@ -1,0 +1,55 @@
+QUERY:
+SELECT COUNT(*) FROM customer;
+COUNT: 0
+--- NOTICES ---
+NOTICE:  policy: local_bins table=customer atoms=4 bins=120
+NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=0.291 fill=0.085
+NOTICE:  policy: local_eval table=customer sat_calls=12 cache_hits=108
+NOTICE:  policy: allow_customer count = 2171 / 15000
+NOTICE:  policy: total_ms=3.821
+NOTICE:  policy_profile: bundle=2 target=customer K=0 query= local={customer:atoms=4,bins=120,sat=12,hits=108,ms=0.000/0.000/0.291/0.085,total_ms=0.377} prop={iter=0,ms=0.000,classes=[]} decode={customer:2171/15000,ms=0.000,total_ms=0.000} total_ms=3.821
+NOTICE:  custom_filter: bundle target=customer allow_count=0/15000
+NOTICE:  policy: load_ms=1.838
+NOTICE:  policy: bundle_eval target=customer bundle_id=3 uses_atoms=3
+NOTICE:  policy: local_bins table=customer atoms=3 bins=120
+NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=0.342 fill=0.108
+NOTICE:  policy: local_eval table=customer sat_calls=6 cache_hits=114
+NOTICE:  policy: allow_customer count = 11332 / 15000
+NOTICE:  policy: total_ms=4.489
+NOTICE:  policy_profile: bundle=3 target=customer K=0 query= local={customer:atoms=3,bins=120,sat=6,hits=114,ms=0.000/0.000/0.342/0.108,total_ms=0.450} prop={iter=0,ms=0.000,classes=[]} decode={customer:11332/15000,ms=0.000,total_ms=0.000} total_ms=4.489
+NOTICE:  custom_filter: bundle target=customer allow_count=0/15000
+NOTICE:  policy: load_ms=1.867
+NOTICE:  policy: bundle_eval target=customer bundle_id=4 uses_atoms=6
+NOTICE:  policy: local_bins table=customer atoms=6 bins=120
+NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=0.586 fill=0.096
+NOTICE:  policy: local_eval table=customer sat_calls=18 cache_hits=102
+NOTICE:  policy: allow_customer count = 3219 / 15000
+NOTICE:  policy: total_ms=4.390
+NOTICE:  policy_profile: bundle=4 target=customer K=0 query= local={customer:atoms=6,bins=120,sat=18,hits=102,ms=0.000/0.000/0.586/0.096,total_ms=0.682} prop={iter=0,ms=0.000,classes=[]} decode={customer:3219/15000,ms=0.000,total_ms=0.000} total_ms=4.390
+NOTICE:  custom_filter: bundle target=customer allow_count=0/15000
+NOTICE:  policy: load_ms=1.866
+NOTICE:  policy: bundle_eval target=customer bundle_id=5 uses_atoms=7
+NOTICE:  policy: local_bins table=customer atoms=7 bins=120
+NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=1.050 fill=0.074
+NOTICE:  policy: local_eval table=customer sat_calls=32 cache_hits=88
+NOTICE:  policy: allow_customer count = 1244 / 15000
+NOTICE:  policy: total_ms=5.857
+NOTICE:  policy_profile: bundle=5 target=customer K=0 query= local={customer:atoms=7,bins=120,sat=32,hits=88,ms=0.000/0.000/1.050/0.074,total_ms=1.123} prop={iter=0,ms=0.000,classes=[]} decode={customer:1244/15000,ms=0.000,total_ms=0.000} total_ms=5.857
+NOTICE:  custom_filter: bundle target=customer allow_count=0/15000
+NOTICE:  custom_filter: final_allow_customer count=0/15000
+NOTICE:  custom_filter: allow_customer popcount=0/15000
+NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+NOTICE:  custom_filter: ctid_index_ms=0.291 rel=customer
+NOTICE:  custom_filter: customer_ctid head [0,1 0,2 0,3 0,4 0,5]
+NOTICE:  custom_filter: retain rel=customer allow=1875B ctid=120000B blk_index=4332B
+NOTICE:  custom_filter: retain total allow=1875B ctid=120000B blk_index=4332B
+NOTICE:  custom_filter exec: rel=customer oid=74194 seen=15000 passed=0 misses=0 mode=off
+NOTICE:  custom_filter: row validation time = 0.913 ms
+NOTICE:  policy_metrics: eval_ms=0.161 artifact_load_ms=1.940 artifact_parse_ms=10.110 stamp_ms=56.622 bin_ms=1.105 local_sat_ms=2.535 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=0.291 filter_ms=0.913 rows_seen=15000 rows_passed=0 policy_total_ms=85.616
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=85.616 local_ms=60.756 prop_ms=0.000 decode_ms=0.000 sat_calls=71 cache_hits=529 closure_tables=1 filtered_targets=1
+NOTICE:  policy: scan_count table=customer count=1
+

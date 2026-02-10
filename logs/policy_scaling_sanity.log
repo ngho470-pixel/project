@@ -1,0 +1,6 @@
+[smoke] Running K=1, queries {1,2}, hot-runs=2
+[setup_ours] K=1 setup_ms=921.967 disk=4726784
+[index_infer] K=1 specs=['lineitem.l_linestatus', 'lineitem.l_returnflag']
+[setup_rls] K=1 setup_ms=281.651 disk=8372224 indexes=['cf_rls_k1_lineitem_l_linestatus_1', 'cf_rls_k1_lineitem_l_returnflag_2']
+[smoke] K=1 q=1 ours_hot=[302.93, 302.864] rls_hot=[181.545, 181.563]
+[smoke] K=1 q=2 ours_hot=[212.065, 211.872] rls_hot=[211.955, 211.879]

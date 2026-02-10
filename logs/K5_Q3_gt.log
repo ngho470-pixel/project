@@ -1,0 +1,4 @@
+QUERY:
+SELECT COUNT(*) FROM lineitem;
+GT_SOURCE: rls
+COUNT: 2271

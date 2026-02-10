@@ -1,0 +1,4 @@
+QUERY:
+SELECT COUNT(*) FROM customer;
+GT_SOURCE: rls
+COUNT: 0

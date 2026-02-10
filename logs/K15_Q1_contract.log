@@ -1,0 +1,55 @@
+QUERY:
+SELECT COUNT(*) FROM customer;
+ERROR: ERROR:  policy_contract: const atom y13 missing in meta/join_classes (col=customer.c_nationkey)
+NOTICES:
+NOTICE:  custom_filter: artifact meta/dict_sorted/customer/c_mktsegment bytes=1
+NOTICE:  custom_filter: artifact meta/dict_sorted/customer/c_name bytes=1
+NOTICE:  custom_filter: artifact meta/dict_sorted/customer/c_nationkey bytes=1
+NOTICE:  custom_filter: artifact meta/dict_sorted/customer/c_phone bytes=1
+NOTICE:  custom_filter: artifact meta/dict_type/customer/c_acctbal bytes=5
+NOTICE:  custom_filter: artifact meta/dict_type/customer/c_mktsegment bytes=4
+NOTICE:  custom_filter: artifact meta/dict_type/customer/c_name bytes=4
+NOTICE:  custom_filter: artifact meta/dict_type/customer/c_nationkey bytes=3
+NOTICE:  custom_filter: artifact meta/dict_type/customer/c_phone bytes=4
+NOTICE:  policy_contract: global_atom id=1 kind=2 lhs=const:customer.c_acctbal rhs=<null> op=5 jc=-1 key=const:customer.c_acctbal|<=|7000 vals=[7000]
+NOTICE:  policy_contract: global_atom id=2 kind=2 lhs=const:customer.c_acctbal rhs=<null> op=4 jc=-1 key=const:customer.c_acctbal|<|9000 vals=[9000]
+NOTICE:  policy_contract: global_atom id=3 kind=2 lhs=const:customer.c_acctbal rhs=<null> op=7 jc=-1 key=const:customer.c_acctbal|>=|500 vals=[500]
+NOTICE:  policy_contract: global_atom id=4 kind=2 lhs=const:customer.c_acctbal rhs=<null> op=6 jc=-1 key=const:customer.c_acctbal|>|0 vals=[0]
+NOTICE:  policy_contract: global_atom id=5 kind=2 lhs=const:customer.c_acctbal rhs=<null> op=6 jc=-1 key=const:customer.c_acctbal|>|1000 vals=[1000]
+NOTICE:  policy_contract: global_atom id=6 kind=2 lhs=const:customer.c_acctbal rhs=<null> op=6 jc=-1 key=const:customer.c_acctbal|>|500 vals=[500]
+NOTICE:  policy_contract: global_atom id=7 kind=2 lhs=const:customer.c_mktsegment rhs=<null> op=1 jc=-1 key=const:customer.c_mktsegment|=|AUTOMOBILE vals=[AUTOMOBILE]
+NOTICE:  policy_contract: global_atom id=8 kind=2 lhs=const:customer.c_mktsegment rhs=<null> op=1 jc=-1 key=const:customer.c_mktsegment|=|BUILDING vals=[BUILDING]
+NOTICE:  policy_contract: global_atom id=9 kind=2 lhs=const:customer.c_mktsegment rhs=<null> op=1 jc=-1 key=const:customer.c_mktsegment|=|FURNITURE vals=[FURNITURE]
+NOTICE:  policy_contract: global_atom id=10 kind=2 lhs=const:customer.c_mktsegment rhs=<null> op=1 jc=-1 key=const:customer.c_mktsegment|=|HOUSEHOLD vals=[HOUSEHOLD]
+NOTICE:  policy_contract: global_atom id=11 kind=2 lhs=const:customer.c_mktsegment rhs=<null> op=1 jc=-1 key=const:customer.c_mktsegment|=|MACHINERY vals=[MACHINERY]
+NOTICE:  policy_contract: global_atom id=12 kind=2 lhs=const:customer.c_name rhs=<null> op=3 jc=-1 key=const:customer.c_name|like|Customer% vals=[Customer%]
+NOTICE:  policy_contract: global_atom id=13 kind=2 lhs=const:customer.c_nationkey rhs=<null> op=4 jc=1 key=const:customer.c_nationkey|<|10 vals=[10]
+NOTICE:  policy_contract: global_atom id=14 kind=2 lhs=const:customer.c_nationkey rhs=<null> op=2 jc=1 key=const:customer.c_nationkey|in|1,3,5,7 vals=[1,3,5,7]
+NOTICE:  policy_contract: global_atom id=15 kind=2 lhs=const:customer.c_phone rhs=<null> op=3 jc=-1 key=const:customer.c_phone|like|1% vals=[1%]
+NOTICE:  policy_contract: global_atom id=16 kind=2 lhs=const:customer.c_phone rhs=<null> op=3 jc=-1 key=const:customer.c_phone|like|2% vals=[2%]
+NOTICE:  policy_contract: global_atom id=17 kind=2 lhs=const:customer.c_phone rhs=<null> op=3 jc=-1 key=const:customer.c_phone|like|3% vals=[3%]
+NOTICE:  policy_contract: bundle_atom id=1 kind=2 lhs=const:customer.c_mktsegment rhs=<null> op=1 jc=-1 key=const:customer.c_mktsegment|=|AUTOMOBILE vals=[AUTOMOBILE]
+NOTICE:  policy_contract: bundle_atom id=2 kind=2 lhs=const:customer.c_mktsegment rhs=<null> op=1 jc=-1 key=const:customer.c_mktsegment|=|BUILDING vals=[BUILDING]
+NOTICE:  policy_contract: bundle_ast target=customer ast=y1 or y2
+NOTICE:  policy_contract: bundle_atom_map target=customer y1->y7
+NOTICE:  policy_contract: bundle_atom_map target=customer y2->y8
+NOTICE:  policy_contract: bundle_ast_global target=customer ast=y7 or y8
+NOTICE:  policy_contract: artifact name=customer_code_base bytes=420000
+NOTICE:  policy_contract: artifact name=customer_ctid bytes=120000
+NOTICE:  policy_contract: artifact name=dict/customer/c_acctbal bytes=162147
+NOTICE:  policy_contract: artifact name=dict/customer/c_mktsegment bytes=65
+NOTICE:  policy_contract: artifact name=dict/customer/c_name bytes=330000
+NOTICE:  policy_contract: artifact name=dict/customer/c_nationkey bytes=140
+NOTICE:  policy_contract: artifact name=dict/customer/c_phone bytes=285000
+NOTICE:  policy_contract: artifact name=meta/cols/customer bytes=114
+NOTICE:  policy_contract: artifact name=meta/dict_sorted/customer/c_acctbal bytes=1
+NOTICE:  policy_contract: artifact name=meta/dict_sorted/customer/c_mktsegment bytes=1
+NOTICE:  policy_contract: artifact name=meta/dict_sorted/customer/c_name bytes=1
+NOTICE:  policy_contract: artifact name=meta/dict_sorted/customer/c_nationkey bytes=1
+NOTICE:  policy_contract: artifact name=meta/dict_sorted/customer/c_phone bytes=1
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_acctbal bytes=5
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_mktsegment bytes=4
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_name bytes=4
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_nationkey bytes=3
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_phone bytes=4
+

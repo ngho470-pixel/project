@@ -1,0 +1,16 @@
+SET
+SET
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Aggregate
+   ->  Hash Join
+         Hash Cond: (l.l_orderkey = o.o_orderkey)
+         ->  Index Only Scan using lineitem_l_orderkey_idx on lineitem l
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (o.o_custkey = c.c_custkey)
+                     ->  Seq Scan on orders o
+                     ->  Hash
+                           ->  Seq Scan on customer c
+(10 rows)
+

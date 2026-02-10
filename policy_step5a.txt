@@ -1,0 +1,1 @@
+orders : orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND lineitem.l_orderkey = orders.o_orderkey AND ((region.r_name IN ('EUROPE','ASIA') AND orders.o_orderstatus IN ('O','F')) OR (lineitem.l_shipmode IN ('MAIL','SHIP') AND orders.o_orderpriority IN ('1-URGENT','2-HIGH')))

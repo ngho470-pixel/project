@@ -1,0 +1,33 @@
+Timing is on.
+SET
+Time: 0.122 ms
+SET
+Time: 0.039 ms
+SET
+Time: 0.034 ms
+SET
+Time: 0.038 ms
+LOAD
+Time: 2.099 ms
+SET
+Time: 0.064 ms
+SET
+Time: 0.036 ms
+SET
+Time: 0.036 ms
+SET
+Time: 0.034 ms
+psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_fix_20260209_101819/q15_orig_count_ours.sql:14: NOTICE:  view "revenue0" does not exist, skipping
+DROP VIEW
+Time: 0.191 ms
+CREATE VIEW
+Time: 1.654 ms
+psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_fix_20260209_101819/q15_orig_count_ours.sql:28: NOTICE:  policy_profile: eval_ms=1.054 artifact_load_ms=98.520 artifact_parse_ms=9.793 stamp_ms=4.798 bin_ms=0.430 local_sat_ms=10.274 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=179.836 ctid_map_ms=2.613 filter_ms=73.723 child_exec_ms=66.888 ctid_extract_ms=2.784 ctid_to_rid_ms=0.698 allow_check_ms=0.495 projection_ms=0.000 n_scanned_tables=2 n_policy_targets=3 n_filters=1 bytes_artifacts_loaded=43691660 bytes_allow=75072 bytes_ctid=4804576 bytes_blk_index=1584188 rows_seen=23006 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+ cnt 
+-----
+   0
+(1 row)
+
+Time: 365.011 ms
+DROP VIEW
+Time: 0.596 ms

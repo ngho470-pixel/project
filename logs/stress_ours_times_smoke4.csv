@@ -1,0 +1,3 @@
+row_type,db,K,query_id,setup_ms,cold_ms,hot1_ms,hot2_ms,hot3_ms,hot4_ms,hot5_ms,hot_avg_ms,status,error_type,error_msg
+setup,tpch0_1,5,__setup__,5013.706,,,,,,,,ok,,
+query,tpch0_1,5,1,,344.566,162.322,,,,,162.322,ok,,

@@ -1,0 +1,1 @@
+orders : orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD')

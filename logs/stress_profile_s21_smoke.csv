@@ -1,0 +1,3 @@
+db,K,query_id,bytes_artifacts_loaded,bytes_allow,bytes_ctid,bytes_blk_index,eval_ms,artifact_load_ms,policy_total_ms,ctid_map_ms,filter_ms,rows_seen,rows_passed,ctid_misses,peak_rss_kb_end,sanity_status,sanity_notes
+tpch0_1,5,1,27977134,75072,4804576,135192,0.170,26.943,7.008,17.513,94.030,600569,2271,0,151436,ok,
+tpch0_1,5,2,0,0,0,0,0.000,0.000,0.000,0.000,0.000,0,0,0,-1,ok,

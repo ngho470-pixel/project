@@ -1,0 +1,55 @@
+QUERY:
+SELECT COUNT(*) FROM lineitem l JOIN orders o ON l.l_orderkey=o.o_orderkey JOIN customer c ON o.o_custkey=c.c_custkey;
+COUNT: 0
+--- NOTICES ---
+NOTICE:  policy: total_ms=9.467
+NOTICE:  policy_profile: bundle=8 target=customer K=0 query= local={customer:atoms=3,bins=120,sat=6,hits=114,ms=0.000/0.000/0.488/0.115,total_ms=0.602} prop={iter=0,ms=0.000,classes=[]} decode={customer:11332/15000,ms=0.000,total_ms=0.000} total_ms=9.467
+NOTICE:  custom_filter: bundle target=customer allow_count=0/15000
+NOTICE:  policy: load_ms=6.626
+NOTICE:  policy: bundle_eval target=customer bundle_id=9 uses_atoms=6
+NOTICE:  policy: local_bins table=customer atoms=6 bins=120
+NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=0.870 fill=0.102
+NOTICE:  policy: local_eval table=customer sat_calls=18 cache_hits=102
+NOTICE:  policy: allow_customer count = 3219 / 15000
+NOTICE:  policy: total_ms=9.548
+NOTICE:  policy_profile: bundle=9 target=customer K=0 query= local={customer:atoms=6,bins=120,sat=18,hits=102,ms=0.000/0.000/0.870/0.102,total_ms=0.972} prop={iter=0,ms=0.000,classes=[]} decode={customer:3219/15000,ms=0.000,total_ms=0.000} total_ms=9.548
+NOTICE:  custom_filter: bundle target=customer allow_count=0/15000
+NOTICE:  policy: load_ms=6.742
+NOTICE:  policy: bundle_eval target=customer bundle_id=10 uses_atoms=7
+NOTICE:  policy: local_bins table=customer atoms=7 bins=120
+NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=1.453 fill=0.077
+NOTICE:  policy: local_eval table=customer sat_calls=32 cache_hits=88
+NOTICE:  policy: allow_customer count = 1244 / 15000
+NOTICE:  policy: total_ms=11.223
+NOTICE:  policy_profile: bundle=10 target=customer K=0 query= local={customer:atoms=7,bins=120,sat=32,hits=88,ms=0.000/0.000/1.453/0.077,total_ms=1.530} prop={iter=0,ms=0.000,classes=[]} decode={customer:1244/15000,ms=0.000,total_ms=0.000} total_ms=11.223
+NOTICE:  custom_filter: bundle target=customer allow_count=0/15000
+NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+NOTICE:  custom_filter: final_allow_customer count=0/15000
+NOTICE:  custom_filter: allow_customer popcount=0/15000
+NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+NOTICE:  custom_filter: ctid_index_ms=0.317 rel=customer
+NOTICE:  custom_filter: customer_ctid head [0,1 0,2 0,3 0,4 0,5]
+NOTICE:  custom_filter: retain rel=customer allow=1875B ctid=120000B blk_index=4332B
+NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+NOTICE:  custom_filter: ctid_index_ms=21.398 rel=lineitem
+NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+NOTICE:  custom_filter: retain total allow=76947B ctid=4924576B blk_index=139524B
+NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=313 passed=1 misses=0 mode=off
+NOTICE:  custom_filter: row validation time = 0.048 ms
+NOTICE:  custom_filter exec: rel=customer oid=74194 seen=15000 passed=0 misses=0 mode=off
+NOTICE:  custom_filter: row validation time = 1.112 ms
+NOTICE:  policy_metrics: eval_ms=0.243 artifact_load_ms=32.249 artifact_parse_ms=69.783 stamp_ms=2619.284 bin_ms=40.439 local_sat_ms=13.042 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=21.715 filter_ms=1.160 rows_seen=15313 rows_passed=1 policy_total_ms=2803.946
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=2803.946 local_ms=2687.080 prop_ms=0.000 decode_ms=0.000 sat_calls=197 cache_hits=8028 closure_tables=2 filtered_targets=1
+NOTICE:  policy: scan_count table=customer count=1
+NOTICE:  policy: scan_count table=lineitem count=1
+

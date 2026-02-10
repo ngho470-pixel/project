@@ -1,0 +1,5 @@
+row_type,db,K,baseline,query_id,setup_ms,disk_overhead_bytes,cold_ms,cold_peak_rss_kb,hot1_ms,hot1_peak_rss_kb,hot2_ms,hot2_peak_rss_kb,hot3_ms,hot3_peak_rss_kb,hot4_ms,hot4_peak_rss_kb,hot5_ms,hot5_peak_rss_kb,hot_avg_ms,hot_avg_peak_rss_kb,status,error_type,error_msg
+setup,tpch0_1,5,ours,__setup__,5028.433,10559488,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,5,rls_with_index,__setup__,0.000,9445376,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,5,ours,1,,,332.920,123740,151.378,184744,151.706,184920,151.520,185148,151.449,185332,151.470,185560,151.505,185140,ok,,
+query,tpch0_1,5,rls_with_index,1,,,121.127,62792,121.095,70632,120.942,70856,120.938,71080,121.112,71304,121.128,71528,121.043,71080,ok,,

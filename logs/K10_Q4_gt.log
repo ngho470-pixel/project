@@ -1,0 +1,4 @@
+QUERY:
+SELECT COUNT(*) FROM orders o JOIN customer c ON o.o_custkey=c.c_custkey;
+GT_SOURCE: rls
+COUNT: 0

@@ -1,0 +1,7 @@
+1: SELECT COUNT(*) FROM customer;
+2: SELECT COUNT(*) FROM orders;
+3: SELECT COUNT(*) FROM lineitem;
+4: SELECT COUNT(*) FROM orders o JOIN customer c ON o.o_custkey=c.c_custkey;
+5: SELECT COUNT(*) FROM lineitem l JOIN orders o ON l.l_orderkey=o.o_orderkey;
+6: SELECT COUNT(*) FROM lineitem l JOIN orders o ON l.l_orderkey=o.o_orderkey JOIN customer c ON o.o_custkey=c.c_custkey;
+7: SELECT COUNT(*) FROM region r JOIN nation n ON r.r_regionkey=n.n_regionkey JOIN customer c ON n.n_nationkey=c.c_nationkey JOIN orders o ON c.c_custkey=o.o_custkey;

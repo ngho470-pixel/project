@@ -1,0 +1,3 @@
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:customer.c_phone OP:like STRING:'%-%' RPAREN:)
+
+ERROR: ERROR:  unsupported LIKE pattern (prefix only): %-%

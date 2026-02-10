@@ -1,0 +1,36 @@
+K	query_id	targets	ground_truth_source	ours_count	gt_count	status	error_type
+5	1		rls_with_index	15000	15000	PASS	
+5	2		rls_with_index	3028	3028	PASS	
+5	3		rls_with_index	150000	150000	PASS	
+5	4		rls_with_index	146151	146151	PASS	
+5	5	lineitem	rls_with_index	2271	2271	PASS	
+5	6	lineitem	rls_with_index	2271	2271	PASS	
+5	7		rls_with_index	150000	150000	PASS	
+5	8	lineitem	rls_with_index	2271	2271	PASS	
+10	1	customer	rls_with_index		0	ERROR	unsupported_policy_shape
+10	2	customer	rls_with_index		0	ERROR	unsupported_policy_shape
+10	3		rls_with_index		150000	ERROR	unsupported_policy_shape
+10	4		rls_with_index		146151	ERROR	unsupported_policy_shape
+10	5	lineitem	rls_with_index		2271	ERROR	unsupported_policy_shape
+10	6	lineitem	rls_with_index		2271	ERROR	unsupported_policy_shape
+10	7	customer	rls_with_index		0	ERROR	unsupported_policy_shape
+10	8	customer,lineitem	rls_with_index		0	ERROR	unsupported_policy_shape
+15	1	customer	rls_with_index		0	ERROR	unsupported_policy_shape
+15	2	customer	rls_with_index		0	ERROR	unsupported_policy_shape
+15	3	orders	rls_with_index		0	ERROR	unsupported_policy_shape
+15	4	orders	rls_with_index		0	ERROR	unsupported_policy_shape
+15	5	lineitem	rls_with_index		0	ERROR	unsupported_policy_shape
+15	6	lineitem	rls_with_index		0	ERROR	unsupported_policy_shape
+15	7	customer,orders	rls_with_index		0	ERROR	unsupported_policy_shape
+15	8	customer,lineitem,orders	rls_with_index		0	ERROR	unsupported_policy_shape
+20	1	customer	rls_with_index		0	ERROR	unsupported_policy_shape
+20	2	customer	rls_with_index		0	ERROR	unsupported_policy_shape
+20	3	orders	rls_with_index		0	ERROR	unsupported_policy_shape
+20	4	orders	rls_with_index		0	ERROR	unsupported_policy_shape
+20	5	lineitem	rls_with_index		0	ERROR	unsupported_policy_shape
+20	6	lineitem	rls_with_index		0	ERROR	unsupported_policy_shape
+20	7	customer,orders	rls_with_index		0	ERROR	unsupported_policy_shape
+20	8	customer,lineitem,orders	rls_with_index		0	ERROR	unsupported_policy_shape
+
+Error summary:
+unsupported_policy_shape: 24

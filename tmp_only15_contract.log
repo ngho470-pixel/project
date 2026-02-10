@@ -1,0 +1,32 @@
+LOAD
+SET
+SET
+SET
+SET
+SET
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' OR:or IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:lineitem.l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) AND:and IDENT:lineitem.l_returnflag OP:in LPAREN:( STRING:'R' COMMA:, STRING:'A' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem join_classes=[0]
+NOTICE:  policy_eval: policy[1] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND (orders.o_orderstatus = 'F' OR orders.o_orderpriority IN ('1-URGENT','2-HIGH')) AND ((lineitem.l_shipmode IN ('MAIL','SHIP') AND lineitem.l_shipinstruct = 'DELIVER IN PERSON') OR (lineitem.l_shipmode IN ('TRUCK','RAIL') AND lineitem.l_returnflag IN ('R','A'))) ast=y7 and (y6 or y5) and (y3 and y2 or y4 and y1)
+NOTICE:  policy_eval: atom y1 = const:lineitem.l_returnflag|in|A,R
+NOTICE:  policy_eval: atom y2 = const:lineitem.l_shipinstruct|=|DELIVER IN PERSON
+NOTICE:  policy_eval: atom y3 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y4 = const:lineitem.l_shipmode|in|RAIL,TRUCK
+NOTICE:  policy_eval: atom y5 = const:orders.o_orderpriority|in|1-URGENT,2-HIGH
+NOTICE:  policy_eval: atom y6 = const:orders.o_orderstatus|=|F
+NOTICE:  policy_eval: atom y7 = join:lineitem.l_orderkey=orders.o_orderkey
+NOTICE:  policy_eval: combined_ast target=lineitem ast=y7 and (y6 or y5) and (y3 and y2 or y4 and y1)
+NOTICE:  policy_eval: closure_count=2
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' OR:or IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:lineitem.l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) AND:and IDENT:lineitem.l_returnflag OP:in LPAREN:( STRING:'R' COMMA:, STRING:'A' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem join_classes=[0]
+NOTICE:  policy_eval: policy[1] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND (orders.o_orderstatus = 'F' OR orders.o_orderpriority IN ('1-URGENT','2-HIGH')) AND ((lineitem.l_shipmode IN ('MAIL','SHIP') AND lineitem.l_shipinstruct = 'DELIVER IN PERSON') OR (lineitem.l_shipmode IN ('TRUCK','RAIL') AND lineitem.l_returnflag IN ('R','A'))) ast=y7 and (y6 or y5) and (y3 and y2 or y4 and y1)
+NOTICE:  policy_eval: atom y1 = const:lineitem.l_returnflag|in|A,R
+NOTICE:  policy_eval: atom y2 = const:lineitem.l_shipinstruct|=|DELIVER IN PERSON
+NOTICE:  policy_eval: atom y3 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y4 = const:lineitem.l_shipmode|in|RAIL,TRUCK
+NOTICE:  policy_eval: atom y5 = const:orders.o_orderpriority|in|1-URGENT,2-HIGH
+NOTICE:  policy_eval: atom y6 = const:orders.o_orderstatus|=|F
+NOTICE:  policy_eval: atom y7 = join:lineitem.l_orderkey=orders.o_orderkey
+NOTICE:  policy_eval: combined_ast target=lineitem ast=y7 and (y6 or y5) and (y3 and y2 or y4 and y1)
+NOTICE:  policy_eval: closure_count=2
+NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=1
+296091

@@ -1,0 +1,3 @@
+csv=/home/ng_lab/z3/policy_scale_correctness.csv
+md=/home/ng_lab/z3/policy_scale_correctness.md
+rows=8 stop=True reason=error

@@ -1,0 +1,50 @@
+NOTICE:  policy_contract: global_atom id=2 kind=2 lhs=const:customer.c_mktsegment rhs=<null> op=1 jc=-1 key=const:customer.c_mktsegment|=|FURNITURE vals=[FURNITURE]
+NOTICE:  policy_contract: global_atom id=3 kind=2 lhs=const:customer.c_mktsegment rhs=<null> op=1 jc=-1 key=const:customer.c_mktsegment|=|HOUSEHOLD vals=[HOUSEHOLD]
+NOTICE:  policy_contract: bundle_ast target=customer ast=y1 and (y2 or y3)
+NOTICE:  policy_contract: artifact name=customer_code_base bytes=180000
+NOTICE:  policy_contract: artifact name=customer_ctid bytes=120000
+NOTICE:  policy_contract: artifact name=dict/customer/c_acctbal bytes=162147
+NOTICE:  policy_contract: artifact name=dict/customer/c_mktsegment bytes=65
+NOTICE:  policy_contract: artifact name=meta/cols/customer bytes=41
+NOTICE:  policy_contract: artifact name=meta/dict_sorted/customer/c_acctbal bytes=1
+NOTICE:  policy_contract: artifact name=meta/dict_sorted/customer/c_mktsegment bytes=1
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_acctbal bytes=5
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_mktsegment bytes=4
+NOTICE:  policy_contract: meta/cols/customer=[customer.c_acctbal, customer.c_mktsegment]
+NOTICE:  policy_contract: customer_code_base stride=3 rows=15000
+NOTICE:  policy_contract: offset const:customer.c_acctbal = 1 stride=3
+NOTICE:  policy_contract: offset const:customer.c_mktsegment = 2 stride=3
+NOTICE:  policy_contract: atom y1 type=COL_CONST col=customer.c_acctbal op=4 join_class=-1 dict=dict/customer/c_acctbal dict_present=1 eval=range_evaluated vals=[0] toks=[-1]
+NOTICE:  policy_contract: atom y2 type=COL_CONST col=customer.c_mktsegment op=0 join_class=-1 dict=dict/customer/c_mktsegment dict_present=1 eval=exact vals=[FURNITURE] toks=[2]
+NOTICE:  policy_contract: atom y3 type=COL_CONST col=customer.c_mktsegment op=0 join_class=-1 dict=dict/customer/c_mktsegment dict_present=1 eval=exact vals=[HOUSEHOLD] toks=[3]
+NOTICE:  policy_contract: AST(customer)=(customer.c_acctbal > 0 AND (customer.c_mktsegment = 'FURNITURE' OR customer.c_mktsegment = 'HOUSEHOLD'))
+NOTICE:  policy: load_ms=0.328
+NOTICE:  policy: global_atoms table=customer count=3
+NOTICE:  policy: global_bins table=customer bins=6 rows=15000
+NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=3
+NOTICE:  policy: local_bins table=customer atoms=3 bins=6
+NOTICE:  policy: local_ms table=customer stamp=0.414 bin=0.213 eval=0.203 fill=0.085
+NOTICE:  policy: local_eval table=customer sat_calls=6 cache_hits=0
+NOTICE:  policy: allow_customer count = 5367 / 15000
+NOTICE:  policy: total_ms=3.492
+NOTICE:  policy_profile: bundle=1 target=customer K=0 query= local={customer:atoms=3,bins=6,sat=6,hits=0,ms=0.414/0.213/0.203/0.085,total_ms=0.915} prop={iter=0,ms=0.000,classes=[]} decode={customer:5367/15000,ms=0.000,total_ms=0.000} total_ms=3.492
+NOTICE:  custom_filter: bundle target=customer allow_count=5367/15000
+NOTICE:  custom_filter: final_allow_customer count=5367/15000
+NOTICE:  custom_filter: allow_customer popcount=5367/15000
+NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+NOTICE:  custom_filter: ctid_index_ms=0.447 rel=customer
+NOTICE:  custom_filter: customer_ctid head [0,1 0,2 0,3 0,4 0,5]
+NOTICE:  custom_filter: retain rel=customer allow=1875B ctid=120000B blk_index=4332B
+NOTICE:  custom_filter: retain total allow=1875B ctid=120000B blk_index=4332B
+NOTICE:  custom_filter: allow_bits pre_exec rel=customer count=5367/15000 ptr=0x581a13c9c408 canary=ok mctx=0x581a13c86660 qctx=0x581a13c86660 qs=0x581a13c88150
+NOTICE:  custom_filter: scan rel=customer type=SeqScan filter=on
+NOTICE:  custom_filter: tid_source rel=customer scan=SeqScan source=tts_tid
+NOTICE:  custom_filter exec: rel=customer oid=74194 seen=15000 passed=5367 misses=0 mode=contract
+NOTICE:  custom_filter: row validation time = 1.389 ms
+NOTICE:  policy_metrics: eval_ms=0.045 artifact_load_ms=1.029 artifact_parse_ms=0.328 stamp_ms=0.414 bin_ms=0.213 local_sat_ms=0.203 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=0.447 filter_ms=1.389 rows_seen=15000 rows_passed=5367 policy_total_ms=3.492
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=3.492 local_ms=0.915 prop_ms=0.000 decode_ms=0.000 sat_calls=6 cache_hits=0 closure_tables=1 filtered_targets=1
+NOTICE:  policy: scan_count table=customer count=1

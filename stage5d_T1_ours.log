@@ -1,0 +1,50 @@
+NOTICE:  policy_contract: artifact name=meta/dict_sorted/customer/c_mktsegment bytes=1
+NOTICE:  policy_contract: artifact name=meta/dict_sorted/orders/o_orderstatus bytes=1
+NOTICE:  policy_contract: artifact name=meta/dict_type/customer/c_mktsegment bytes=4
+NOTICE:  policy_contract: artifact name=meta/dict_type/orders/o_orderstatus bytes=4
+NOTICE:  policy_contract: artifact name=meta/join_classes bytes=49
+NOTICE:  policy_contract: artifact name=orders_code_base bytes=1800000
+NOTICE:  policy_contract: artifact name=orders_ctid bytes=1200000
+NOTICE:  policy_contract: join_class=0 cols=[customer.c_custkey, orders.o_custkey]
+NOTICE:  policy_contract: meta/cols/customer=[customer.c_custkey, customer.c_mktsegment]
+NOTICE:  policy_contract: customer_code_base stride=3 rows=15000
+NOTICE:  policy_contract: meta/cols/orders=[orders.o_custkey, orders.o_orderstatus]
+NOTICE:  policy_contract: orders_code_base stride=3 rows=150000
+NOTICE:  policy_contract: offset const:customer.c_mktsegment = 2 stride=3
+NOTICE:  policy_contract: offset const:orders.o_orderstatus = 2 stride=3
+NOTICE:  policy_contract: offset join:customer.c_custkey class=0 = 1 stride=3
+NOTICE:  policy_contract: offset join:orders.o_custkey class=0 = 1 stride=3
+NOTICE:  policy_contract: atom y1 type=COL_CONST col=customer.c_mktsegment op=0 join_class=-1 dict=dict/customer/c_mktsegment dict_present=1 eval=exact vals=[AUTOMOBILE] toks=[0]
+NOTICE:  policy_contract: atom y2 type=COL_CONST col=customer.c_mktsegment op=0 join_class=-1 dict=dict/customer/c_mktsegment dict_present=1 eval=exact vals=[HOUSEHOLD] toks=[3]
+NOTICE:  policy_contract: atom y3 type=COL_CONST col=orders.o_orderstatus op=1 join_class=-1 dict=dict/orders/o_orderstatus dict_present=1 eval=neq_evaluated vals=[F] toks=[0]
+NOTICE:  policy_contract: atom y4 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
+NOTICE:  policy_contract: AST(orders)=orders.o_orderstatus <> 'F'
+NOTICE:  policy: load_ms=0.098
+NOTICE:  policy_contract: class=0 domain=15000
+NOTICE:  policy_contract: class=0 atom=y1 popcount=3013 / 15000
+NOTICE:  policy_contract: class=0 atom=y2 popcount=3009 / 15000
+NOTICE:  policy_contract: class=0 atom=y3 popcount=9972 / 15000
+NOTICE:  policy_contract: class=0 atom=y4 popcount=10000 / 15000
+NOTICE:  policy: allow_orders count = 77116 / 150000
+NOTICE:  policy: token_domain_ms=5.476
+NOTICE:  policy: total_ms=5.574
+NOTICE:  policy_profile: bundle=2 target=orders K=0 query= local={,total_ms=0.000} prop={iter=0,ms=5.476,classes=[]} decode={orders:77116/150000,ms=0.000,total_ms=0.000} total_ms=5.574
+NOTICE:  custom_filter: bundle target=orders allow_count=30293/150000
+NOTICE:  custom_filter: final_allow_orders count=30293/150000
+NOTICE:  custom_filter: allow_orders popcount=30293/150000
+NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+NOTICE:  custom_filter: ctid_index_ms=4.155 rel=orders
+NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
+NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
+NOTICE:  custom_filter: allow_bits pre_exec rel=orders count=30293/150000 ptr=0x581a13cdb450 canary=ok mctx=0x581a13c6db70 qctx=0x581a13c6db70 qs=0x581a13c6edc0
+NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
+NOTICE:  custom_filter: tid_source rel=orders scan=SeqScan source=tts_tid
+NOTICE:  custom_filter exec: rel=orders oid=74197 seen=150000 passed=30293 misses=0 mode=contract
+NOTICE:  custom_filter: row validation time = 10.968 ms
+NOTICE:  policy_metrics: eval_ms=0.060 artifact_load_ms=4.867 artifact_parse_ms=0.207 stamp_ms=0.000 bin_ms=0.000 local_sat_ms=0.000 prop_ms=10.854 prop_iters=0 decode_ms=0.000 ctid_map_ms=4.155 filter_ms=10.968 rows_seen=150000 rows_passed=30293 policy_total_ms=11.061
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=11.061 local_ms=0.000 prop_ms=10.854 decode_ms=0.000 sat_calls=0 cache_hits=0 closure_tables=2 filtered_targets=1

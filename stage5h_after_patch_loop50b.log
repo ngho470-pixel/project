@@ -1,0 +1,1738 @@
+=== run 1 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.955
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.488
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2629.430 bin=39.858 eval=0.389 fill=3.248
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2690.303
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2629.430/39.858/0.389/3.248,total_ms=2672.924} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2690.303
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.632
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.525 fill=3.098
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.652
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.525/3.098,total_ms=3.623} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.652
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.908
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.268 fill=3.952
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=14.189
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.268/3.952,total_ms=5.220} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=14.189
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.824
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.062 fill=2.818
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=20.507
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.062/2.818,total_ms=3.880} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=20.507
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.941
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.829 fill=2.207
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=23.189
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.829/2.207,total_ms=7.036} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=23.189
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.695 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 58.167 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.237 artifact_load_ms=32.955 artifact_parse_ms=30.793 stamp_ms=2629.430 bin_ms=39.858 local_sat_ms=8.073 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.695 filter_ms=58.167 rows_seen=600572 rows_passed=2271 policy_total_ms=2760.839
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2760.839 local_ms=2692.682 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 1 rc=0
+=== run 2 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.117
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.642
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2647.721 bin=40.094 eval=0.374 fill=3.194
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2708.370
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2647.721/40.094/0.374/3.194,total_ms=2691.383} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2708.370
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.342
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.483 fill=2.928
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.062
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.483/2.928,total_ms=3.411} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.062
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.342
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.150 fill=3.599
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.025
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.150/3.599,total_ms=4.750} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.025
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.516
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.029 fill=2.857
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.790
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.029/2.857,total_ms=3.886} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.790
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.840
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.747 fill=2.085
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=22.785
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.747/2.085,total_ms=6.833} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=22.785
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.385 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 58.680 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.216 artifact_load_ms=32.117 artifact_parse_ms=29.683 stamp_ms=2647.721 bin_ms=40.094 local_sat_ms=7.783 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.385 filter_ms=58.680 rows_seen=600572 rows_passed=2271 policy_total_ms=2776.031
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2776.031 local_ms=2710.263 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 2 rc=0
+=== run 3 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=31.739
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.544
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2623.659 bin=39.761 eval=0.348 fill=3.183
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2684.190
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2623.659/39.761/0.348/3.183,total_ms=2666.952} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2684.190
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.282
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.469 fill=3.006
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.120
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.469/3.006,total_ms=3.475} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.120
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.828
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.171 fill=3.796
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.800
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.171/3.796,total_ms=4.967} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.800
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.541
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.998 fill=2.681
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.286
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/0.998/2.681,total_ms=3.679} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.286
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.378
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.681 fill=2.082
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=21.575
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.681/2.082,total_ms=6.763} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=21.575
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.340 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 57.964 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.161 artifact_load_ms=31.739 artifact_parse_ms=29.573 stamp_ms=2623.659 bin_ms=39.761 local_sat_ms=7.667 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.340 filter_ms=57.964 rows_seen=600572 rows_passed=2271 policy_total_ms=2750.971
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2750.971 local_ms=2685.835 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 3 rc=0
+=== run 4 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.718
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.824
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2624.625 bin=40.180 eval=0.341 fill=3.141
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2685.438
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2624.625/40.180/0.341/3.141,total_ms=2668.287} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2685.438
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.940
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.494 fill=2.837
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=11.475
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.494/2.837,total_ms=3.331} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=11.475
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.768
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.103 fill=3.500
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.187
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.103/3.500,total_ms=4.603} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.187
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.154
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.915 fill=2.536
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=18.312
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/0.915/2.536,total_ms=3.451} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=18.312
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=4.997
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.395 fill=2.089
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=20.812
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.395/2.089,total_ms=6.484} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=20.812
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=21.459 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 61.369 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.239 artifact_load_ms=32.718 artifact_parse_ms=28.682 stamp_ms=2624.625 bin_ms=40.180 local_sat_ms=7.247 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=21.459 filter_ms=61.369 rows_seen=600572 rows_passed=2271 policy_total_ms=2749.225
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2749.225 local_ms=2686.156 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 4 rc=0
+=== run 5 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.147
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.381
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2621.617 bin=39.993 eval=0.402 fill=3.280
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2681.882
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2621.617/39.993/0.402/3.280,total_ms=2665.293} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2681.882
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.285
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.490 fill=3.161
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.355
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.490/3.161,total_ms=3.650} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.355
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.570
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.192 fill=3.722
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.436
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.192/3.722,total_ms=4.914} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.436
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.703
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.053 fill=2.752
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.399
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.053/2.752,total_ms=3.805} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.399
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.698
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.940 fill=2.090
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=22.562
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.940/2.090,total_ms=7.030} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=22.562
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.519 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 57.568 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.155 artifact_load_ms=32.147 artifact_parse_ms=29.636 stamp_ms=2621.617 bin_ms=39.993 local_sat_ms=8.077 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.519 filter_ms=57.568 rows_seen=600572 rows_passed=2271 policy_total_ms=2749.634
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2749.634 local_ms=2684.692 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 5 rc=0
+=== run 6 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.724
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.717
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2619.797 bin=40.525 eval=0.371 fill=3.422
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2681.607
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2619.797/40.525/0.371/3.422,total_ms=2664.115} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2681.607
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.393
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.496 fill=3.054
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.329
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.496/3.054,total_ms=3.549} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.329
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.712
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.136 fill=3.586
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.345
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.136/3.586,total_ms=4.722} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.345
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.644
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.039 fill=2.817
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.960
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.039/2.817,total_ms=3.856} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.960
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.512
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=5.000 fill=2.262
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=22.620
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/5.000/2.262,total_ms=7.262} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=22.620
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=20.383 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 60.227 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.241 artifact_load_ms=32.724 artifact_parse_ms=29.978 stamp_ms=2619.797 bin_ms=40.525 local_sat_ms=8.041 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=20.383 filter_ms=60.227 rows_seen=600572 rows_passed=2271 policy_total_ms=2749.861
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2749.861 local_ms=2683.504 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 6 rc=0
+=== run 7 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.355
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.885
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2624.249 bin=39.785 eval=0.371 fill=3.295
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2685.268
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2624.249/39.785/0.371/3.295,total_ms=2667.700} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2685.268
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.486
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.526 fill=3.191
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.660
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.526/3.191,total_ms=3.717} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.660
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.773
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.213 fill=3.952
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=14.001
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.213/3.952,total_ms=5.164} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=14.001
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.710
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.098 fill=2.974
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=20.096
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.098/2.974,total_ms=4.072} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=20.096
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.740
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.938 fill=2.208
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=23.149
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.938/2.208,total_ms=7.146} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=23.149
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=20.074 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 57.830 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.161 artifact_load_ms=32.355 artifact_parse_ms=30.593 stamp_ms=2624.249 bin_ms=39.785 local_sat_ms=8.145 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=20.074 filter_ms=57.830 rows_seen=600572 rows_passed=2271 policy_total_ms=2755.174
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2755.174 local_ms=2687.799 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 7 rc=0
+=== run 8 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=33.565
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.809
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2628.042 bin=40.312 eval=0.400 fill=3.286
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2689.833
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2628.042/40.312/0.400/3.286,total_ms=2672.040} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2689.833
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.726
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.459 fill=3.026
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.453
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.459/3.026,total_ms=3.485} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.453
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.429
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.148 fill=3.755
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.166
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.148/3.755,total_ms=4.903} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.166
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.495
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.998 fill=2.693
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.247
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/0.998/2.693,total_ms=3.691} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.247
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.498
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.520 fill=2.141
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=21.737
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.520/2.141,total_ms=6.661} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=21.737
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.344 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 56.417 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.245 artifact_load_ms=33.565 artifact_parse_ms=29.958 stamp_ms=2628.042 bin_ms=40.312 local_sat_ms=7.525 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.344 filter_ms=56.417 rows_seen=600572 rows_passed=2271 policy_total_ms=2756.436
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2756.436 local_ms=2690.781 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 8 rc=0
+=== run 9 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=33.659
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.662
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2623.010 bin=39.666 eval=0.399 fill=3.307
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2683.992
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2623.010/39.666/0.399/3.307,total_ms=2666.382} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2683.992
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.594
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.545 fill=3.226
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.917
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.545/3.226,total_ms=3.771} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.917
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.952
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.285 fill=3.859
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=14.186
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.285/3.859,total_ms=5.144} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=14.186
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.750
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.131 fill=2.808
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=20.611
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.131/2.808,total_ms=3.939} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=20.611
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.851
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=5.170 fill=2.401
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=24.360
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/5.170/2.401,total_ms=7.571} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=24.360
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=20.736 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 57.985 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.220 artifact_load_ms=33.659 artifact_parse_ms=30.809 stamp_ms=2623.010 bin_ms=39.666 local_sat_ms=8.530 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=20.736 filter_ms=57.985 rows_seen=600572 rows_passed=2271 policy_total_ms=2756.066
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2756.066 local_ms=2686.808 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 9 rc=0
+=== run 10 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=33.072
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.827
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2633.703 bin=39.972 eval=0.368 fill=3.139
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2694.779
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2633.703/39.972/0.368/3.139,total_ms=2677.182} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2694.779
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.358
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.528 fill=3.125
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.464
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.528/3.125,total_ms=3.653} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.464
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.754
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.215 fill=3.759
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.742
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.215/3.759,total_ms=4.975} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.742
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.476
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.090 fill=2.768
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.671
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.090/2.768,total_ms=3.858} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.671
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.696
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=5.294 fill=2.356
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=23.594
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/5.294/2.356,total_ms=7.650} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=23.594
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.192 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 59.322 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.174 artifact_load_ms=33.072 artifact_parse_ms=30.111 stamp_ms=2633.703 bin_ms=39.972 local_sat_ms=8.495 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.192 filter_ms=59.322 rows_seen=600572 rows_passed=2271 policy_total_ms=2764.249
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2764.249 local_ms=2697.318 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 10 rc=0
+=== run 11 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.756
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.471
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2630.474 bin=40.034 eval=0.379 fill=3.151
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2691.180
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2630.474/40.034/0.379/3.151,total_ms=2674.037} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2691.180
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.857
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.453 fill=2.829
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=11.316
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.453/2.829,total_ms=3.282} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=11.316
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.258
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.088 fill=3.576
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.724
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.088/3.576,total_ms=4.665} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=12.724
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.483
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.009 fill=2.697
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.151
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.009/2.697,total_ms=3.707} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.151
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.615
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.646 fill=2.246
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=21.941
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.646/2.246,total_ms=6.892} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=21.941
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=22.897 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 57.314 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.162 artifact_load_ms=32.756 artifact_parse_ms=28.685 stamp_ms=2630.474 bin_ms=40.034 local_sat_ms=7.575 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=22.897 filter_ms=57.314 rows_seen=600572 rows_passed=2271 policy_total_ms=2756.312
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2756.312 local_ms=2692.582 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 11 rc=0
+=== run 12 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=33.105
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=7.053
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2627.710 bin=40.078 eval=0.371 fill=3.293
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2689.613
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2627.710/40.078/0.371/3.293,total_ms=2671.453} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2689.613
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.209
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.486 fill=3.113
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.107
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.486/3.113,total_ms=3.599} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.107
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.728
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.199 fill=3.991
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.903
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.199/3.991,total_ms=5.190} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.903
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.486
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.001 fill=2.729
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.367
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.001/2.729,total_ms=3.730} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.367
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.589
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.815 fill=2.277
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=22.759
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.815/2.277,total_ms=7.092} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=22.759
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.195 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 57.745 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.189 artifact_load_ms=33.105 artifact_parse_ms=30.064 stamp_ms=2627.710 bin_ms=40.078 local_sat_ms=7.873 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.195 filter_ms=57.745 rows_seen=600572 rows_passed=2271 policy_total_ms=2757.749
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2757.749 local_ms=2691.065 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 12 rc=0
+=== run 13 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.039
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.851
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2638.922 bin=39.828 eval=0.376 fill=3.126
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2700.213
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2638.922/39.828/0.376/3.126,total_ms=2682.252} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2700.213
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.937
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.461 fill=3.061
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=11.695
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.461/3.061,total_ms=3.522} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=11.695
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.601
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.141 fill=3.804
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.433
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.141/3.804,total_ms=4.945} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.433
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.396
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.069 fill=2.848
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.971
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.069/2.848,total_ms=3.917} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.971
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.703
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.942 fill=2.258
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=22.995
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.942/2.258,total_ms=7.199} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=22.995
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.437 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 56.483 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.150 artifact_load_ms=32.039 artifact_parse_ms=29.487 stamp_ms=2638.922 bin_ms=39.828 local_sat_ms=7.989 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.437 filter_ms=56.483 rows_seen=600572 rows_passed=2271 policy_total_ms=2768.307
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2768.307 local_ms=2701.836 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 13 rc=0
+=== run 14 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=31.937
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.882
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2624.100 bin=40.000 eval=0.383 fill=3.717
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2686.696
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2624.100/40.000/0.383/3.717,total_ms=2668.200} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2686.696
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=7.084
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.523 fill=3.202
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.263
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.523/3.202,total_ms=3.725} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=13.263
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.760
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.286 fill=3.899
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=14.014
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.286/3.899,total_ms=5.185} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=14.014
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.860
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.038 fill=2.795
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=20.294
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.038/2.795,total_ms=3.833} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=20.294
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.787
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.769 fill=2.192
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=22.739
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.769/2.192,total_ms=6.961} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=22.739
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=20.432 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 58.242 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.170 artifact_load_ms=31.937 artifact_parse_ms=31.374 stamp_ms=2624.100 bin_ms=40.000 local_sat_ms=8.000 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=20.432 filter_ms=58.242 rows_seen=600572 rows_passed=2271 policy_total_ms=2757.006
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2757.006 local_ms=2687.905 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 14 rc=0
+=== run 15 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=33.413
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.816
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2648.710 bin=40.398 eval=0.393 fill=3.602
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2710.912
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2648.710/40.398/0.393/3.602,total_ms=2693.102} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2710.912
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.594
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.514 fill=3.212
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.716
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.514/3.212,total_ms=3.727} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.716
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.857
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.155 fill=3.879
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.804
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.155/3.879,total_ms=5.034} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.804
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.539
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.070 fill=2.847
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=20.095
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.070/2.847,total_ms=3.917} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=20.095
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.588
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=5.029 fill=2.204
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=23.217
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/5.029/2.204,total_ms=7.233} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=23.217
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=20.477 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 64.860 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.244 artifact_load_ms=33.413 artifact_parse_ms=30.394 stamp_ms=2648.710 bin_ms=40.398 local_sat_ms=8.161 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=20.477 filter_ms=64.860 rows_seen=600572 rows_passed=2271 policy_total_ms=2780.743
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2780.743 local_ms=2713.013 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 15 rc=0
+=== run 16 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.307
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.944
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2641.434 bin=40.102 eval=0.372 fill=3.387
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2703.016
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2641.434/40.102/0.372/3.387,total_ms=2685.295} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2703.016
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.354
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.514 fill=3.097
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.368
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.514/3.097,total_ms=3.611} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.368
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.439
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.122 fill=3.647
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.170
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.122/3.647,total_ms=4.770} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.170
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.570
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.067 fill=3.035
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=20.362
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.067/3.035,total_ms=4.102} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=20.362
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.725
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=5.131 fill=2.404
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=23.675
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/5.131/2.404,total_ms=7.535} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=23.675
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=25.196 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 61.127 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.155 artifact_load_ms=32.307 artifact_parse_ms=30.032 stamp_ms=2641.434 bin_ms=40.102 local_sat_ms=8.206 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=25.196 filter_ms=61.127 rows_seen=600572 rows_passed=2271 policy_total_ms=2772.592
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2772.592 local_ms=2705.312 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 16 rc=0
+=== run 17 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=36.080
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.789
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2656.333 bin=39.825 eval=0.381 fill=3.187
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2717.349
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2656.333/39.825/0.381/3.187,total_ms=2699.725} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2717.349
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.333
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.477 fill=3.008
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.093
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.477/3.008,total_ms=3.485} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.093
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.408
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.148 fill=3.542
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.960
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.148/3.542,total_ms=4.690} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=12.960
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.610
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.038 fill=2.767
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.383
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.038/2.767,total_ms=3.806} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.383
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.655
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=4.903 fill=2.117
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=22.701
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/4.903/2.117,total_ms=7.019} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=22.701
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.039 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 57.937 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.232 artifact_load_ms=36.080 artifact_parse_ms=29.796 stamp_ms=2656.333 bin_ms=39.825 local_sat_ms=7.946 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.039 filter_ms=57.937 rows_seen=600572 rows_passed=2271 policy_total_ms=2784.487
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2784.487 local_ms=2718.725 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 17 rc=0
+=== run 18 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=32.344
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2565.106 bin=39.135 eval=0.409 fill=3.276
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2625.095
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2565.106/39.135/0.409/3.276,total_ms=2607.926} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2625.095
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.315
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.511 fill=3.119
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.309
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.511/3.119,total_ms=3.631} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.309
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.717
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.200 fill=3.676
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.440
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.200/3.676,total_ms=4.876} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.440
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.581
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.003 fill=2.583
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.058
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.003/2.583,total_ms=3.586} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.058
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.666
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=5.011 fill=2.167
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=23.044
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/5.011/2.167,total_ms=7.178} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=23.044
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.880 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 58.755 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.142 artifact_load_ms=32.344 artifact_parse_ms=29.801 stamp_ms=2565.106 bin_ms=39.135 local_sat_ms=8.134 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.880 filter_ms=58.755 rows_seen=600572 rows_passed=2271 policy_total_ms=2692.945
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2692.945 local_ms=2627.197 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 18 rc=0
+=== run 19 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=33.889
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=7.045
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2556.896 bin=39.244 eval=0.354 fill=3.383
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2618.025
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2556.896/39.244/0.354/3.383,total_ms=2599.877} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2618.025
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.372
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.513 fill=3.106
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.352
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.513/3.106,total_ms=3.619} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.352
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.388
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.119 fill=3.646
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.164
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.119/3.646,total_ms=4.765} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.164
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.602
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.104 fill=2.842
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.880
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.104/2.842,total_ms=3.946} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.880
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.729
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=5.182 fill=2.311
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=23.416
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/5.182/2.311,total_ms=7.493} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=23.416
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=20.149 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 58.058 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.306 artifact_load_ms=33.889 artifact_parse_ms=30.136 stamp_ms=2556.896 bin_ms=39.244 local_sat_ms=8.272 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=20.149 filter_ms=58.058 rows_seen=600572 rows_passed=2271 policy_total_ms=2686.838
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2686.838 local_ms=2619.700 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 19 rc=0
+=== run 20 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: artifact_load_ms=31.793
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.382
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_atoms table=lineitem count=18
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: global_bins table=lineitem bins=1525 rows=600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=2 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=2571.270 bin=39.206 eval=0.366 fill=3.226
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=3 cache_hits=1522
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 299856 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=2630.962
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=2,bins=1525,sat=3,hits=1522,ms=2571.270/39.206/0.366/3.226,total_ms=2614.069} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:299856/600572,ms=0.000,total_ms=0.000} total_ms=2630.962
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=299856/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=6.524
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=3 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=0.529 fill=3.233
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=6 cache_hits=1519
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 85613 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=12.687
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=3,bins=1525,sat=6,hits=1519,ms=0.000/0.000/0.529/3.233,total_ms=3.762} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:85613/600572,ms=0.000,total_ms=0.000} total_ms=12.687
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=42862/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.694
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=3 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.207 fill=3.914
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=12 cache_hits=1513
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 142016 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=13.800
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=3 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=12,hits=1513,ms=0.000/0.000/1.207/3.914,total_ms=5.121} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:142016/600572,ms=0.000,total_ms=0.000} total_ms=13.800
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=10151/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.374
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=4 uses_atoms=6
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=6 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=1.067 fill=2.750
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=24 cache_hits=1501
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 70368 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=19.600
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=4 target=lineitem K=0 query= local={lineitem:atoms=6,bins=1525,sat=24,hits=1501,ms=0.000/0.000/1.067/2.750,total_ms=3.817} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:70368/600572,ms=0.000,total_ms=0.000} total_ms=19.600
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=9782/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: load_ms=5.724
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: bundle_eval target=lineitem bundle_id=5 uses_atoms=9
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_bins table=lineitem atoms=9 bins=1525
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_ms table=lineitem stamp=0.000 bin=0.000 eval=5.349 fill=2.372
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: local_eval table=lineitem sat_calls=81 cache_hits=1444
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: allow_lineitem count = 32154 / 600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: total_ms=23.774
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile: bundle=5 target=lineitem K=0 query= local={lineitem:atoms=9,bins=1525,sat=81,hits=1444,ms=0.000/0.000/5.349/2.372,total_ms=7.721} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:32154/600572,ms=0.000,total_ms=0.000} total_ms=23.774
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: bundle target=lineitem allow_count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: final_allow_lineitem count=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: allow_lineitem popcount=2271/600572
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: ctid_index_ms=19.293 rel=lineitem
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=135192B
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=2271 misses=0 mode=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: row validation time = 57.149 ms
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_metrics: eval_ms=0.147 artifact_load_ms=31.793 artifact_parse_ms=29.699 stamp_ms=2571.270 bin_ms=39.206 local_sat_ms=8.518 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=19.293 filter_ms=57.149 rows_seen=600572 rows_passed=2271 policy_total_ms=2700.823
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy_profile_query: K=0 query_id= total_ms=2700.823 local_ms=2634.490 prop_ms=0.000 decode_ms=0.000 sat_calls=126 cache_hits=7499 closure_tables=1 filtered_targets=1
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  policy: scan_count table=lineitem count=1
+ count 
+-------
+  2271
+(1 row)
+
+run 20 rc=0
+=== run 21 ===
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: wrap rel=lineitem oid=74200 paths=3
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: policy_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: query_targets = [lineitem]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=lineitem filter=on
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=orders filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: NOTICE:  custom_filter: table=customer filter=off
+psql:/tmp/stage5h_repro_q6_off.sql:11: ERROR:  custom_filter: missing artifacts: dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax
+run 21 rc=3

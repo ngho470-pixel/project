@@ -1,0 +1,224 @@
+You are now connected to database "tpch0_1" as user "postgres".
+SET
+SET
+SET
+SET
+SET
+SET
+LOAD
+TRUNCATE TABLE
+psql:/tmp/stage5d_t4.sql:10: NOTICE:  relation "files" already exists, skipping
+psql:/tmp/stage5d_t4.sql:10: NOTICE:  table "tmp_jc_0" does not exist, skipping
+psql:/tmp/stage5d_t4.sql:10: NOTICE:  table "tmp_jc_1" does not exist, skipping
+psql:/tmp/stage5d_t4.sql:10: NOTICE:  table "tmp_jc_2" does not exist, skipping
+psql:/tmp/stage5d_t4.sql:10: NOTICE:  table "tmp_jc_3" does not exist, skipping
+psql:/tmp/stage5d_t4.sql:10: NOTICE:  table "tmp_dict_0" does not exist, skipping
+psql:/tmp/stage5d_t4.sql:10: NOTICE:  table "tmp_dict_1" does not exist, skipping
+psql:/tmp/stage5d_t4.sql:10: NOTICE:  table "tmp_dict_2" does not exist, skipping
+psql:/tmp/stage5d_t4.sql:10: NOTICE:  table "tmp_dict_3" does not exist, skipping
+ build_base 
+------------
+ 
+(1 row)
+
+LOAD
+SET
+SET
+SET
+SET
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:in LPAREN:( STRING:'EUROPE' COMMA:, STRING:'ASIA' RPAREN:) AND:and IDENT:orders.o_orderstatus OP:in LPAREN:( STRING:'O' COMMA:, STRING:'F' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) RPAREN:) RPAREN:)
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: target=orders join_classes=[0, 1, 2, 3]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND lineitem.l_orderkey = orders.o_orderkey AND ((region.r_name IN ('EUROPE','ASIA') AND orders.o_orderstatus IN ('O','F')) OR (lineitem.l_shipmode IN ('MAIL','SHIP') AND orders.o_orderpriority IN ('1-URGENT','2-HIGH'))) ast=y5 and y6 and y8 and y7 and (y4 and y3 or y1 and y2)
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y1 = const:lineitem.l_shipmode|in|MAIL,SHIP
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y2 = const:orders.o_orderpriority|in|1-URGENT,2-HIGH
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y3 = const:orders.o_orderstatus|in|F,O
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y4 = const:region.r_name|in|ASIA,EUROPE
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y5 = join:customer.c_custkey=orders.o_custkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y6 = join:customer.c_nationkey=nation.n_nationkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y7 = join:lineitem.l_orderkey=orders.o_orderkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y8 = join:nation.n_regionkey=region.r_regionkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: combined_ast target=orders ast=y5 and y6 and y8 and y7 and (y4 and y3 or y1 and y2)
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: closure_count=5
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: wrap rel=orders oid=74197 path=SeqScan
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: policy_path=/tmp/policy_T4.txt size=358
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: policy_path=/tmp/policy_T4.txt md5=6234ee56ceca04cf9917e01fa3282a38
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:in LPAREN:( STRING:'EUROPE' COMMA:, STRING:'ASIA' RPAREN:) AND:and IDENT:orders.o_orderstatus OP:in LPAREN:( STRING:'O' COMMA:, STRING:'F' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) RPAREN:) RPAREN:)
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: target=orders join_classes=[0, 1, 2, 3]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND lineitem.l_orderkey = orders.o_orderkey AND ((region.r_name IN ('EUROPE','ASIA') AND orders.o_orderstatus IN ('O','F')) OR (lineitem.l_shipmode IN ('MAIL','SHIP') AND orders.o_orderpriority IN ('1-URGENT','2-HIGH'))) ast=y5 and y6 and y8 and y7 and (y4 and y3 or y1 and y2)
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y1 = const:lineitem.l_shipmode|in|MAIL,SHIP
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y2 = const:orders.o_orderpriority|in|1-URGENT,2-HIGH
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y3 = const:orders.o_orderstatus|in|F,O
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y4 = const:region.r_name|in|ASIA,EUROPE
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y5 = join:customer.c_custkey=orders.o_custkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y6 = join:customer.c_nationkey=nation.n_nationkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y7 = join:lineitem.l_orderkey=orders.o_orderkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: atom y8 = join:nation.n_regionkey=region.r_regionkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: combined_ast target=orders ast=y5 and y6 and y8 and y7 and (y4 and y3 or y1 and y2)
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_eval: closure_count=5
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: needed_files = [customer_code_base, customer_ctid, dict/lineitem/l_shipmode, dict/orders/o_orderpriority, dict/orders/o_orderstatus, dict/region/r_name, lineitem_code_base, lineitem_ctid, meta/cols/customer, meta/cols/lineitem, meta/cols/nation, meta/cols/orders, meta/cols/region, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/orders/o_orderpriority, meta/dict_sorted/orders/o_orderstatus, meta/dict_sorted/region/r_name, meta/dict_type/lineitem/l_shipmode, meta/dict_type/orders/o_orderpriority, meta/dict_type/orders/o_orderstatus, meta/dict_type/region/r_name, meta/join_classes, nation_code_base, nation_ctid, orders_code_base, orders_ctid, region_code_base, region_ctid]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: policy_targets = [orders]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: closure_tables = [customer, lineitem, nation, orders, region]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: query_targets = [orders]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: scanned_tables = [orders]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: table=orders filter=on
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: target=orders joinclass_count=4 joinclasses=[0, 1, 2, 3]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: multi-join-class policy detected (table=orders join_classes=[0, 1, 2, 3])
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: wrapped_tables = [orders]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact_load_ms=17.883
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact customer_code_base bytes=180000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact customer_ctid bytes=120000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact dict/lineitem/l_shipmode bytes=58
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact dict/orders/o_orderpriority bytes=62
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact dict/orders/o_orderstatus bytes=15
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact dict/region/r_name bytes=54
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact lineitem_code_base bytes=7206864
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact lineitem_ctid bytes=4804576
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/cols/customer bytes=40
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/cols/lineitem bytes=40
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/cols/nation bytes=38
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/cols/orders bytes=79
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/cols/region bytes=33
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/dict_sorted/lineitem/l_shipmode bytes=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/dict_sorted/orders/o_orderpriority bytes=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/dict_sorted/orders/o_orderstatus bytes=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/dict_sorted/region/r_name bytes=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/dict_type/lineitem/l_shipmode bytes=4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/dict_type/orders/o_orderpriority bytes=4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/dict_type/orders/o_orderstatus bytes=4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/dict_type/region/r_name bytes=4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact meta/join_classes bytes=204
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact nation_code_base bytes=300
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact nation_ctid bytes=200
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact orders_code_base bytes=3000000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact orders_ctid bytes=1200000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact region_code_base bytes=60
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: artifact region_ctid bytes=40
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: bundle_atom_map target=orders y1 -> global_y1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: bundle_atom_map target=orders y2 -> global_y2
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: bundle_atom_map target=orders y3 -> global_y3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: bundle_atom_map target=orders y4 -> global_y4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: bundle_atom_map target=orders y5 -> global_y5
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: bundle_atom_map target=orders y6 -> global_y6
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: bundle_atom_map target=orders y7 -> global_y7
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: bundle_atom_map target=orders y8 -> global_y8
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: global_atom id=1 kind=2 lhs=const:lineitem.l_shipmode rhs=<null> op=2 jc=-1 key=const:lineitem.l_shipmode|in|MAIL,SHIP vals=[MAIL,SHIP]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: global_atom id=2 kind=2 lhs=const:orders.o_orderpriority rhs=<null> op=2 jc=-1 key=const:orders.o_orderpriority|in|1-URGENT,2-HIGH vals=[1-URGENT,2-HIGH]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: global_atom id=3 kind=2 lhs=const:orders.o_orderstatus rhs=<null> op=2 jc=-1 key=const:orders.o_orderstatus|in|F,O vals=[F,O]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: global_atom id=4 kind=2 lhs=const:region.r_name rhs=<null> op=2 jc=-1 key=const:region.r_name|in|ASIA,EUROPE vals=[ASIA,EUROPE]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: global_atom id=5 kind=1 lhs=join:customer.c_custkey class=0 rhs=join:orders.o_custkey class=0 op=0 jc=0 key=join:customer.c_custkey=orders.o_custkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: global_atom id=6 kind=1 lhs=join:customer.c_nationkey class=1 rhs=join:nation.n_nationkey class=1 op=0 jc=1 key=join:customer.c_nationkey=nation.n_nationkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: global_atom id=7 kind=1 lhs=join:lineitem.l_orderkey class=2 rhs=join:orders.o_orderkey class=2 op=0 jc=2 key=join:lineitem.l_orderkey=orders.o_orderkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: global_atom id=8 kind=1 lhs=join:nation.n_regionkey class=3 rhs=join:region.r_regionkey class=3 op=0 jc=3 key=join:nation.n_regionkey=region.r_regionkey
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: bundle_ast target=orders ast=y5 and y6 and y8 and y7 and (y4 and y3 or y1 and y2)
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=customer_code_base bytes=180000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=customer_ctid bytes=120000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=dict/lineitem/l_shipmode bytes=58
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=dict/orders/o_orderpriority bytes=62
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=dict/orders/o_orderstatus bytes=15
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=dict/region/r_name bytes=54
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=lineitem_code_base bytes=7206864
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=lineitem_ctid bytes=4804576
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/cols/customer bytes=40
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/cols/lineitem bytes=40
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/cols/nation bytes=38
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/cols/orders bytes=79
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/cols/region bytes=33
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/dict_sorted/lineitem/l_shipmode bytes=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/dict_sorted/orders/o_orderpriority bytes=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/dict_sorted/orders/o_orderstatus bytes=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/dict_sorted/region/r_name bytes=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/dict_type/lineitem/l_shipmode bytes=4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/dict_type/orders/o_orderpriority bytes=4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/dict_type/orders/o_orderstatus bytes=4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/dict_type/region/r_name bytes=4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=meta/join_classes bytes=204
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=nation_code_base bytes=300
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=nation_ctid bytes=200
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=orders_code_base bytes=3000000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=orders_ctid bytes=1200000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=region_code_base bytes=60
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: artifact name=region_ctid bytes=40
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: join_class=0 cols=[customer.c_custkey, orders.o_custkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: join_class=1 cols=[customer.c_nationkey, nation.n_nationkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: join_class=2 cols=[lineitem.l_orderkey, orders.o_orderkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: join_class=3 cols=[nation.n_regionkey, region.r_regionkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: meta/cols/customer=[customer.c_custkey, customer.c_nationkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: customer_code_base stride=3 rows=15000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: meta/cols/lineitem=[lineitem.l_orderkey, lineitem.l_shipmode]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: lineitem_code_base stride=3 rows=600572
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: meta/cols/nation=[nation.n_nationkey, nation.n_regionkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: nation_code_base stride=3 rows=25
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: meta/cols/orders=[orders.o_custkey, orders.o_orderkey, orders.o_orderpriority, orders.o_orderstatus]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: orders_code_base stride=5 rows=150000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: meta/cols/region=[region.r_regionkey, region.r_name]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: region_code_base stride=3 rows=5
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset const:lineitem.l_shipmode = 2 stride=3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset const:orders.o_orderpriority = 3 stride=5
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset const:orders.o_orderstatus = 4 stride=5
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset const:region.r_name = 2 stride=3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset join:customer.c_custkey class=0 = 1 stride=3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset join:orders.o_custkey class=0 = 1 stride=5
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset join:customer.c_nationkey class=1 = 2 stride=3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset join:nation.n_nationkey class=1 = 1 stride=3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset join:lineitem.l_orderkey class=2 = 1 stride=3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset join:orders.o_orderkey class=2 = 2 stride=5
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset join:nation.n_regionkey class=3 = 2 stride=3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: offset join:region.r_regionkey class=3 = 1 stride=3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: atom y1 type=COL_CONST col=lineitem.l_shipmode op=6 join_class=-1 dict=dict/lineitem/l_shipmode dict_present=1 eval=exact vals=[MAIL,SHIP] toks=[2,5]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: atom y2 type=COL_CONST col=orders.o_orderpriority op=6 join_class=-1 dict=dict/orders/o_orderpriority dict_present=1 eval=exact vals=[1-URGENT,2-HIGH] toks=[0,1]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: atom y3 type=COL_CONST col=orders.o_orderstatus op=6 join_class=-1 dict=dict/orders/o_orderstatus dict_present=1 eval=exact vals=[F,O] toks=[0,1]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: atom y4 type=COL_CONST col=region.r_name op=6 join_class=-1 dict=dict/region/r_name dict_present=1 eval=exact vals=[ASIA,EUROPE] toks=[2,3]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: atom y5 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: atom y6 type=JOIN_EQ lhs=customer.c_nationkey rhs=nation.n_nationkey join_class=1 meta_lhs=1 meta_rhs=1 class_cols=[customer.c_nationkey, nation.n_nationkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: atom y7 type=JOIN_EQ lhs=lineitem.l_orderkey rhs=orders.o_orderkey join_class=2 meta_lhs=2 meta_rhs=2 class_cols=[lineitem.l_orderkey, orders.o_orderkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: atom y8 type=JOIN_EQ lhs=nation.n_regionkey rhs=region.r_regionkey join_class=3 meta_lhs=3 meta_rhs=3 class_cols=[nation.n_regionkey, region.r_regionkey]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_contract: AST(orders)=((((customer.c_custkey = orders.o_custkey AND customer.c_nationkey = nation.n_nationkey) AND nation.n_regionkey = region.r_regionkey) AND lineitem.l_orderkey = orders.o_orderkey) AND ((region.r_name IN ('ASIA','EUROPE') AND orders.o_orderstatus IN ('F','O')) OR (lineitem.l_shipmode IN ('MAIL','SHIP') AND orders.o_orderpriority IN ('1-URGENT','2-HIGH'))))
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: load_ms=0.194
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: extract_local table=region z=9 atoms=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: extract_local table=lineitem z=10 atoms=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: global_ast=((((y5 and y6) and y8) and y7) and ((y9 and y3) or (y10 and y2)))
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: global_atoms table=region count=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: global_bins table=region bins=2 rows=5
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: bundle_eval target=region bundle_id=1 uses_atoms=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: local_bins table=region atoms=1 bins=2
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: local_ms table=region stamp=0.000 bin=0.001 eval=0.000 fill=0.000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: local_eval table=region sat_calls=0 cache_hits=0
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: z_eval table=region z=9 bins=2 sat_calls=0 allowed_sigs=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: z_token_truth z=9 domain=15000 true=5982
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: global_atoms table=lineitem count=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: global_bins table=lineitem bins=2 rows=600572
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: local_bins table=lineitem atoms=1 bins=2
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: local_ms table=lineitem stamp=10.213 bin=4.255 eval=0.000 fill=1.749
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: local_eval table=lineitem sat_calls=0 cache_hits=0
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: z_eval table=lineitem z=10 bins=2 sat_calls=0 allowed_sigs=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: z_token_truth z=10 domain=150000 true=101625
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: allow_orders count = 83472 / 150000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: total_ms=81.334
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_profile: bundle=1 target=orders K=0 query= local={region:atoms=1,bins=2,sat=0,hits=0,ms=0.000/0.001/0.000/0.000|lineitem:atoms=1,bins=2,sat=0,hits=0,ms=10.213/4.255/0.000/1.749,total_ms=16.218} prop={iter=0,ms=0.000,classes=[]} decode={orders:83472/150000,ms=0.000,total_ms=0.000} total_ms=81.334
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: bundle target=orders allow_count=83472/150000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: final_allow_orders count=83472/150000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: allow_orders popcount=83472/150000
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: ctid_index_ms=3.828 rel=orders
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: allow_bits pre_exec rel=orders count=83472/150000 ptr=0x581a141de340 canary=ok mctx=0x581a13c127e0 qctx=0x581a13c127e0 qs=0x581a13c13a30
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: tid_source rel=orders scan=SeqScan source=tts_tid
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter exec: rel=orders oid=74197 seen=150000 passed=83472 misses=0 mode=contract
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  custom_filter: row validation time = 13.117 ms
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_metrics: eval_ms=0.128 artifact_load_ms=17.883 artifact_parse_ms=0.194 stamp_ms=10.213 bin_ms=4.256 local_sat_ms=0.000 prop_ms=0.000 prop_iters=0 decode_ms=0.000 ctid_map_ms=3.828 filter_ms=13.117 rows_seen=150000 rows_passed=83472 policy_total_ms=81.334
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy_profile_query: K=0 query_id= total_ms=81.334 local_ms=16.218 prop_ms=0.000 decode_ms=0.000 sat_calls=0 cache_hits=0 closure_tables=5 filtered_targets=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: scan_count table=lineitem count=1
+psql:/tmp/stage5d_t4.sql:16: NOTICE:  policy: scan_count table=region count=1
+ count 
+-------
+ 83472
+(1 row)
+

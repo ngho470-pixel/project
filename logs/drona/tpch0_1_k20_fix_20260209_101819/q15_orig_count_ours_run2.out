@@ -1,0 +1,26 @@
+Timing is on.
+SET
+Time: 0.113 ms
+SET
+Time: 0.039 ms
+SET
+Time: 0.034 ms
+SET
+Time: 0.038 ms
+LOAD
+Time: 2.080 ms
+SET
+Time: 0.063 ms
+SET
+Time: 0.036 ms
+SET
+Time: 0.035 ms
+SET
+Time: 0.034 ms
+DROP VIEW
+Time: 1.188 ms
+CREATE VIEW
+Time: 1.820 ms
+psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_fix_20260209_101819/q15_orig_count_ours.sql:28: ERROR:  custom_filter[engine_error]: missing allow_bits for policy-required table rel=lineitem
+psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_fix_20260209_101819/q15_orig_count_ours.sql:28: NOTICE:  policy_profile: eval_ms=1.018 artifact_load_ms=99.521 artifact_parse_ms=9.835 stamp_ms=4.772 bin_ms=0.422 local_sat_ms=10.277 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=180.100 ctid_map_ms=2.475 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=2 n_policy_targets=3 n_filters=1 bytes_artifacts_loaded=43691660 bytes_allow=75072 bytes_ctid=4804576 bytes_blk_index=1584188 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+Time: 375.591 ms

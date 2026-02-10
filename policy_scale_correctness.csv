@@ -1,0 +1,16 @@
+K,query_id,status,error_type,ours_count,gt_count,gt_source,targets,closure,scanned,wrapped,policy_file
+5,1,PASS,,15000,15000,rls,,,,,/home/ng_lab/z3/tmp_policy_k5.txt
+5,2,PASS,,150000,150000,rls,,,,,/home/ng_lab/z3/tmp_policy_k5.txt
+5,3,PASS,,2271,2271,rls,,,,,/home/ng_lab/z3/tmp_policy_k5.txt
+5,4,PASS,,150000,150000,rls,,,,,/home/ng_lab/z3/tmp_policy_k5.txt
+5,5,PASS,,2271,2271,rls,,,,,/home/ng_lab/z3/tmp_policy_k5.txt
+5,6,PASS,,2271,2271,rls,,,,,/home/ng_lab/z3/tmp_policy_k5.txt
+5,7,SKIP,,,,rls,,,,,/home/ng_lab/z3/tmp_policy_k5.txt
+10,1,PASS,,0,0,rls,,,,,/home/ng_lab/z3/tmp_policy_k10.txt
+10,2,PASS,,150000,150000,rls,,,,,/home/ng_lab/z3/tmp_policy_k10.txt
+10,3,PASS,,2271,2271,rls,,,,,/home/ng_lab/z3/tmp_policy_k10.txt
+10,4,PASS,,0,0,rls,,,,,/home/ng_lab/z3/tmp_policy_k10.txt
+10,5,PASS,,2271,2271,rls,,,,,/home/ng_lab/z3/tmp_policy_k10.txt
+10,6,PASS,,0,0,rls,,,,,/home/ng_lab/z3/tmp_policy_k10.txt
+10,7,SKIP,,,,rls,,,,,/home/ng_lab/z3/tmp_policy_k10.txt
+15,1,ERROR,engine_error,0,0,rls,,,,,/home/ng_lab/z3/tmp_policy_k15.txt

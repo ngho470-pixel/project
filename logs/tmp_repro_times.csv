@@ -1,0 +1,9 @@
+row_type,db,K,policy_ids,baseline,query_id,setup_ms,disk_overhead_bytes,cold_ms,cold_peak_rss_kb,hot1_ms,hot1_peak_rss_kb,hot2_ms,hot2_peak_rss_kb,hot3_ms,hot3_peak_rss_kb,hot4_ms,hot4_peak_rss_kb,hot5_ms,hot5_peak_rss_kb,hot_avg_ms,hot_avg_peak_rss_kb,status,error_type,error_msg
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,__setup__,5597.248,32161048,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,__setup__,1675.818,80003072,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,18,,,908.075,268176,,,,,,,,,,,0.000,0,error,db_error,SSL SYSCALL error: EOF detected
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,18,,,121.284,83476,91.249,122920,91.369,123128,91.160,122952,91.355,122956,91.149,122960,91.257,122983,ok,,
+setup,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",ours,__setup__,6988.700,35163425,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",rls_with_index,__setup__,1802.813,91209728,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",ours,18,,,363.303,126616,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter: CTID->rid not found for policy-required table (rel=lineitem blk=0 off=1)
+query,tpch0_1,11,"1,2,3,4,5,10,11,12,13,14,15",rls_with_index,18,,,242.449,140216,212.628,141180,212.453,150836,212.052,150836,212.567,150840,212.885,150840,212.517,148906,ok,,
