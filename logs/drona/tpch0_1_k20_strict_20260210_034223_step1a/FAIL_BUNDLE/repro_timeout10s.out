@@ -1,0 +1,24 @@
+SET
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+SET
+SET
+psql:FAIL_BUNDLE/repro_timeout10s.sql:14: NOTICE:  policy_profile: eval_ms=1.318 artifact_load_ms=107.290 artifact_parse_ms=10.324 stamp_ms=7.035 bin_ms=1.816 local_sat_ms=14.634 prop_ms=13.594 prop_iters=1 decode_ms=6.066 policy_total_ms=218.787 ctid_map_ms=3.017 filter_ms=98.437 child_exec_ms=98.010 ctid_extract_ms=0.021 ctid_to_rid_ms=0.132 allow_check_ms=0.053 projection_ms=0.024 n_scanned_tables=5 n_policy_targets=4 n_filters=2 bytes_artifacts_loaded=46155664 bytes_allow=85072 bytes_ctid=5444576 bytes_blk_index=1803722 rows_seen=1173 rows_passed=248 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+SET
+RESET
+RESET
+SET
+SET
+RESET
+ours=0 rls=0
+ __assert_ok 
+-------------
+           1
+(1 row)
+
+OK
