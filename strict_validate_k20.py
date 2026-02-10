@@ -198,10 +198,11 @@ def repro_psql_for_count(count_sql: str, *, debug_mode: str = "off") -> str:
             "RESET ROLE;",
             "",
             "\\echo ours=:ours_count rls=:rls_count",
-            "\\if :ours_count != :rls_count",
-            "  \\echo MISMATCH",
-            "  \\quit 1",
-            "\\endif",
+            "DO $$ BEGIN",
+            "  IF :ours_count::bigint <> :rls_count::bigint THEN",
+            "    RAISE EXCEPTION 'count mismatch ours=% rls=%', :ours_count, :rls_count;",
+            "  END IF;",
+            "END $$;",
             "\\echo OK",
         ]
     )
