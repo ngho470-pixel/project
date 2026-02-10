@@ -405,7 +405,9 @@ def main() -> int:
         count_sql = count_sql_for(qid, qsql)
 
         log(f"q{qid}: explain marker check")
-        marker_sql = qsql if is_single_statement(qsql) else count_sql
+        # Marker check must validate the actual SQL we execute for correctness.
+        # For multi-statement queries (e.g. q15), count_sql_for() already returns a safe single statement.
+        marker_sql = count_sql
         try:
             ok_marker, plan = run_explain_marker(marker_sql)
         except Exception as exc:  # noqa: BLE001

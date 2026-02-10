@@ -1054,6 +1054,18 @@ def count_fallback_sql(query_id: str) -> Optional[str]:
             "WHERE s_suppkey = supplier_no "
             "  AND total_revenue = max_total_revenue;"
         )
+    # TPC-H q6 returns a single aggregate row; COUNT-wrapping it gets planner-simplified
+    # into a constant and bypasses scans (and thus enforcement). Use a meaningful
+    # row-count on the underlying base relation instead.
+    if str(query_id) == "6":
+        return (
+            "SELECT COUNT(*) "
+            "FROM lineitem "
+            "WHERE l_shipdate >= DATE '1994-01-01' "
+            "  AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' year "
+            "  AND l_discount BETWEEN 0.04 - 0.01 AND 0.04 + 0.01 "
+            "  AND l_quantity < 24;"
+        )
     return None
 
 
