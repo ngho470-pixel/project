@@ -1,0 +1,25 @@
+SET
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+SET
+SET
+                                                                                          QUERY PLAN                                                                                          
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: sum((l_extendedprice * l_discount))
+   ->  Custom Scan (custom_filter) on public.lineitem
+         Output: l_extendedprice, l_discount
+         custom_filter: 
+         ->  Bitmap Heap Scan on public.lineitem
+               Output: l_extendedprice, l_discount
+               Recheck Cond: ((lineitem.l_discount >= 0.03) AND (lineitem.l_discount <= 0.05))
+               Filter: ((lineitem.l_shipdate >= '1994-01-01'::date) AND (lineitem.l_shipdate < '1995-01-01 00:00:00'::timestamp without time zone) AND (lineitem.l_quantity < '24'::numeric))
+               ->  Bitmap Index Scan on cf_rls_k20_lineitem_l_discount_7
+                     Index Cond: ((lineitem.l_discount >= 0.03) AND (lineitem.l_discount <= 0.05))
+(11 rows)
+

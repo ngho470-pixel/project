@@ -1,0 +1,1 @@
+q6: EXPLAIN missing 'Custom Scan (custom_filter)' marker

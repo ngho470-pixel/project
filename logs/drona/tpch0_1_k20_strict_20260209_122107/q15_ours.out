@@ -1,0 +1,16 @@
+SET
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+SET
+SET
+psql:/home/nghosh/research/z3_lab/logs/tpch0_1_k20_strict_20260209_122107/q15_ours.sql:12: NOTICE:  policy_profile: eval_ms=0.915 artifact_load_ms=97.785 artifact_parse_ms=9.900 stamp_ms=4.748 bin_ms=0.429 local_sat_ms=10.238 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=184.326 ctid_map_ms=2.521 filter_ms=74.283 child_exec_ms=67.341 ctid_extract_ms=2.855 ctid_to_rid_ms=0.707 allow_check_ms=0.501 projection_ms=0.000 n_scanned_tables=2 n_policy_targets=3 n_filters=1 bytes_artifacts_loaded=43691660 bytes_allow=75072 bytes_ctid=4804576 bytes_blk_index=1584188 rows_seen=23006 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+ count 
+-------
+     0
+(1 row)
+

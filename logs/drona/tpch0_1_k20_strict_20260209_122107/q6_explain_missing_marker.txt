@@ -1,0 +1,4 @@
+Aggregate
+  Output: count(*)
+  ->  Result
+        Output: NULL::numeric
