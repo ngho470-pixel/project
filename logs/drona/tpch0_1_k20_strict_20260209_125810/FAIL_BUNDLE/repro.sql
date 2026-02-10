@@ -1,0 +1,32 @@
+\set ON_ERROR_STOP on
+SET max_parallel_workers_per_gather=0;
+SET enable_indexonlyscan=off;
+SET enable_indexscan=off;
+SET enable_bitmapscan=off;
+SET enable_tidscan=off;
+SET statement_timeout='30min';
+
+-- OURS
+LOAD '/tmp/z3_lab/custom_filter.so';
+SET custom_filter.enabled=on;
+SET custom_filter.contract_mode=off;
+SET custom_filter.debug_mode='off';
+SET custom_filter.policy_path='/tmp/z3_lab/policy.txt';
+SET client_min_messages = notice;
+SELECT COUNT(*) FROM (select sum(l_extendedprice * l_discount) as revenue from lineitem where l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.04 - 0.01 and 0.04 + 0.01 and l_quantity < 24) AS __q \gset ours_
+
+-- RLS (as rls_user via SET ROLE, no password needed)
+SET custom_filter.enabled=off;
+RESET enable_indexscan;
+RESET enable_bitmapscan;
+SET client_min_messages = warning;
+SET ROLE rls_user;
+SELECT COUNT(*) FROM (select sum(l_extendedprice * l_discount) as revenue from lineitem where l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.04 - 0.01 and 0.04 + 0.01 and l_quantity < 24) AS __q \gset rls_
+RESET ROLE;
+
+\echo ours=:ours_count rls=:rls_count
+\if :ours_count != :rls_count
+  \echo MISMATCH
+  \quit 1
+\endif
+\echo OK

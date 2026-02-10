@@ -1,0 +1,20 @@
+SET
+SET
+SET
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+SET
+SET
+          QUERY PLAN           
+-------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Result
+         Output: NULL::numeric
+(4 rows)
+
