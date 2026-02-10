@@ -198,11 +198,8 @@ def repro_psql_for_count(count_sql: str, *, debug_mode: str = "off") -> str:
             "RESET ROLE;",
             "",
             "\\echo ours=:ours_count rls=:rls_count",
-            "DO $$ BEGIN",
-            "  IF :ours_count::bigint <> :rls_count::bigint THEN",
-            "    RAISE EXCEPTION 'count mismatch ours=% rls=%', :ours_count, :rls_count;",
-            "  END IF;",
-            "END $$;",
+            # psql does not expand :vars inside dollar-quoted DO blocks; use a plain SQL assertion.
+            "SELECT CASE WHEN :ours_count::bigint = :rls_count::bigint THEN 1 ELSE (SELECT 1/0) END AS __assert_ok;",
             "\\echo OK",
         ]
     )
