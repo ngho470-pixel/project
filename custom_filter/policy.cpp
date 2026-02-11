@@ -954,28 +954,11 @@ struct Hubs {
     std::vector<size_t> max_tok;
 };
 
-struct SigPerRow {
-    struct TableSig {
-        std::vector<std::string> sig_by_row;
-    };
-    std::map<std::string, TableSig> tables;
-    int atom_count = 0;
-    size_t nbytes = 0;
-};
-
-struct Bins {
-    struct TableBins {
-        std::vector<int> row_to_bin;
-        std::vector<std::string> bin_sig;
-        std::vector<uint32_t> hist;
-    };
-    std::map<std::string, TableBins> tables;
-    int total_bins = 0;
-};
-
-struct AllowBins {
-    std::map<std::string, std::vector<uint8_t>> allow_bin_by_target;
-};
+// NOTE: We intentionally avoid a "sig_by_row: vector<string>" pipeline here.
+// With millions of rows, one heap allocation per row causes massive RSS and
+// allocator overhead. The active implementation does streaming signature
+// binning and only stores one signature per *bin* (flat byte slab), plus a
+// row_to_bin map.
 
 static bool load_phase(const PolicyArtifactC *arts, int art_count,
                        const PolicyEngineInputC *in, Loaded *out)
@@ -1564,299 +1547,6 @@ static bool hub_phase(const Loaded &loaded, Hubs *hubs)
     return true;
 }
 
-static inline void set_sig_bit(std::string &s, int atom_id)
-{
-    if (atom_id <= 0) return;
-    size_t bit = (size_t)(atom_id - 1);
-    s[bit >> 3] |= (char)(1u << (bit & 7));
-}
-
-static bool stamp_phase(const Loaded &loaded, const Hubs &hubs, SigPerRow *sig)
-{
-    if (!sig) return false;
-    sig->atom_count = (int)loaded.atom_by_id.size() - 1;
-    sig->nbytes = (size_t)(sig->atom_count + 7) / 8;
-    sig->tables.clear();
-
-    for (const auto &kv : loaded.tables) {
-        const TableInfo &ti = kv.second;
-        if (loaded.target_set.count(ti.name) == 0)
-            continue;
-        if (ti.n_rows == 0) continue;
-        int stride = ti.stride;
-        if (stride <= 1) continue;
-        SigPerRow::TableSig ts;
-        ts.sig_by_row.resize(ti.n_rows);
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.code + (size_t)r * (size_t)stride;
-            std::string s(sig->nbytes, '\0');
-            for (size_t c = 0; c < ti.const_atom_ids.size(); c++) {
-                int atom_id = ti.const_atom_ids[c];
-                Atom *atom = (atom_id > 0 && atom_id < (int)loaded.atom_by_id.size())
-                                 ? loaded.atom_by_id[atom_id]
-                                 : nullptr;
-                if (!atom) continue;
-                int idx = ti.const_token_idx[c];
-                int32 tok = row[idx];
-                auto it = hubs.const_allowed.find(atom_id);
-                if (tok >= 0 && it != hubs.const_allowed.end() &&
-                    (size_t)tok < it->second.size() && it->second[(size_t)tok]) {
-                    set_sig_bit(s, atom_id);
-                }
-            }
-            for (const auto &ja : ti.join_atoms) {
-                int atom_id = ja.atom_id;
-                if (atom_id <= 0) continue;
-                int cid = ja.class_id;
-                int idx = ja.token_idx;
-                int32 tok = row[idx];
-                if (tok < 0) continue;
-                if (cid < 0 || cid >= (int)hubs.present_by_class.size())
-                    continue;
-                auto itp = hubs.present_by_class[cid].find(ja.other_table);
-                if (itp != hubs.present_by_class[cid].end() && itp->second.test((size_t)tok)) {
-                    set_sig_bit(s, atom_id);
-                }
-            }
-            ts.sig_by_row[r] = std::move(s);
-        }
-        sig->tables[ti.name] = std::move(ts);
-    }
-    return true;
-}
-
-static bool bin_phase(const SigPerRow &sig, Bins *bins)
-{
-    if (!bins) return false;
-    bins->tables.clear();
-    bins->total_bins = 0;
-    for (const auto &kv : sig.tables) {
-        const std::string &tname = kv.first;
-        const auto &ts = kv.second;
-        Bins::TableBins tb;
-        std::unordered_map<std::string, int> sig_to_bin;
-        tb.row_to_bin.resize(ts.sig_by_row.size(), 0);
-        for (size_t r = 0; r < ts.sig_by_row.size(); r++) {
-            const std::string &s = ts.sig_by_row[r];
-            auto it = sig_to_bin.find(s);
-            int bid;
-            if (it == sig_to_bin.end()) {
-                bid = (int)tb.bin_sig.size();
-                sig_to_bin[s] = bid;
-                tb.bin_sig.push_back(s);
-                tb.hist.push_back(0);
-            } else {
-                bid = it->second;
-            }
-            tb.row_to_bin[r] = bid;
-            tb.hist[bid]++;
-        }
-        bins->total_bins += (int)tb.bin_sig.size();
-        bins->tables[tname] = std::move(tb);
-    }
-    return true;
-}
-
-static bool sat_phase(const Loaded &loaded, const SigPerRow &sig, const Bins &bins,
-                      AllowBins *allow, std::map<std::string, int> *sat_calls_out)
-{
-    if (!allow) return false;
-    int atom_count = sig.atom_count;
-    for (const auto &kv : loaded.target_set) {
-        const std::string &target = kv;
-        const AstNode *ast = nullptr;
-        auto it_ast = loaded.target_ast.find(target);
-        if (it_ast != loaded.target_ast.end())
-            ast = it_ast->second;
-        auto it_bins = bins.tables.find(target);
-        if (it_bins == bins.tables.end())
-            continue;
-        const auto &tb = it_bins->second;
-        if (!ast) {
-            allow->allow_bin_by_target[target] = std::vector<uint8_t>(tb.bin_sig.size(), 1);
-            continue;
-        }
-
-        api::Solver slv;
-        slv.setLogic("SAT");
-        slv.setOption("produce-models", "false");
-        slv.setOption("incremental", "true");
-        api::Sort B = slv.getBooleanSort();
-        std::vector<api::Term> yvars(atom_count + 1);
-        for (int i = 1; i <= atom_count; i++) {
-            yvars[i] = slv.mkConst(B, "y" + std::to_string(i));
-        }
-
-        struct CnfCtx {
-            api::Solver *slv;
-            api::Sort B;
-            std::vector<api::Term> *yvars;
-            int next_id;
-            std::vector<api::Term> clauses;
-        };
-        CnfCtx ctx{&slv, B, &yvars, 0, {}};
-
-        std::function<api::Term(const AstNode*)> build_cnf = [&](const AstNode *node) -> api::Term {
-            if (!node) return ctx.slv->mkBoolean(true);
-            if (node->type == AstNode::VAR) {
-                int id = node->var_id;
-                if (id <= 0 || id >= (int)ctx.yvars->size())
-                    return ctx.slv->mkBoolean(true);
-                return (*ctx.yvars)[id];
-            }
-            api::Term a = build_cnf(node->left);
-            api::Term b = build_cnf(node->right);
-            api::Term z = ctx.slv->mkConst(ctx.B, "t" + std::to_string(++ctx.next_id));
-            if (node->type == AstNode::AND) {
-                ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                      {ctx.slv->mkTerm(api::Kind::NOT, {z}), a}));
-                ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                      {ctx.slv->mkTerm(api::Kind::NOT, {z}), b}));
-                ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                      {ctx.slv->mkTerm(api::Kind::NOT, {a}),
-                                                       ctx.slv->mkTerm(api::Kind::NOT, {b}),
-                                                       z}));
-            } else {
-                ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                      {ctx.slv->mkTerm(api::Kind::NOT, {a}), z}));
-                ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                      {ctx.slv->mkTerm(api::Kind::NOT, {b}), z}));
-                ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                      {ctx.slv->mkTerm(api::Kind::NOT, {z}), a, b}));
-            }
-            return z;
-        };
-
-        api::Term top = build_cnf(ast);
-        for (auto &cl : ctx.clauses)
-            slv.assertFormula(cl);
-        slv.assertFormula(top);
-
-        int sat_calls = 0;
-        int allowed_bins = 0;
-        auto sat_start = Clock::now();
-        api::Result base_res = slv.checkSat();
-        CF_TRACE_LOG( "policy: sat_base=%s", base_res.isSat() ? "SAT" : "UNSAT");
-        std::vector<uint8_t> allow_bin(tb.bin_sig.size(), 0);
-        auto sig_eval = [&](const std::string &s) -> Tri {
-            std::vector<int> vals(atom_count + 1, -1);
-            for (int i = 1; i <= atom_count; i++) {
-                bool bit = false;
-                if (!s.empty()) {
-                    bit = (s[(i - 1) >> 3] & (1u << ((i - 1) & 7))) != 0;
-                }
-                vals[i] = bit ? 1 : 0;
-            }
-            return eval_ast(ast, vals);
-        };
-        auto sig_bits = [&](const std::string &s) -> std::string {
-            std::string out;
-            for (int i = 1; i <= atom_count; i++) {
-                bool bit = false;
-                if (!s.empty()) {
-                    bit = (s[(i - 1) >> 3] & (1u << ((i - 1) & 7))) != 0;
-                }
-                if (bit) {
-                    if (!out.empty()) out += ",";
-                    out += "y" + std::to_string(i);
-                }
-            }
-            if (out.empty()) out = "<none>";
-            return out;
-        };
-        for (size_t b = 0; b < tb.bin_sig.size(); b++) {
-            const std::string &s = tb.bin_sig[b];
-            std::vector<api::Term> assumptions;
-            assumptions.reserve(atom_count);
-            for (int i = 1; i <= atom_count; i++) {
-                bool bit = false;
-                if (!s.empty()) {
-                    bit = (s[(i - 1) >> 3] & (1u << ((i - 1) & 7))) != 0;
-                }
-                api::Term lit = bit ? yvars[i]
-                                    : slv.mkTerm(api::Kind::NOT, {yvars[i]});
-                assumptions.push_back(lit);
-            }
-            api::Result r = slv.checkSatAssuming(assumptions);
-            sat_calls++;
-            if (r.isSat()) {
-                allow_bin[b] = 1;
-                allowed_bins++;
-            }
-            if (b < 6) {
-                Tri ev = sig_eval(s);
-                CF_TRACE_LOG( "policy: bin[%zu] sig=%s eval=%d sat=%s",
-                     b, sig_bits(s).c_str(), (int)ev, r.isSat() ? "SAT" : "UNSAT");
-            }
-        }
-        auto sat_end = Clock::now();
-        CF_TRACE_LOG( "policy: sat_ms=%.3f sat_calls=%d allowed_bins=%d",
-             Ms(sat_end - sat_start).count(), sat_calls, allowed_bins);
-        if (sat_calls_out)
-            (*sat_calls_out)[target] = sat_calls;
-        allow->allow_bin_by_target[target] = std::move(allow_bin);
-    }
-    return true;
-}
-
-static bool return_phase(const Loaded &loaded, const Bins &bins,
-                         const AllowBins &allow, PolicyAllowListC *out)
-{
-    if (!out) return false;
-    int target_count = 0;
-    for (const auto &kv : loaded.tables) {
-        if (loaded.target_set.count(kv.first) > 0)
-            target_count++;
-    }
-    out->count = 0;
-    out->items = target_count > 0
-                     ? (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC) * target_count)
-                     : nullptr;
-
-    for (auto &kv : loaded.tables) {
-        const TableInfo &ti = kv.second;
-        if (ti.n_rows == 0) continue;
-        if (loaded.target_set.count(ti.name) == 0)
-            continue;
-        auto it_allow = allow.allow_bin_by_target.find(ti.name);
-        const std::vector<uint8_t> *allow_bin = nullptr;
-        if (it_allow != allow.allow_bin_by_target.end())
-            allow_bin = &it_allow->second;
-        auto it_bins = bins.tables.find(ti.name);
-        if (it_bins == bins.tables.end())
-            continue;
-        const auto &tb = it_bins->second;
-
-        size_t bytes = (ti.n_rows + 7) / 8;
-        uint8 *bits = (uint8 *) palloc0(bytes);
-
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            bool allow_row = true;
-            if (allow_bin) {
-                int b = (r < tb.row_to_bin.size()) ? tb.row_to_bin[r] : -1;
-                if (b < 0 || b >= (int)allow_bin->size() || !(*allow_bin)[b])
-                    allow_row = false;
-            }
-            if (allow_row)
-                bits[r >> 3] |= (uint8)(1u << (r & 7));
-        }
-
-        uint32 passed = 0;
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            if (bits[r >> 3] & (uint8)(1u << (r & 7))) passed++;
-        }
-        CF_TRACE_LOG( "policy: allow_%s count = %u / %u",
-             ti.name.c_str(), passed, ti.n_rows);
-
-        out->items[out->count].table = pstrdup(ti.name.c_str());
-        out->items[out->count].allow_bits = bits;
-        out->items[out->count].n_rows = ti.n_rows;
-        out->count++;
-    }
-
-    return true;
-}
-
 static bool build_allow_all(const Loaded &loaded, PolicyAllowListC *out)
 {
     if (!out) return false;
@@ -2187,9 +1877,9 @@ struct TableCache {
         std::vector<int> token_idx;
         std::unordered_map<std::string, std::vector<uint8_t>> allowed_by_key;
         std::unordered_map<std::string, int> atom_index;
-        std::vector<std::string> sig_by_row;
         std::vector<int> row_to_bin;
-        std::vector<std::string> bin_sig;
+        // bin signatures stored densely as n_bins * nbytes bytes (no per-row / per-bin heap objects)
+        std::vector<uint8_t> bin_sig_flat;
         std::vector<uint32_t> hist;
         double ms_stamp = 0.0;
         double ms_bin = 0.0;
@@ -2477,6 +2167,120 @@ static inline void set_sig_bit_idx(std::string &s, size_t bit, bool val) {
     else s[byte] = (char)(s[byte] & (char)~mask);
 }
 
+static inline bool get_sig_bit_bytes(const uint8_t *sig, size_t nbytes, size_t bit) {
+    size_t byte = bit >> 3;
+    if (!sig || byte >= nbytes) return false;
+    return (sig[byte] & (uint8_t)(1u << (bit & 7))) != 0;
+}
+
+static inline void set_sig_bit_bytes(uint8_t *sig, size_t nbytes, size_t bit, bool val) {
+    size_t byte = bit >> 3;
+    if (!sig || byte >= nbytes) return;
+    uint8_t mask = (uint8_t)(1u << (bit & 7));
+    if (val) sig[byte] |= mask;
+    else sig[byte] &= (uint8_t)~mask;
+}
+
+static inline uint64_t hash_bytes_fnv1a64(const uint8_t *data, size_t len) {
+    const uint64_t FNV_OFFSET = 1469598103934665603ULL;
+    const uint64_t FNV_PRIME = 1099511628211ULL;
+    uint64_t h = FNV_OFFSET;
+    for (size_t i = 0; i < len; i++) {
+        h ^= (uint64_t)data[i];
+        h *= FNV_PRIME;
+    }
+    // Avoid the sentinel 0 just in case a caller uses 0 as "empty".
+    return h ? h : 1ULL;
+}
+
+static inline size_t next_pow2(size_t x) {
+    if (x <= 2) return 2;
+    x--;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    if (sizeof(size_t) == 8) x |= x >> 32;
+    x++;
+    return x;
+}
+
+struct BinTable {
+    std::vector<int32_t> bin_id;
+    std::vector<uint64_t> hash;
+    size_t mask = 0;
+
+    void init(size_t cap_pow2) {
+        size_t cap = next_pow2(std::max<size_t>(cap_pow2, 2));
+        bin_id.assign(cap, -1);
+        hash.assign(cap, 0);
+        mask = cap - 1;
+    }
+
+    void maybe_grow(size_t n_bins, const std::vector<uint8_t> &bin_sig_flat, size_t nbytes) {
+        if (bin_id.empty()) {
+            init(1024);
+        }
+        size_t cap = bin_id.size();
+        // Grow when load factor would exceed ~0.7 after inserting one more bin.
+        if ((n_bins + 1) * 10 < cap * 7) {
+            return;
+        }
+        size_t new_cap = cap * 2;
+        std::vector<int32_t> new_id(new_cap, -1);
+        std::vector<uint64_t> new_hash(new_cap, 0);
+        size_t new_mask = new_cap - 1;
+
+        for (size_t bid = 0; bid < n_bins; bid++) {
+            const uint8_t *sig = bin_sig_flat.data() + bid * nbytes;
+            uint64_t h = hash_bytes_fnv1a64(sig, nbytes);
+            size_t idx = (size_t)h & new_mask;
+            while (new_id[idx] != -1) {
+                idx = (idx + 1) & new_mask;
+            }
+            new_id[idx] = (int32_t)bid;
+            new_hash[idx] = h;
+        }
+
+        bin_id.swap(new_id);
+        hash.swap(new_hash);
+        mask = new_mask;
+    }
+
+    int32_t find_or_insert(uint64_t h,
+                           const uint8_t *sig,
+                           size_t nbytes,
+                           std::vector<uint8_t> &bin_sig_flat,
+                           std::vector<uint32_t> &hist) {
+        maybe_grow(hist.size(), bin_sig_flat, nbytes);
+
+        size_t idx = (size_t)h & mask;
+        for (;;) {
+            int32_t bid = bin_id[idx];
+            if (bid == -1) {
+                int32_t new_id = (int32_t)hist.size();
+                bin_id[idx] = new_id;
+                hash[idx] = h;
+                size_t off = bin_sig_flat.size();
+                bin_sig_flat.resize(off + nbytes);
+                if (nbytes > 0) {
+                    memcpy(bin_sig_flat.data() + off, sig, nbytes);
+                }
+                hist.push_back(0);
+                return new_id;
+            }
+            if (hash[idx] == h) {
+                const uint8_t *existing = bin_sig_flat.data() + (size_t)bid * nbytes;
+                if (memcmp(existing, sig, nbytes) == 0) {
+                    return bid;
+                }
+            }
+            idx = (idx + 1) & mask;
+        }
+    }
+};
+
 static void clear_sig_bit(std::string &s, int atom_id) {
     if (atom_id <= 0) return;
     size_t bit = (size_t)(atom_id - 1);
@@ -2573,6 +2377,116 @@ static AstNode *build_and_ast(const std::vector<int> &vars) {
         }
     }
     return root;
+}
+
+static bool eval_bins_sat_flat(const AstNode *ast,
+                               int atom_count,
+                               const std::vector<uint8_t> &bin_sig_flat,
+                               size_t nbytes,
+                               size_t n_bins,
+                               std::vector<uint8_t> *allow_bin,
+                               double *sat_ms,
+                               int *sat_calls) {
+    if (!allow_bin) return false;
+    allow_bin->assign(n_bins, 0);
+    if (sat_calls) *sat_calls = 0;
+    if (!ast) {
+        std::fill(allow_bin->begin(), allow_bin->end(), 1);
+        if (sat_ms) *sat_ms = 0.0;
+        return true;
+    }
+
+    std::vector<int> and_vars;
+    bool pure_and = ast_collect_and_vars(ast, and_vars);
+
+    if (pure_and) {
+        for (size_t b = 0; b < n_bins; b++) {
+            const uint8_t *sig = bin_sig_flat.data() + b * nbytes;
+            bool ok = true;
+            for (int aid : and_vars) {
+                if (aid <= 0) continue;
+                if (!get_sig_bit_bytes(sig, nbytes, (size_t)(aid - 1))) { ok = false; break; }
+            }
+            (*allow_bin)[b] = ok ? 1 : 0;
+        }
+        if (sat_ms) *sat_ms = 0.0;
+        return true;
+    }
+
+    api::Solver slv;
+    slv.setLogic("SAT");
+    slv.setOption("produce-models", "false");
+    slv.setOption("incremental", "true");
+    api::Sort B = slv.getBooleanSort();
+    std::vector<api::Term> yvars(atom_count + 1);
+    for (int i = 1; i <= atom_count; i++) {
+        yvars[i] = slv.mkConst(B, "y" + std::to_string(i));
+    }
+
+    struct CnfCtx {
+        api::Solver *slv;
+        api::Sort B;
+        std::vector<api::Term> *yvars;
+        int next_id;
+        std::vector<api::Term> clauses;
+    };
+    CnfCtx ctx{&slv, B, &yvars, 0, {}};
+
+    std::function<api::Term(const AstNode*)> build_cnf = [&](const AstNode *node) -> api::Term {
+        if (!node) return ctx.slv->mkBoolean(true);
+        if (node->type == AstNode::VAR) {
+            int id = node->var_id;
+            if (id <= 0 || id >= (int)ctx.yvars->size())
+                return ctx.slv->mkBoolean(true);
+            return (*ctx.yvars)[id];
+        }
+        api::Term a = build_cnf(node->left);
+        api::Term b = build_cnf(node->right);
+        api::Term z = ctx.slv->mkConst(ctx.B, "t" + std::to_string(++ctx.next_id));
+        if (node->type == AstNode::AND) {
+            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
+                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), a}));
+            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
+                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), b}));
+            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
+                                                  {ctx.slv->mkTerm(api::Kind::NOT, {a}),
+                                                   ctx.slv->mkTerm(api::Kind::NOT, {b}),
+                                                   z}));
+        } else {
+            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
+                                                  {ctx.slv->mkTerm(api::Kind::NOT, {a}), z}));
+            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
+                                                  {ctx.slv->mkTerm(api::Kind::NOT, {b}), z}));
+            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
+                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), a, b}));
+        }
+        return z;
+    };
+
+    api::Term top = build_cnf(ast);
+    for (auto &cl : ctx.clauses)
+        slv.assertFormula(cl);
+    slv.assertFormula(top);
+
+    auto t0 = Clock::now();
+    for (size_t b = 0; b < n_bins; b++) {
+        const uint8_t *sig = bin_sig_flat.data() + b * nbytes;
+        std::vector<api::Term> assumptions;
+        assumptions.reserve(atom_count);
+        for (int i = 1; i <= atom_count; i++) {
+            bool bit = get_sig_bit_bytes(sig, nbytes, (size_t)(i - 1));
+            api::Term lit = bit ? yvars[i]
+                                : slv.mkTerm(api::Kind::NOT, {yvars[i]});
+            assumptions.push_back(lit);
+        }
+        api::Result r = slv.checkSatAssuming(assumptions);
+        if (sat_calls) (*sat_calls)++;
+        if (r.isSat())
+            (*allow_bin)[b] = 1;
+    }
+    auto t1 = Clock::now();
+    if (sat_ms) *sat_ms = Ms(t1 - t0).count();
+    return true;
 }
 
 static bool eval_bins_sat(const AstNode *ast, int atom_count,
@@ -2912,62 +2826,89 @@ static void rebuild_global_bins(const TableInfo &ti,
                                 TableCache &tc,
                                 double *ms_stamp,
                                 double *ms_bin) {
-    auto t0 = Clock::now();
     TableCache::GlobalSigCache &gs = tc.global;
     size_t G = gs.atom_keys.size();
     std::string base_sig = base_sig_for_bits(G);
     gs.nbytes = base_sig.size();
     gs.n_rows = ti.n_rows;
-    gs.sig_by_row.resize(ti.n_rows);
-    for (uint32 r = 0; r < ti.n_rows; r++) {
-        std::string sig = base_sig;
-        const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
-        for (size_t i = 0; i < G; i++) {
-            int idx = (i < gs.token_idx.size()) ? gs.token_idx[i] : -1;
-            bool allow = false;
-            if (idx >= 0) {
-                int32 tok = row[idx];
-                if (tok >= 0) {
-                    const std::string &akey = gs.atom_keys[i];
-                    auto it_allow = gs.allowed_by_key.find(akey);
-                    if (it_allow != gs.allowed_by_key.end()) {
-                        const auto &al = it_allow->second;
-                        if ((size_t)tok < al.size() && al[(size_t)tok])
-                            allow = true;
+    gs.row_to_bin.assign(ti.n_rows, 0);
+    gs.bin_sig_flat.clear();
+    gs.hist.clear();
+    if (ti.n_rows == 0 || gs.nbytes == 0) {
+        gs.ready = true;
+        g_local_cache.scan_counts[ti.name] += 1;
+        if (ms_stamp) *ms_stamp = 0.0;
+        if (ms_bin) *ms_bin = 0.0;
+        return;
+    }
+
+    std::vector<uint8_t> base_bytes(gs.nbytes, 0);
+    memcpy(base_bytes.data(), base_sig.data(), gs.nbytes);
+
+    // Streaming stamp+bin: compute signatures into a reused chunk buffer, then bin immediately.
+    const uint32 CHUNK = 4096;
+    std::vector<uint8_t> sig_chunk;
+    sig_chunk.reserve((size_t)CHUNK * gs.nbytes);
+
+    // Open-addressing table keyed by (hash, signature-bytes) to avoid per-row allocations.
+    BinTable tab;
+    tab.init(std::max<size_t>(1024, (size_t)ti.n_rows / 2));
+
+    double stamp_ms_acc = 0.0;
+    double bin_ms_acc = 0.0;
+
+    for (uint32 start = 0; start < ti.n_rows; start += CHUNK) {
+        uint32 end = start + CHUNK;
+        if (end > ti.n_rows) end = ti.n_rows;
+        uint32 n = end - start;
+        sig_chunk.resize((size_t)n * gs.nbytes);
+
+        auto ts0 = Clock::now();
+        for (uint32 i = 0; i < n; i++) {
+            uint32 r = start + i;
+            uint8_t *sig = sig_chunk.data() + (size_t)i * gs.nbytes;
+            memcpy(sig, base_bytes.data(), gs.nbytes);
+
+            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            for (size_t a = 0; a < G; a++) {
+                int idx = (a < gs.token_idx.size()) ? gs.token_idx[a] : -1;
+                bool allow = false;
+                if (idx >= 0) {
+                    int32 tok = row[idx];
+                    if (tok >= 0) {
+                        const std::string &akey = gs.atom_keys[a];
+                        auto it_allow = gs.allowed_by_key.find(akey);
+                        if (it_allow != gs.allowed_by_key.end()) {
+                            const auto &al = it_allow->second;
+                            if ((size_t)tok < al.size() && al[(size_t)tok])
+                                allow = true;
+                        }
                     }
                 }
+                if (!allow) {
+                    set_sig_bit_bytes(sig, gs.nbytes, a, false);
+                }
             }
-            if (!allow)
-                set_sig_bit_idx(sig, i, false);
         }
-        gs.sig_by_row[r] = std::move(sig);
-    }
-    auto t1 = Clock::now();
+        auto ts1 = Clock::now();
+        stamp_ms_acc += Ms(ts1 - ts0).count();
 
-    std::unordered_map<std::string, int> sig_to_bin;
-    gs.row_to_bin.assign(ti.n_rows, 0);
-    gs.bin_sig.clear();
-    gs.hist.clear();
-    for (size_t r = 0; r < gs.sig_by_row.size(); r++) {
-        const std::string &s = gs.sig_by_row[r];
-        auto it = sig_to_bin.find(s);
-        int bid;
-        if (it == sig_to_bin.end()) {
-            bid = (int)gs.bin_sig.size();
-            sig_to_bin[s] = bid;
-            gs.bin_sig.push_back(s);
-            gs.hist.push_back(0);
-        } else {
-            bid = it->second;
+        auto tb0 = Clock::now();
+        for (uint32 i = 0; i < n; i++) {
+            const uint8_t *sig = sig_chunk.data() + (size_t)i * gs.nbytes;
+            uint64_t h = hash_bytes_fnv1a64(sig, gs.nbytes);
+            int32_t bid = tab.find_or_insert(h, sig, gs.nbytes, gs.bin_sig_flat, gs.hist);
+            gs.row_to_bin[start + i] = (int)bid;
+            gs.hist[(size_t)bid] += 1;
         }
-        gs.row_to_bin[r] = bid;
-        gs.hist[bid]++;
+        auto tb1 = Clock::now();
+        bin_ms_acc += Ms(tb1 - tb0).count();
     }
-    auto t2 = Clock::now();
+
     gs.ready = true;
     g_local_cache.scan_counts[ti.name] += 1;
-    if (ms_stamp) *ms_stamp = Ms(t1 - t0).count();
-    if (ms_bin) *ms_bin = Ms(t2 - t1).count();
+    if (ms_stamp) *ms_stamp = stamp_ms_acc;
+    if (ms_bin) *ms_bin = bin_ms_acc;
 }
 
 static bool compute_local_ok_bins(const Loaded &loaded,
@@ -3058,7 +2999,7 @@ static bool compute_local_ok_bins(const Loaded &loaded,
         CF_TRACE_LOG( "policy: global_atoms table=%s count=%zu",
              table.c_str(), tc.global.atom_keys.size());
         CF_TRACE_LOG( "policy: global_bins table=%s bins=%zu rows=%u",
-             table.c_str(), tc.global.bin_sig.size(), ti.n_rows);
+             table.c_str(), tc.global.hist.size(), ti.n_rows);
     } else {
         // enforce no new atoms mid-query
         for (const Atom *ap : const_atoms) {
@@ -3089,13 +3030,15 @@ static bool compute_local_ok_bins(const Loaded &loaded,
     }
 
     std::vector<std::string> bin_sig_bundle;
-    bin_sig_bundle.reserve(tc.global.bin_sig.size());
-    for (const auto &gsig : tc.global.bin_sig) {
+    const size_t n_bins = tc.global.hist.size();
+    bin_sig_bundle.reserve(n_bins);
+    for (size_t b = 0; b < n_bins; b++) {
+        const uint8_t *gsig = tc.global.bin_sig_flat.data() + b * tc.global.nbytes;
         std::string s = base_sig;
         for (int aid : const_ids) {
             int gidx = (aid >= 0 && aid < (int)atom_to_global.size()) ? atom_to_global[aid] : -1;
             if (gidx < 0) continue;
-            bool bit = get_sig_bit_idx(gsig, (size_t)gidx);
+            bool bit = get_sig_bit_bytes(gsig, tc.global.nbytes, (size_t)gidx);
             set_sig_bit_idx(s, (size_t)(aid - 1), bit);
         }
         bin_sig_bundle.push_back(std::move(s));
@@ -3125,7 +3068,7 @@ static bool compute_local_ok_bins(const Loaded &loaded,
     auto t5 = Clock::now();
 
     CF_TRACE_LOG( "policy: local_bins table=%s atoms=%zu bins=%zu",
-         table.c_str(), const_ids.size(), tc.global.bin_sig.size());
+         table.c_str(), const_ids.size(), n_bins);
     CF_TRACE_LOG( "policy: local_ms table=%s stamp=%.3f bin=%.3f eval=%.3f fill=%.3f",
          table.c_str(),
          stamp_ms,
@@ -3138,7 +3081,7 @@ static bool compute_local_ok_bins(const Loaded &loaded,
     if (stat) {
         stat->table = table;
         stat->atoms = (int)const_ids.size();
-        stat->bins = tc.global.bin_sig.size();
+        stat->bins = n_bins;
         stat->sat_calls = sat_calls;
         stat->cache_hits = cache_hits;
         stat->ms_stamp = stamp_ms;
@@ -4904,7 +4847,7 @@ static bool multi_join_enforce_general(const Loaded &loaded,
             auto it_cache = g_local_cache.tables.find(dv.table);
             if (it_cache != g_local_cache.tables.end()) {
                 const TableCache &tc = it_cache->second;
-                std::vector<uint8_t> bin_allowed(tc.global.bin_sig.size(), 0);
+                std::vector<uint8_t> bin_allowed(tc.global.hist.size(), 0);
                 for (uint32 r = 0; r < ti.n_rows; r++) {
                     if (restrict_bits) {
                         auto it_rb = restrict_bits->find(dv.table);
@@ -5070,64 +5013,75 @@ static bool multi_join_enforce_general(const Loaded &loaded,
         target_const_allowed.push_back(&it_allow->second);
     }
 
-    // build row signatures for target table
+    // Build+bin row signatures for target table (streaming; no per-row signature storage).
     std::string base_sig = base_sig_for_bits((size_t)max_id);
-    std::vector<std::string> sig_by_row(ti_t.n_rows);
-    for (uint32 r = 0; r < ti_t.n_rows; r++) {
-        std::string sig = base_sig;
-        const int32_t *row = ti_t.code + (size_t)r * (size_t)ti_t.stride;
-        // target const atoms
-        for (size_t i = 0; i < target_const_ids.size(); i++) {
-            int aid = target_const_ids[i];
-            int idx = target_const_token_idx[i];
-            int32 tok = row[idx];
-            bool v = (tok >= 0 &&
-                      (size_t)tok < target_const_allowed[i]->size() &&
-                      (*target_const_allowed[i])[(size_t)tok]);
-            set_sig_bit_idx(sig, (size_t)(aid - 1), v);
-        }
-        // token-level vars
-        for (int vid : global_vars) {
-            if (std::find(target_const_ids.begin(), target_const_ids.end(), vid) != target_const_ids.end())
-                continue;
-            auto itv = var_bits.find(vid);
-            auto itc = var_class.find(vid);
-            if (itv == var_bits.end() || itc == var_class.end())
-                continue;
-            int cid = itc->second;
-            auto it_idx = table_class_idx[target].find(cid);
-            if (it_idx == table_class_idx[target].end())
-                continue;
-            int32 tok = row[it_idx->second];
-            bool v = (tok >= 0 && itv->second.test((size_t)tok));
-            set_sig_bit_idx(sig, (size_t)(vid - 1), v);
-        }
-        sig_by_row[r] = std::move(sig);
-    }
+    const size_t nbytes = base_sig.size();
+    std::vector<uint8_t> base_bytes(nbytes, 0);
+    if (nbytes > 0) memcpy(base_bytes.data(), base_sig.data(), nbytes);
 
-    // bin rows by signature
-    std::unordered_map<std::string, int> sig_to_bin;
     std::vector<int> row_to_bin(ti_t.n_rows, 0);
-    std::vector<std::string> bin_sig;
+    std::vector<uint8_t> bin_sig_flat;
     std::vector<uint32_t> hist;
-    for (uint32 r = 0; r < ti_t.n_rows; r++) {
-        const std::string &s = sig_by_row[r];
-        auto it = sig_to_bin.find(s);
-        int bid;
-        if (it == sig_to_bin.end()) {
-            bid = (int)bin_sig.size();
-            sig_to_bin[s] = bid;
-            bin_sig.push_back(s);
-            hist.push_back(0);
-        } else {
-            bid = it->second;
+
+    BinTable tab;
+    tab.init(std::max<size_t>(1024, (size_t)ti_t.n_rows / 2));
+
+    const uint32 CHUNK = 4096;
+    std::vector<uint8_t> sig_chunk;
+    sig_chunk.reserve((size_t)CHUNK * nbytes);
+
+    for (uint32 start = 0; start < ti_t.n_rows; start += CHUNK) {
+        uint32 end = start + CHUNK;
+        if (end > ti_t.n_rows) end = ti_t.n_rows;
+        uint32 n = end - start;
+        sig_chunk.resize((size_t)n * nbytes);
+
+        for (uint32 i = 0; i < n; i++) {
+            uint32 r = start + i;
+            uint8_t *sig = sig_chunk.data() + (size_t)i * nbytes;
+            memcpy(sig, base_bytes.data(), nbytes);
+
+            const int32_t *row = ti_t.code + (size_t)r * (size_t)ti_t.stride;
+            // target const atoms
+            for (size_t j = 0; j < target_const_ids.size(); j++) {
+                int aid = target_const_ids[j];
+                int idx = target_const_token_idx[j];
+                int32 tok = row[idx];
+                bool v = (tok >= 0 &&
+                          (size_t)tok < target_const_allowed[j]->size() &&
+                          (*target_const_allowed[j])[(size_t)tok]);
+                set_sig_bit_bytes(sig, nbytes, (size_t)(aid - 1), v);
+            }
+            // token-level vars
+            for (int vid : global_vars) {
+                if (std::find(target_const_ids.begin(), target_const_ids.end(), vid) != target_const_ids.end())
+                    continue;
+                auto itv = var_bits.find(vid);
+                auto itc = var_class.find(vid);
+                if (itv == var_bits.end() || itc == var_class.end())
+                    continue;
+                int cid = itc->second;
+                auto it_idx = table_class_idx[target].find(cid);
+                if (it_idx == table_class_idx[target].end())
+                    continue;
+                int32 tok = row[it_idx->second];
+                bool v = (tok >= 0 && itv->second.test((size_t)tok));
+                set_sig_bit_bytes(sig, nbytes, (size_t)(vid - 1), v);
+            }
         }
-        row_to_bin[r] = bid;
-        hist[bid]++;
+
+        for (uint32 i = 0; i < n; i++) {
+            const uint8_t *sig = sig_chunk.data() + (size_t)i * nbytes;
+            uint64_t h = hash_bytes_fnv1a64(sig, nbytes);
+            int32_t bid = tab.find_or_insert(h, sig, nbytes, bin_sig_flat, hist);
+            row_to_bin[start + i] = (int)bid;
+            hist[(size_t)bid] += 1;
+        }
     }
 
     std::vector<uint8_t> allow_bin;
-    if (!eval_bins_sat(global_ast, max_id, bin_sig, nullptr, &allow_bin, nullptr, nullptr, nullptr))
+    if (!eval_bins_sat_flat(global_ast, max_id, bin_sig_flat, nbytes, hist.size(),
+                            &allow_bin, nullptr, nullptr))
         ereport(ERROR, (errmsg("policy: failed to eval AST bins")));
 
     // decode allowed rows
