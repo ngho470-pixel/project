@@ -95,6 +95,12 @@ extern const PolicyRunProfileC *policy_run_profile(const PolicyRunHandle *h);
             elog(NOTICE, fmt, ##__VA_ARGS__); \
     } while (0)
 
+#define CF_RESCAN_LOG(fmt, ...) \
+    do { \
+        if (cf_profile_rescan) \
+            elog(NOTICE, "rescan_profile: " fmt, ##__VA_ARGS__); \
+    } while (0)
+
 static uint32
 cf_popcount_allow(const uint8 *bits, uint32 n_rows)
 {
@@ -338,6 +344,7 @@ static bool cf_contract_mode = false;
 static char *cf_policy_path = NULL;
 static int cf_profile_k = 0;
 static char *cf_profile_query = NULL;
+static bool cf_profile_rescan = false;
 
 bool
 cf_trace_enabled(void)
@@ -558,6 +565,15 @@ _PG_init(void)
                                PGC_SUSET,
                                0,
                                NULL, NULL, NULL);
+
+    DefineCustomBoolVariable("custom_filter.profile_rescan",
+                             "",
+                             NULL,
+                             &cf_profile_rescan,
+                             false,
+                             PGC_SUSET,
+                             0,
+                             NULL, NULL, NULL);
 
     prev_planner_hook = planner_hook;
     planner_hook = cf_planner_hook;
@@ -969,6 +985,9 @@ typedef struct CfExec
     bool tid_logged;
 
     struct TableFilterState *filter;
+    bool need_filter_rebind;
+    uint64 rescan_calls;
+    bool exec_logged;
 } CfExec;
 
 typedef struct BlockIndex
@@ -1053,6 +1072,14 @@ typedef struct PolicyQueryState
     long rss_kb_after_ctid;
     long rss_kb_end;
     long peak_rss_kb_end;
+
+    /* Rescan profiling (debug only). */
+    uint64 build_seq;
+    uint64 policy_eval_calls;
+    uint64 artifact_load_calls;
+    uint64 policy_run_calls;
+    uint64 allow_build_calls;
+    uint64 blk_index_build_calls;
 } PolicyQueryState;
 
 typedef struct LoadedArtifact
@@ -1093,6 +1120,7 @@ cf_find_ctid_rows(LoadedArtifact *arts, int art_count, const char *table, uint32
 static MemoryContext cf_query_cxt = NULL;
 static PolicyQueryState *cf_query_state = NULL;
 static PlannedStmt *cf_query_plannedstmt = NULL;
+static uint64 cf_query_build_seq = 0;
 
 static bool
 cf_query_context_related(MemoryContext lhs, MemoryContext rhs)
@@ -1527,6 +1555,12 @@ cf_build_query_state(EState *estate, const char *query_str)
     MemoryContext oldctx = MemoryContextSwitchTo(qctx);
 
     PolicyQueryState *qs = (PolicyQueryState *) palloc0(sizeof(PolicyQueryState));
+    qs->build_seq = ++cf_query_build_seq;
+    CF_RESCAN_LOG("event=query_state_begin pid=%d build_seq=%llu qs=%p qctx=%p",
+                  MyProcPid,
+                  (unsigned long long) qs->build_seq,
+                  (void *) qs,
+                  (void *) qctx);
     bool profile_trace = (cf_trace_enabled());
     qs->rss_kb_before_eval = -1;
     qs->rss_kb_after_eval = -1;
@@ -1550,6 +1584,7 @@ cf_build_query_state(EState *estate, const char *query_str)
     if (profile_trace)
         qs->rss_kb_before_eval = cf_rss_kb_now();
     INSTR_TIME_SET_CURRENT(eval_start);
+    qs->policy_eval_calls++;
     PolicyEvalResultC *eval_res = evaluate_policies_scanned(policy_path,
                                                             qs->scanned_tables,
                                                             qs->n_scanned_tables);
@@ -1829,6 +1864,7 @@ cf_build_query_state(EState *estate, const char *query_str)
         MemoryContextSwitchTo(old_name_ctx);
     }
 
+    qs->artifact_load_calls++;
     if (!cf_load_artifacts_batch(qs->needed_files, qs->n_needed_files, qctx, arts, &missing))
     {
         SPI_finish();
@@ -1892,6 +1928,7 @@ cf_build_query_state(EState *estate, const char *query_str)
         CF_TRACE_LOG( "custom_filter: calling policy_run once target_count=%d atom_count=%d",
              in.target_count, in.atom_count);
         MemoryContext old_policy_ctx = MemoryContextSwitchTo(qctx);
+        qs->policy_run_calls++;
         run_handle = policy_run(policy_arts, policy_art_count, &in);
         MemoryContextSwitchTo(old_policy_ctx);
         if (!run_handle)
@@ -1969,6 +2006,7 @@ cf_build_query_state(EState *estate, const char *query_str)
             continue;
 
         TableFilterState *tf = &qs->filters[fidx++];
+        qs->allow_build_calls++;
         memset(tf, 0, sizeof(TableFilterState));
         strlcpy(tf->relname, tblname, sizeof(tf->relname));
         Oid nsp = get_namespace_oid("public", true);
@@ -2084,6 +2122,7 @@ cf_build_query_state(EState *estate, const char *query_str)
 
         instr_time blk_start, blk_end;
         INSTR_TIME_SET_CURRENT(blk_start);
+        qs->blk_index_build_calls++;
         cf_build_blk_index(tf, qctx);
         if (tf->n_rows > 0 && (!tf->blk_index || tf->n_blocks == 0))
             ereport(ERROR,
@@ -2132,6 +2171,15 @@ cf_build_query_state(EState *estate, const char *query_str)
              tf->relname, allow_bytes,
              tf->ctid_bytes,
              tf->blk_index_bytes);
+
+        CF_RESCAN_LOG("event=filter_built pid=%d build_seq=%llu rel=%s relid=%u rows=%u allow_bytes=%zu blk_index_bytes=%zu",
+                      MyProcPid,
+                      (unsigned long long) qs->build_seq,
+                      tf->relname,
+                      tf->relid,
+                      tf->n_rows,
+                      allow_bytes,
+                      tf->blk_index_bytes);
 
         if (!cf_trace_enabled() && arts[i].owned && arts[i].data)
         {
@@ -2201,6 +2249,15 @@ finalize:
         MemoryContextRegisterResetCallback(qctx, cb);
     }
     MemoryContextSwitchTo(oldctx);
+    CF_RESCAN_LOG("event=query_state_ready pid=%d build_seq=%llu eval_calls=%llu load_calls=%llu policy_run_calls=%llu allow_build_calls=%llu blk_index_build_calls=%llu n_filters=%d",
+                  MyProcPid,
+                  (unsigned long long) qs->build_seq,
+                  (unsigned long long) qs->policy_eval_calls,
+                  (unsigned long long) qs->artifact_load_calls,
+                  (unsigned long long) qs->policy_run_calls,
+                  (unsigned long long) qs->allow_build_calls,
+                  (unsigned long long) qs->blk_index_build_calls,
+                  qs->n_filters);
     return qs;
 }
 
@@ -2807,6 +2864,9 @@ cf_create_state(CustomScan *cscan)
     st->scan_type = NULL;
     st->tid_logged = false;
     st->filter = NULL;
+    st->need_filter_rebind = true;
+    st->rescan_calls = 0;
+    st->exec_logged = false;
 
     return (Node *) st;
 }
@@ -2840,11 +2900,24 @@ cf_begin(CustomScanState *node, EState *estate, int eflags)
      * top-level query-state has been constructed in cf_executor_start().
      */
     st->filter = cf_in_executor_start_init ? NULL : cf_find_filter(cf_query_state, st->relid);
+    st->need_filter_rebind = true;
 
     st->child_plan = ExecInitNode((Plan *) linitial(cscan->custom_plans),
                                   estate,
                                   eflags);
     st->scan_type = cf_scan_state_name(st->child_plan);
+    if (cf_profile_rescan && st->relid != InvalidOid)
+    {
+        CF_RESCAN_LOG("event=BeginCustomScan pid=%d build_seq=%llu node=%p plan=%p rel=%s relid=%u scan=%s filter=%s",
+                      MyProcPid,
+                      (unsigned long long) (cf_query_state ? cf_query_state->build_seq : 0),
+                      (void *) st,
+                      (void *) node->ss.ps.plan,
+                      st->relname[0] ? st->relname : "<unknown>",
+                      st->relid,
+                      st->scan_type ? st->scan_type : "<unknown>",
+                      st->filter ? "on" : "off");
+    }
     if (!cf_child_is_scan(st->child_plan))
     {
         if (st->filter)
@@ -2874,6 +2947,43 @@ cf_exec(CustomScanState *node)
 
     INSTR_TIME_SET_CURRENT(validation_start);
 
+    if (st->need_filter_rebind)
+    {
+        if (cf_query_state)
+        {
+            if (!st->filter)
+                st->filter = cf_find_filter(cf_query_state, st->relid);
+
+            /*
+             * Guardrail: if a scan state captured a stale filter pointer (e.g. due
+             * to query-state being rebuilt upward to a longer-lived context), rebind
+             * it to the current query state's filter for this relid.
+             */
+            if (st->filter && !st->filter->allow_bits)
+            {
+                TableFilterState *reb = cf_find_filter(cf_query_state, st->relid);
+                if (reb && reb->allow_bits)
+                    st->filter = reb;
+            }
+            st->need_filter_rebind = false;
+
+            if (cf_profile_rescan && !st->exec_logged && st->relid != InvalidOid)
+            {
+                CF_RESCAN_LOG("event=ExecCustomScan(first) pid=%d build_seq=%llu node=%p rel=%s relid=%u scan=%s filter=%s",
+                              MyProcPid,
+                              (unsigned long long) cf_query_state->build_seq,
+                              (void *) st,
+                              st->relname[0] ? st->relname : "<unknown>",
+                              st->relid,
+                              st->scan_type ? st->scan_type : "<unknown>",
+                              st->filter ? "on" : "off");
+                st->exec_logged = true;
+            }
+        }
+    }
+
+    TableFilterState *tf = st->filter;
+
     for (;;)
     {
         instr_time child_start, child_end;
@@ -2890,28 +3000,8 @@ cf_exec(CustomScanState *node)
         st->tuples_seen++;
 
         bool allow = true;
-        if (!st->filter && cf_query_state)
-            st->filter = cf_find_filter(cf_query_state, st->relid);
-        TableFilterState *tf = st->filter;
-        /*
-         * Guardrail: if a scan state captured a stale filter pointer (e.g. due
-         * to query-state being rebuilt upward to a longer-lived context), rebind
-         * it to the current query state's filter for this relid.
-         *
-         * This prevents deterministic "missing allow_bits" on queries with
-         * initplans/subplans (e.g. TPC-H q15 view form).
-         */
-        if (tf && !tf->allow_bits && cf_query_state)
-        {
-            TableFilterState *reb = cf_find_filter(cf_query_state, st->relid);
-            if (reb && reb->allow_bits)
-            {
-                st->filter = reb;
-                tf = reb;
-            }
-        }
-        if (st->filter)
-            st->filter->seen++;
+        if (tf)
+            tf->seen++;
         if (tf && tf->allow_bits)
         {
             if (tf->n_rows > 0 && tf->allow_nbytes == 0)
@@ -3100,8 +3190,8 @@ cf_exec(CustomScanState *node)
         if (allow)
         {
             st->tuples_passed++;
-            if (st->filter)
-                st->filter->passed++;
+            if (tf)
+                tf->passed++;
             instr_time proj_start, proj_end;
             INSTR_TIME_SET_CURRENT(proj_start);
             TupleTableSlot *ret = cf_store_slot(node, slot);
@@ -3175,6 +3265,21 @@ cf_end(CustomScanState *node)
 
     CF_TRACE_LOG( "custom_filter: row validation time = %.3f ms", st->row_validation_ms);
 
+    if (cf_profile_rescan && st->relid != InvalidOid)
+    {
+        CF_RESCAN_LOG("event=EndCustomScan pid=%d build_seq=%llu node=%p rel=%s relid=%u scan=%s filter=%s rescans=%llu tuples_seen=%llu tuples_passed=%llu",
+                      MyProcPid,
+                      (unsigned long long) (cf_query_state ? cf_query_state->build_seq : 0),
+                      (void *) st,
+                      st->relname[0] ? st->relname : "<unknown>",
+                      st->relid,
+                      st->scan_type ? st->scan_type : "<unknown>",
+                      st->filter ? "on" : "off",
+                      (unsigned long long) st->rescan_calls,
+                      (unsigned long long) st->tuples_seen,
+                      (unsigned long long) st->tuples_passed);
+    }
+
     if (cf_query_state) {
         cf_query_state->filter_ms += st->row_validation_ms;
         cf_query_state->child_exec_ms += st->child_exec_ms;
@@ -3197,6 +3302,25 @@ cf_rescan(CustomScanState *node)
         ExecReScan(st->child_plan);
 
     st->seq_rid = 0;
+    st->need_filter_rebind = true;
+    st->rescan_calls++;
+    if (cf_profile_rescan && st->relid != InvalidOid)
+    {
+        uint64 n = st->rescan_calls;
+        bool log_now = (n <= 4) || ((n & (n - 1)) == 0) || ((n % 1024) == 0);
+        if (log_now)
+        {
+            CF_RESCAN_LOG("event=ReScanCustomScan pid=%d build_seq=%llu node=%p rel=%s relid=%u scan=%s filter=%s rescan_count=%llu",
+                          MyProcPid,
+                          (unsigned long long) (cf_query_state ? cf_query_state->build_seq : 0),
+                          (void *) st,
+                          st->relname[0] ? st->relname : "<unknown>",
+                          st->relid,
+                          st->scan_type ? st->scan_type : "<unknown>",
+                          st->filter ? "on" : "off",
+                          (unsigned long long) n);
+        }
+    }
 }
 
 
