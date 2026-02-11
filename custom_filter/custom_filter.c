@@ -2904,12 +2904,23 @@ cf_begin(CustomScanState *node, EState *estate, int eflags)
                 strlcpy(st->relname, rn, sizeof(st->relname));
         }
     }
-    if (estate &&
-        !cf_in_executor_start_init &&
-        (cf_query_state == NULL ||
-         !cf_query_context_related(cf_query_cxt, estate->es_query_cxt)))
+    if (estate && !cf_in_executor_start_init)
     {
-        (void) cf_ensure_query_state(estate, debug_query_string, estate->es_plannedstmt);
+        /*
+         * Query-state is built in cf_executor_start() in the top-level query's
+         * es_query_cxt. Some subplans (e.g., SubPlan/SubqueryScan) can have their
+         * own EState with an unrelated es_query_cxt. Rebuilding query-state into
+         * those shorter-lived contexts is unsafe (it can be reset mid-statement,
+         * leaving stale TableFilterState pointers).
+         *
+         * Only rebuild upward if the current context contains the existing one.
+         */
+        if (cf_query_state == NULL ||
+            (cf_query_cxt && estate->es_query_cxt &&
+             cf_memory_context_contains(estate->es_query_cxt, cf_query_cxt)))
+        {
+            (void) cf_ensure_query_state(estate, debug_query_string, estate->es_plannedstmt);
+        }
     }
     /*
      * During ExecutorStart init, leave filter binding to cf_exec() after the
