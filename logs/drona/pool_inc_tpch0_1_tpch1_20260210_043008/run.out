@@ -1,0 +1,45 @@
+[db] start db=tpch0_1
+[policy_set] db=tpch0_1 K=1 enabled_ids=[1]
+[setup_ours] K=1 setup_ms=1872.494 disk=12011528
+[index_infer] K=1 specs=['lineitem.l_linestatus', 'lineitem.l_returnflag']
+[setup_rls] K=1 setup_ms=469.636 disk=8372224 indexes=['cf_rls_k1_lineitem_l_linestatus_1', 'cf_rls_k1_lineitem_l_returnflag_2']
+[correctness_sample] db=tpch0_1 K=1 queries=['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22']
+[progress] db=tpch0_1 K=1 baseline=ours query=1
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=1
+[progress] db=tpch0_1 K=1 baseline=ours query=2
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=2
+[progress] db=tpch0_1 K=1 baseline=ours query=3
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=3
+[progress] db=tpch0_1 K=1 baseline=ours query=4
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=4
+[progress] db=tpch0_1 K=1 baseline=ours query=5
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=5
+[progress] db=tpch0_1 K=1 baseline=ours query=6
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=6
+[progress] db=tpch0_1 K=1 baseline=ours query=7
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=7
+[progress] db=tpch0_1 K=1 baseline=ours query=8
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=8
+[progress] db=tpch0_1 K=1 baseline=ours query=9
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=9
+[progress] db=tpch0_1 K=1 baseline=ours query=10
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=10
+[progress] db=tpch0_1 K=1 baseline=ours query=11
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=11
+[progress] db=tpch0_1 K=1 baseline=ours query=12
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=12
+[progress] db=tpch0_1 K=1 baseline=ours query=13
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=13
+[progress] db=tpch0_1 K=1 baseline=ours query=14
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=14
+[progress] db=tpch0_1 K=1 baseline=ours query=15
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=15
+[progress] db=tpch0_1 K=1 baseline=ours query=16
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=16
+[progress] db=tpch0_1 K=1 baseline=ours query=17
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=17
+[progress] db=tpch0_1 K=1 baseline=ours query=18
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=18
+[progress] db=tpch0_1 K=1 baseline=ours query=19
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=19
+[progress] db=tpch0_1 K=1 baseline=ours query=20
