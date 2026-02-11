@@ -1,0 +1,53 @@
+SET
+SET
+SET
+SET
+SET
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:9: NOTICE:  relation "files" already exists, skipping
+CREATE TABLE
+DROP FUNCTION
+CREATE FUNCTION
+TRUNCATE TABLE
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  relation "files" already exists, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_jc_0" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_jc_1" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_jc_2" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_jc_3" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_jc_4" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_jc_5" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_0" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_1" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_2" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_3" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_4" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_5" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_6" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_7" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_8" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_9" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_10" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_11" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_12" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_13" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_14" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_15" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_16" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_17" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_18" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_19" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:13: NOTICE:  table "tmp_dict_20" does not exist, skipping
+ build_base 
+------------
+ 
+(1 row)
+
+LOAD
+SET
+SET
+SET
+SET
+SET
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122739/repro.sql:25: ERROR:  syntax error at or near ";"
+LINE 2: ...rdate, o_totalprice order by o_totalprice desc, o_orderdate;
+                                                                      ^

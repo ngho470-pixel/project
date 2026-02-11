@@ -1,0 +1,11 @@
+SET
+SET
+SET
+SET
+SET
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122658/repro.sql:9: NOTICE:  relation "files" already exists, skipping
+CREATE TABLE
+DROP FUNCTION
+CREATE FUNCTION
+TRUNCATE TABLE
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122658/repro.sql:13: ERROR:  failed to parse policies at /home/nghosh/research/z3_lab/logs/q18_k20_isolation_20260210_122658/policies_enabled_k20.txt
