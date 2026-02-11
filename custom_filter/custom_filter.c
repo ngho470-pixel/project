@@ -1557,7 +1557,7 @@ cf_build_query_state(EState *estate, const char *query_str)
     PolicyQueryState *qs = (PolicyQueryState *) palloc0(sizeof(PolicyQueryState));
     qs->build_seq = ++cf_query_build_seq;
     CF_RESCAN_LOG("event=query_state_begin pid=%d build_seq=%llu qs=%p qctx=%p",
-                  MyProcPid,
+                  (int) getpid(),
                   (unsigned long long) qs->build_seq,
                   (void *) qs,
                   (void *) qctx);
@@ -2173,7 +2173,7 @@ cf_build_query_state(EState *estate, const char *query_str)
              tf->blk_index_bytes);
 
         CF_RESCAN_LOG("event=filter_built pid=%d build_seq=%llu rel=%s relid=%u rows=%u allow_bytes=%zu blk_index_bytes=%zu",
-                      MyProcPid,
+                      (int) getpid(),
                       (unsigned long long) qs->build_seq,
                       tf->relname,
                       tf->relid,
@@ -2250,7 +2250,7 @@ finalize:
     }
     MemoryContextSwitchTo(oldctx);
     CF_RESCAN_LOG("event=query_state_ready pid=%d build_seq=%llu eval_calls=%llu load_calls=%llu policy_run_calls=%llu allow_build_calls=%llu blk_index_build_calls=%llu n_filters=%d",
-                  MyProcPid,
+                  (int) getpid(),
                   (unsigned long long) qs->build_seq,
                   (unsigned long long) qs->policy_eval_calls,
                   (unsigned long long) qs->artifact_load_calls,
@@ -2909,7 +2909,7 @@ cf_begin(CustomScanState *node, EState *estate, int eflags)
     if (cf_profile_rescan && st->relid != InvalidOid)
     {
         CF_RESCAN_LOG("event=BeginCustomScan pid=%d build_seq=%llu node=%p plan=%p rel=%s relid=%u scan=%s filter=%s",
-                      MyProcPid,
+                      (int) getpid(),
                       (unsigned long long) (cf_query_state ? cf_query_state->build_seq : 0),
                       (void *) st,
                       (void *) node->ss.ps.plan,
@@ -2970,7 +2970,7 @@ cf_exec(CustomScanState *node)
             if (cf_profile_rescan && !st->exec_logged && st->relid != InvalidOid)
             {
                 CF_RESCAN_LOG("event=ExecCustomScan(first) pid=%d build_seq=%llu node=%p rel=%s relid=%u scan=%s filter=%s",
-                              MyProcPid,
+                              (int) getpid(),
                               (unsigned long long) cf_query_state->build_seq,
                               (void *) st,
                               st->relname[0] ? st->relname : "<unknown>",
@@ -3268,7 +3268,7 @@ cf_end(CustomScanState *node)
     if (cf_profile_rescan && st->relid != InvalidOid)
     {
         CF_RESCAN_LOG("event=EndCustomScan pid=%d build_seq=%llu node=%p rel=%s relid=%u scan=%s filter=%s rescans=%llu tuples_seen=%llu tuples_passed=%llu",
-                      MyProcPid,
+                      (int) getpid(),
                       (unsigned long long) (cf_query_state ? cf_query_state->build_seq : 0),
                       (void *) st,
                       st->relname[0] ? st->relname : "<unknown>",
@@ -3311,7 +3311,7 @@ cf_rescan(CustomScanState *node)
         if (log_now)
         {
             CF_RESCAN_LOG("event=ReScanCustomScan pid=%d build_seq=%llu node=%p rel=%s relid=%u scan=%s filter=%s rescan_count=%llu",
-                          MyProcPid,
+                          (int) getpid(),
                           (unsigned long long) (cf_query_state ? cf_query_state->build_seq : 0),
                           (void *) st,
                           st->relname[0] ? st->relname : "<unknown>",
