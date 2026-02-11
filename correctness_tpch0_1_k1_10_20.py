@@ -110,6 +110,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--policy", default="/tmp/z3_lab/policy.txt")
     p.add_argument("--queries", default="/tmp/z3_lab/queries.txt")
     p.add_argument("--enabled-path", default="/tmp/z3_lab/policies_enabled.txt")
+    p.add_argument("--custom-filter-so", default="/tmp/z3_lab/custom_filter.so")
+    p.add_argument("--artifact-builder-so", default="/tmp/z3_lab/artifact_builder.so")
     p.add_argument("--statement-timeout", default="600s")
     p.add_argument("--watchdog-grace-s", type=int, default=15)
     p.add_argument("--out-dir", default="")
@@ -125,6 +127,10 @@ def main() -> int:
     queries_path = Path(args.queries)
     enabled_path = Path(args.enabled_path)
     statement_timeout_ms = h.parse_timeout_ms(str(args.statement_timeout))
+
+    # Make sure the backend loads the /tmp/z3_lab/... build, not the repo-local .so.
+    h.CUSTOM_FILTER_SO = str(args.custom_filter_so)
+    h.ARTIFACT_BUILDER_SO = str(args.artifact_builder_so)
 
     if args.out_dir:
         out_dir = Path(args.out_dir)
@@ -266,4 +272,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
