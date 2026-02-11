@@ -1,0 +1,1 @@
+repro_failures_tpch0_1.py --db tpch0_1 --statement-timeout 600s --cases 10:18 --debug-ids
