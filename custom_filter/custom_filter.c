@@ -101,6 +101,24 @@ extern const PolicyRunProfileC *policy_run_profile(const PolicyRunHandle *h);
             elog(NOTICE, "rescan_profile: " fmt, ##__VA_ARGS__); \
     } while (0)
 
+#define CF_DEBUG_IDS_LOG(fmt, ...) \
+    do { \
+        if (cf_debug_ids) \
+            elog(NOTICE, "CF_ID " fmt, ##__VA_ARGS__); \
+    } while (0)
+
+#define CF_DEBUG_QS_LOG(fmt, ...) \
+    do { \
+        if (cf_debug_ids) \
+            elog(NOTICE, "CF_QS " fmt, ##__VA_ARGS__); \
+    } while (0)
+
+#define CF_DEBUG_SUBPLAN_LOG(fmt, ...) \
+    do { \
+        if (cf_debug_ids) \
+            elog(NOTICE, "CF_SUBPLAN " fmt, ##__VA_ARGS__); \
+    } while (0)
+
 static uint32
 cf_popcount_allow(const uint8 *bits, uint32 n_rows)
 {
@@ -341,6 +359,7 @@ cf_validate_ast_vars(const char *ast, const int *map, int map_len, int global_ma
 bool cf_enabled = false;
 static int cf_debug_mode = 0;
 static bool cf_contract_mode = false;
+static bool cf_debug_ids = false;
 static char *cf_policy_path = NULL;
 static int cf_profile_k = 0;
 static char *cf_profile_query = NULL;
@@ -466,7 +485,8 @@ static bool cf_slot_get_ctid(TupleTableSlot *slot, ItemPointerData *out, CfTidSo
 static TupleTableSlot *cf_scan_slot(PlanState *child, TupleTableSlot *fallback);
 static void cf_collect_scanned_tables(EState *estate, MemoryContext mcxt,
                                       char ***out_names, int *out_count,
-                                      char ***out_wrapped, int *out_wrapped_count);
+                                      char ***out_wrapped, int *out_wrapped_count,
+                                      int *out_main_rel_count, int *out_total_rel_count);
 static bool cf_table_in_list(const char *name, char **list, int count);
 static int cf_eval_target_index(const PolicyEvalResultC *res, const char *name);
 static void cf_parse_query_targets(const char *query_str, MemoryContext mcxt, char ***out_tables, int *out_count);
@@ -532,6 +552,15 @@ _PG_init(void)
                              "",
                              NULL,
                              &cf_contract_mode,
+                             false,
+                             PGC_SUSET,
+                             0,
+                             NULL, NULL, NULL);
+
+    DefineCustomBoolVariable("custom_filter.debug_ids",
+                             "Emit executor identity / binding debug NOTICE lines (temporary; off by default).",
+                             NULL,
+                             &cf_debug_ids,
                              false,
                              PGC_SUSET,
                              0,
@@ -990,6 +1019,7 @@ typedef struct CfExec
     bool attempted_filter_rebuild;
     uint64 rescan_calls;
     bool exec_logged;
+    bool debug_exec_logged;
 } CfExec;
 
 typedef struct BlockIndex
@@ -1123,6 +1153,99 @@ static MemoryContext cf_query_cxt = NULL;
 static PolicyQueryState *cf_query_state = NULL;
 static PlannedStmt *cf_query_plannedstmt = NULL;
 static uint64 cf_query_build_seq = 0;
+
+static const char *
+cf_rtekind_name(int k)
+{
+    switch (k)
+    {
+        case RTE_RELATION: return "RELATION";
+        case RTE_SUBQUERY: return "SUBQUERY";
+        case RTE_JOIN: return "JOIN";
+        case RTE_FUNCTION: return "FUNCTION";
+        case RTE_TABLEFUNC: return "TABLEFUNC";
+        case RTE_VALUES: return "VALUES";
+        case RTE_CTE: return "CTE";
+        case RTE_NAMEDTUPLESTORE: return "NAMEDTUPLESTORE";
+        case RTE_RESULT: return "RESULT";
+        default: break;
+    }
+    return "OTHER";
+}
+
+static void
+cf_debug_log_scan_ids(const char *event, CfExec *st, CustomScanState *node)
+{
+    if (!cf_debug_ids || !event || !st || !node)
+        return;
+
+    CustomScan *cscan = (CustomScan *) node->ss.ps.plan;
+    EState *estate = node->ss.ps.state;
+
+    Index scanrelid = 0;
+    const char *rtekind = "<none>";
+    Oid rte_relid_oid = InvalidOid;
+    const char *rte_relname = "<none>";
+    if (cscan)
+        scanrelid = cscan->scan.scanrelid;
+    if (estate && scanrelid > 0)
+    {
+        RangeTblEntry *rte = rt_fetch(scanrelid, estate->es_range_table);
+        if (rte)
+        {
+            rtekind = cf_rtekind_name((int) rte->rtekind);
+            rte_relid_oid = rte->relid;
+            if (rte_relid_oid != InvalidOid)
+            {
+                const char *rn = get_rel_name(rte_relid_oid);
+                if (rn)
+                    rte_relname = rn;
+            }
+        }
+    }
+
+    PolicyQueryState *qs = cf_query_state;
+    bool should_filter = false;
+    bool in_targets = false;
+    bool scanned = false;
+    bool wrapped = false;
+    if (qs && st->relname[0])
+    {
+        in_targets = cf_table_in_list(st->relname, qs->policy_targets, qs->n_policy_targets);
+        scanned = cf_table_scanned(qs, st->relname);
+        should_filter = cf_table_should_filter(qs, st->relname);
+        wrapped = cf_table_wrapped(qs, st->relname);
+    }
+
+    CF_DEBUG_IDS_LOG("pid=%d build_seq=%llu qs=%p node=%p plan=%p event=%s "
+                     "scanrelid=%d rtekind=%s rte_relid_oid=%u rte_relname=%s "
+                     "st_relid=%u st_relname=%s st_scan=%s "
+                     "need_rebind=%d bound_build_seq=%llu "
+                     "should_filter=%d in_policy_targets=%d scanned=%d wrapped=%d "
+                     "filter_ptr=%p filter_allow_bits=%p filter_found=%d",
+                     (int) getpid(),
+                     (unsigned long long) (qs ? qs->build_seq : 0),
+                     (void *) qs,
+                     (void *) st,
+                     (void *) node->ss.ps.plan,
+                     event,
+                     (int) scanrelid,
+                     rtekind,
+                     rte_relid_oid,
+                     rte_relname,
+                     st->relid,
+                     st->relname[0] ? st->relname : "<unknown>",
+                     st->scan_type ? st->scan_type : "<unknown>",
+                     st->need_filter_rebind ? 1 : 0,
+                     (unsigned long long) st->bound_build_seq,
+                     should_filter ? 1 : 0,
+                     in_targets ? 1 : 0,
+                     scanned ? 1 : 0,
+                     wrapped ? 1 : 0,
+                     (void *) st->filter,
+                     (void *) (st->filter ? st->filter->allow_bits : NULL),
+                     st->filter ? 1 : 0);
+}
 
 static bool
 cf_query_context_related(MemoryContext lhs, MemoryContext rhs)
@@ -1590,9 +1713,46 @@ cf_build_query_state(EState *estate, const char *query_str)
     if (cf_contract_enabled())
         cf_log_policy_identity(policy_path);
 
+    if (cf_debug_ids && estate && estate->es_plannedstmt)
+    {
+        int spcnt = estate->es_plannedstmt->subplans ? list_length(estate->es_plannedstmt->subplans) : 0;
+        CF_DEBUG_SUBPLAN_LOG("pid=%d build_seq=%llu pstmt=%p subplans_count=%d walk_subplans=1",
+                             (int) getpid(),
+                             (unsigned long long) qs->build_seq,
+                             (void *) estate->es_plannedstmt,
+                             spcnt);
+        if (estate->es_plannedstmt->subplans)
+        {
+            int idx = 0;
+            ListCell *lc;
+            foreach (lc, estate->es_plannedstmt->subplans)
+            {
+                Plan *sp = (Plan *) lfirst(lc);
+                CF_DEBUG_SUBPLAN_LOG("pid=%d build_seq=%llu subplan_idx=%d walk=1 tag=%d ptr=%p",
+                                     (int) getpid(),
+                                     (unsigned long long) qs->build_seq,
+                                     idx++,
+                                     sp ? (int) nodeTag(sp) : -1,
+                                     (void *) sp);
+            }
+        }
+    }
+
+    int main_rel_count = 0;
+    int total_rel_count = 0;
     cf_collect_scanned_tables(estate, qctx,
                               &qs->scanned_tables, &qs->n_scanned_tables,
-                              &qs->wrapped_tables, &qs->n_wrapped_tables);
+                              &qs->wrapped_tables, &qs->n_wrapped_tables,
+                              &main_rel_count, &total_rel_count);
+    if (cf_debug_ids)
+    {
+        CF_DEBUG_SUBPLAN_LOG("pid=%d build_seq=%llu scans_main=%d scans_total=%d scans_subplans_added=%d",
+                             (int) getpid(),
+                             (unsigned long long) qs->build_seq,
+                             main_rel_count,
+                             total_rel_count,
+                             (total_rel_count >= main_rel_count) ? (total_rel_count - main_rel_count) : 0);
+    }
 
     instr_time eval_start, eval_end;
     if (profile_trace)
@@ -2263,6 +2423,51 @@ finalize:
         MemoryContextRegisterResetCallback(qctx, cb);
     }
     MemoryContextSwitchTo(oldctx);
+    if (cf_debug_ids)
+    {
+        CF_DEBUG_QS_LOG("pid=%d build_seq=%llu qs=%p ready=%d n_filters=%d n_policy_targets=%d n_scanned_tables=%d n_wrapped_tables=%d",
+                        (int) getpid(),
+                        (unsigned long long) qs->build_seq,
+                        (void *) qs,
+                        qs->ready ? 1 : 0,
+                        qs->n_filters,
+                        qs->n_policy_targets,
+                        qs->n_scanned_tables,
+                        qs->n_wrapped_tables);
+        for (int i = 0; i < qs->n_policy_targets; i++)
+        {
+            CF_DEBUG_QS_LOG("pid=%d build_seq=%llu target[%d]=%s",
+                            (int) getpid(),
+                            (unsigned long long) qs->build_seq,
+                            i,
+                            (qs->policy_targets && qs->policy_targets[i]) ? qs->policy_targets[i] : "<null>");
+        }
+        for (int i = 0; i < qs->n_scanned_tables; i++)
+        {
+            CF_DEBUG_QS_LOG("pid=%d build_seq=%llu scanned[%d]=%s",
+                            (int) getpid(),
+                            (unsigned long long) qs->build_seq,
+                            i,
+                            (qs->scanned_tables && qs->scanned_tables[i]) ? qs->scanned_tables[i] : "<null>");
+        }
+        for (int i = 0; i < qs->n_filters; i++)
+        {
+            TableFilterState *tf = &qs->filters[i];
+            CF_DEBUG_QS_LOG("pid=%d build_seq=%llu filter[%d] key_relid=%u rel=%s allow_bits=%p allow_nbytes=%zu blk_index=%p n_blocks=%u ctid_pairs=%p ctid_pairs_len=%u n_rows=%u",
+                            (int) getpid(),
+                            (unsigned long long) qs->build_seq,
+                            i,
+                            tf->relid,
+                            tf->relname[0] ? tf->relname : "<unknown>",
+                            (void *) tf->allow_bits,
+                            tf->allow_nbytes,
+                            (void *) tf->blk_index,
+                            tf->n_blocks,
+                            (void *) tf->ctid_pairs,
+                            tf->ctid_pairs_len,
+                            tf->n_rows);
+        }
+    }
     CF_RESCAN_LOG("event=query_state_ready pid=%d build_seq=%llu eval_calls=%llu load_calls=%llu policy_run_calls=%llu allow_build_calls=%llu blk_index_build_calls=%llu n_filters=%d",
                   (int) getpid(),
                   (unsigned long long) qs->build_seq,
@@ -2516,7 +2721,8 @@ cf_plan_walk(Plan *plan, ScannedCtx *ctx)
 static void
 cf_collect_scanned_tables(EState *estate, MemoryContext mcxt,
                           char ***out_names, int *out_count,
-                          char ***out_wrapped, int *out_wrapped_count)
+                          char ***out_wrapped, int *out_wrapped_count,
+                          int *out_main_rel_count, int *out_total_rel_count)
 {
     if (!estate || !estate->es_plannedstmt)
     {
@@ -2526,6 +2732,10 @@ cf_collect_scanned_tables(EState *estate, MemoryContext mcxt,
             *out_wrapped = NULL;
         if (out_wrapped_count)
             *out_wrapped_count = 0;
+        if (out_main_rel_count)
+            *out_main_rel_count = 0;
+        if (out_total_rel_count)
+            *out_total_rel_count = 0;
         return;
     }
     ScannedCtx ctx;
@@ -2533,6 +2743,7 @@ cf_collect_scanned_tables(EState *estate, MemoryContext mcxt,
     ctx.relids = NIL;
     ctx.wrapped_relids = NIL;
     cf_plan_walk(estate->es_plannedstmt->planTree, &ctx);
+    int main_rel_count = list_length(ctx.relids);
     /*
      * Collect base relations that appear only inside subplans (CTEs/initplans/
      * scalar subqueries). These scans are not reachable from planTree via
@@ -2549,6 +2760,10 @@ cf_collect_scanned_tables(EState *estate, MemoryContext mcxt,
     }
 
     int count = list_length(ctx.relids);
+    if (out_main_rel_count)
+        *out_main_rel_count = main_rel_count;
+    if (out_total_rel_count)
+        *out_total_rel_count = count;
     if (count == 0)
     {
         *out_names = NULL;
@@ -2557,6 +2772,10 @@ cf_collect_scanned_tables(EState *estate, MemoryContext mcxt,
             *out_wrapped = NULL;
         if (out_wrapped_count)
             *out_wrapped_count = 0;
+        if (out_main_rel_count)
+            *out_main_rel_count = main_rel_count;
+        if (out_total_rel_count)
+            *out_total_rel_count = 0;
         return;
     }
 
@@ -2883,6 +3102,7 @@ cf_create_state(CustomScan *cscan)
     st->attempted_filter_rebuild = false;
     st->rescan_calls = 0;
     st->exec_logged = false;
+    st->debug_exec_logged = false;
 
     return (Node *) st;
 }
@@ -2935,6 +3155,7 @@ cf_begin(CustomScanState *node, EState *estate, int eflags)
                                   estate,
                                   eflags);
     st->scan_type = cf_scan_state_name(st->child_plan);
+    cf_debug_log_scan_ids("BeginCustomScan", st, node);
     if (cf_profile_rescan && st->relid != InvalidOid)
     {
         CF_RESCAN_LOG("event=BeginCustomScan pid=%d build_seq=%llu node=%p plan=%p rel=%s relid=%u scan=%s filter=%s",
@@ -3004,6 +3225,13 @@ cf_exec(CustomScanState *node)
             }
             st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
             st->need_filter_rebind = false;
+
+            cf_debug_log_scan_ids("BindFilter", st, node);
+            if (!st->debug_exec_logged)
+            {
+                cf_debug_log_scan_ids("ExecCustomScan(first)", st, node);
+                st->debug_exec_logged = true;
+            }
 
             if (cf_profile_rescan && !st->exec_logged && st->relid != InvalidOid)
             {
@@ -3301,6 +3529,41 @@ allow_check:
                 }
             }
 
+            if (cf_debug_ids)
+            {
+                cf_debug_log_scan_ids("MissingAllowBits", st, node);
+                PolicyQueryState *qs = cf_query_state;
+                if (qs)
+                {
+                    CF_DEBUG_IDS_LOG("pid=%d build_seq=%llu missing_allow_bits_state qs=%p n_filters=%d n_policy_targets=%d",
+                                     (int) getpid(),
+                                     (unsigned long long) qs->build_seq,
+                                     (void *) qs,
+                                     qs->n_filters,
+                                     qs->n_policy_targets);
+                    if (qs->filters)
+                    {
+                        for (int i = 0; i < qs->n_filters; i++)
+                        {
+                            TableFilterState *k = &qs->filters[i];
+                            CF_DEBUG_IDS_LOG("pid=%d build_seq=%llu key[%d] rel=%s relid=%u allow_bits=%p allow_nbytes=%zu blk_index=%p n_blocks=%u ctid_pairs=%p ctid_pairs_len=%u n_rows=%u",
+                                             (int) getpid(),
+                                             (unsigned long long) qs->build_seq,
+                                             i,
+                                             k->relname[0] ? k->relname : "<unknown>",
+                                             k->relid,
+                                             (void *) k->allow_bits,
+                                             k->allow_nbytes,
+                                             (void *) k->blk_index,
+                                             k->n_blocks,
+                                             (void *) k->ctid_pairs,
+                                             k->ctid_pairs_len,
+                                             k->n_rows);
+                        }
+                    }
+                }
+            }
+
             ereport(ERROR,
                     (errmsg("custom_filter[engine_error]: missing allow_bits for policy-required table rel=%s",
                             st->relname[0] ? st->relname : "<unknown>")));
@@ -3439,6 +3702,13 @@ cf_rescan(CustomScanState *node)
                           st->filter ? "on" : "off",
                           (unsigned long long) n);
         }
+    }
+    if (cf_debug_ids && st->relid != InvalidOid)
+    {
+        uint64 n = st->rescan_calls;
+        bool log_now = (n <= 4) || ((n & (n - 1)) == 0) || ((n % 1024) == 0);
+        if (log_now)
+            cf_debug_log_scan_ids("ReScanCustomScan", st, node);
     }
 }
 
