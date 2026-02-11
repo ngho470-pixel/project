@@ -1,5 +1,59 @@
  
-bash: -c: option requires an argument
-ERROR:  syntax error at or near "pg_stat_activityWHERE"
-LINE 1: ...tart AS query_age,       left(query,240) AS qFROM pg_stat_ac...
-                                                             ^
+BASH=/usr/bin/bash
+BASHOPTS=checkwinsize:cmdhist:complete_fullquote:extquote:force_fignore:globasciiranges:globskipdots:hostcomplete:interactive_comments:login_shell:patsub_replacement:progcomp:promptvars:sourcepath
+BASH_ALIASES=()
+BASH_ARGC=([0]="1")
+BASH_ARGV=([0]="pipefail")
+BASH_CMDS=()
+BASH_EXECUTION_STRING=set
+BASH_LINENO=()
+BASH_LOADABLES_PATH=/usr/local/lib/bash:/usr/lib/bash:/opt/local/lib/bash:/usr/pkg/lib/bash:/opt/pkg/lib/bash:.
+BASH_SOURCE=()
+BASH_VERSINFO=([0]="5" [1]="2" [2]="21" [3]="1" [4]="release" [5]="x86_64-pc-linux-gnu")
+BASH_VERSION='5.2.21(1)-release'
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
+DEBUGINFOD_URLS='https://debuginfod.ubuntu.com '
+DEFAULT_XDG_CONFIG_DIRS=/etc/xdg
+DEFAULT_XDG_DATA_DIRS=/usr/local/share/:/usr/share/
+DIRSTACK=()
+EUID=1001
+GROUPS=()
+HOME=/home/nghosh
+HOSTNAME=dell-R760
+HOSTTYPE=x86_64
+IFS=$' \t\n'
+LANG=en_US.UTF-8
+LC_ALL=C.UTF-8
+LC_CTYPE=C.UTF-8
+LOGNAME=nghosh
+MACHTYPE=x86_64-pc-linux-gnu
+OLDPWD=/home/nghosh
+OPTERR=1
+OPTIND=1
+OSTYPE=linux-gnu
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+PIPESTATUS=([0]="1")
+PPID=78149
+PS4='+ '
+PWD=/home/nghosh
+SHELL=/usr/bin/zsh
+SHELLOPTS=braceexpand:hashall:interactive-comments
+SHLVL=2
+SSH_CLIENT='10.208.23.135 55312 22'
+SSH_CONNECTION='10.208.23.135 55312 10.208.20.245 22'
+TERM=dumb
+UID=1001
+USER=nghosh
+XDG_DATA_DIRS=/usr/share/gnome:/usr/local/share:/usr/share:/var/lib/snapd/desktop
+XDG_RUNTIME_DIR=/run/user/1001
+XDG_SESSION_CLASS=user
+XDG_SESSION_ID=1491
+XDG_SESSION_TYPE=tty
+_=']'
+snap_bin_path=/snap/bin
+snap_xdg_path=/var/lib/snapd/desktop
+               now                |  pid  |          backend_start           |            xact_start            |           query_start            |           state_change           | state  | wait_event_type | wait_event |   backend_age   |    xact_age     |    query_age    |                                                                                                                        q                                                                                                                         
+----------------------------------+-------+----------------------------------+----------------------------------+----------------------------------+----------------------------------+--------+-----------------+------------+-----------------+-----------------+-----------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 2026-02-10 06:49:24.873456+05:30 | 68500 | 2026-02-10 05:01:52.735382+05:30 | 2026-02-10 06:35:37.011042+05:30 | 2026-02-10 06:35:37.011042+05:30 | 2026-02-10 06:35:37.011043+05:30 | active |                 |            | 01:47:32.138074 | 00:13:47.862414 | 00:13:47.862414 | select s_name, s_address from supplier, nation where s_suppkey in ( select ps_suppkey from partsupp where ps_partkey in ( select p_partkey from part where p_name like 'midnight%' ) and ps_availqty > ( select 0.5 * sum(l_quantity) from linei
+(1 row)
+
