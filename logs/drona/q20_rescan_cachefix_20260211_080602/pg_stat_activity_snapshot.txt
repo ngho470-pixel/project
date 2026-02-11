@@ -1,0 +1,6 @@
+  pid  | usename  | state  | wait_event_type | wait_event |       age       |                                                                                                    q                                                                                                     
+-------+----------+--------+-----------------+------------+-----------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 88303 | postgres | active |                 |            | 00:05:35.712656 | select s_name, s_address from supplier, nation where s_suppkey in ( select ps_suppkey from partsupp where ps_partkey in ( select p_partkey from part where p_name like 'midnight%' ) and ps_availqty > (
+ 89984 | postgres | active |                 |            | 00:00:00        | SELECT pid, usename, state, wait_event_type, wait_event, now()-query_start AS age, left(query,200) AS q FROM pg_stat_activity WHERE datname=current_database() ORDER BY age DESC;
+(2 rows)
+

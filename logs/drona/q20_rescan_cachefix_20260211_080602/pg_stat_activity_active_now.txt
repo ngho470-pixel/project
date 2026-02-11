@@ -1,0 +1,2 @@
+92405|active|||00:05:49.084303|select s_name, s_address from supplier, nation where s_suppkey in ( select ps_suppkey from partsupp where ps_partkey in ( select p_partkey from part where p_name like 'midnight%' ) and ps_availqty > (
+93360|active|||00:00:00|SELECT pid||'|'||state||'|'||COALESCE(wait_event_type,'')||'|'||COALESCE(wait_event,'')||'|'||(now()-query_start)||'|'||left(query,200) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active'

@@ -1,0 +1,39 @@
+NOTICE:  rescan_profile: event=query_state_begin pid=92405 build_seq=1 qs=0x5b9e00382fa8 qctx=0x5b9e003823d0
+NOTICE:  rescan_profile: event=query_state_ready pid=92405 build_seq=1 eval_calls=1 load_calls=0 policy_run_calls=0 allow_build_calls=0 blk_index_build_calls=0 n_filters=0
+NOTICE:  policy_profile: eval_ms=0.093 artifact_load_ms=0.000 artifact_parse_ms=0.000 stamp_ms=0.000 bin_ms=0.000 local_sat_ms=0.000 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=0.000 ctid_map_ms=0.000 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=0 n_policy_targets=0 n_filters=0 bytes_artifacts_loaded=0 bytes_allow=0 bytes_ctid=0 bytes_blk_index=0 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+NOTICE:  rescan_profile: event=BeginCustomScan pid=92405 build_seq=0 node=0x5b9e00399db0 plan=0x5b9e003adf58 rel=lineitem relid=16413 scan=SeqScan filter=off
+NOTICE:  rescan_profile: event=BeginCustomScan pid=92405 build_seq=0 node=0x5b9e00492e80 plan=0x5b9e003b43c8 rel=nation relid=16392 scan=SeqScan filter=off
+NOTICE:  rescan_profile: event=BeginCustomScan pid=92405 build_seq=0 node=0x5b9e00494800 plan=0x5b9e003b46f8 rel=supplier relid=16401 scan=SeqScan filter=off
+NOTICE:  rescan_profile: event=BeginCustomScan pid=92405 build_seq=0 node=0x5b9e00495f18 plan=0x5b9e003b2c98 rel=partsupp relid=16404 scan=SeqScan filter=off
+NOTICE:  rescan_profile: event=BeginCustomScan pid=92405 build_seq=0 node=0x5b9e004c0a20 plan=0x5b9e003b4858 rel=part relid=16398 scan=SeqScan filter=off
+NOTICE:  rescan_profile: event=query_state_begin pid=92405 build_seq=2 qs=0x5b9e004c5988 qctx=0x5b9e00399410
+NOTICE:  rescan_profile: event=filter_built pid=92405 build_seq=2 rel=lineitem relid=16413 rows=600572 allow_bytes=75072 blk_index_bytes=1584188
+NOTICE:  rescan_profile: event=query_state_ready pid=92405 build_seq=2 eval_calls=1 load_calls=1 policy_run_calls=1 allow_build_calls=1 blk_index_build_calls=1 n_filters=1
+NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=92405 build_seq=2 node=0x5b9e00492e80 rel=nation relid=16392 scan=SeqScan filter=off
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00494800 rel=supplier relid=16401 scan=SeqScan filter=off rescan_count=1
+NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=92405 build_seq=2 node=0x5b9e00494800 rel=supplier relid=16401 scan=SeqScan filter=off
+NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=92405 build_seq=2 node=0x5b9e00495f18 rel=partsupp relid=16404 scan=SeqScan filter=off
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=off rescan_count=1
+NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on
+NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=92405 build_seq=2 node=0x5b9e004c0a20 rel=part relid=16398 scan=SeqScan filter=off
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=2
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=3
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=4
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=8
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=16
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=32
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=64
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=128
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=256
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=512
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=1024
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=2048
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=3072
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=4096
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=5120
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=6144
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=7168
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=8192
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=9216
+NOTICE:  rescan_profile: event=ReScanCustomScan pid=92405 build_seq=2 node=0x5b9e00399db0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=10240
+NOTICE:  policy_profile: eval_ms=0.067 artifact_load_ms=19.269 artifact_parse_ms=0.023 stamp_ms=22.642 bin_ms=11.209 local_sat_ms=0.305 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=39.606 ctid_map_ms=2.896 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=5 n_policy_targets=1 n_filters=1 bytes_artifacts_loaded=12011519 bytes_allow=75072 bytes_ctid=4804576 bytes_blk_index=1584188 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1

@@ -1,0 +1,23 @@
+=== cancel backend 92405 ===
+t
+=== pg_stat_activity active after cancel ===
+93590|active|||00:00:03.028916|select s_name, s_address from supplier, nation where s_suppkey in ( select ps_suppkey from partsupp where ps_partkey in 
+93603|active|||00:00:00|SELECT pid||'|'||state||'|'||COALESCE(wait_event_type,'')||'|'||COALESCE(wait_event,'')||'|'||(now()-query_start)||'|'||
+=== ps backend after cancel ===
+    PID STAT     ELAPSED %CPU %MEM WCHAN                CMD
+=== cancel all active tpch0_1 (except self) ===
+93590|t
+=== terminate remaining active tpch0_1 (except self) ===
+93590|t
+=== pg_stat_activity active after terminate ===
+93728|active|SELECT COUNT(*) FROM (select s_name, s_address from supplier, nation where s_suppkey in ( select ps_suppkey from partsup
+93736|active|SELECT pid||'|'||state||'|'||left(query,120) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' ORDER BY q
+=== kill harness python ===
+python_pid=88285
+    PID STAT     ELAPSED %CPU %MEM CMD
+=== pgrep after kill ===
+93704 zsh -c bash -lc set -euo pipefail; RUN=/home/nghosh/research/z3_lab/logs/q20_rescan_cachefix_20260211_080602; echo '=== cancel all active tpch0_1 (except self) ===' | tee -a "$RUN/kill_actions.txt"; PGPASSWORD=12345 psql -h localhost -U postgres -d tpch0_1 -Atc "SELECT pid, pg_cancel_backend(pid) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' AND pid <> pg_backend_pid();" | tee -a "$RUN/kill_actions.txt"; sleep 2; echo '=== terminate remaining active tpch0_1 (except self) ===' | tee -a "$RUN/kill_actions.txt"; PGPASSWORD=12345 psql -h localhost -U postgres -d tpch0_1 -Atc "SELECT pid, pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' AND pid <> pg_backend_pid();" | tee -a "$RUN/kill_actions.txt"; sleep 1; echo '=== pg_stat_activity active after terminate ===' | tee -a "$RUN/kill_actions.txt"; PGPASSWORD=12345 psql -h localhost -U postgres -d tpch0_1 -Atc "SELECT pid||'|'||state||'|'||left(query,120) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' ORDER BY query_start;" | tee -a "$RUN/kill_actions.txt"; echo '=== kill harness python ===' | tee -a "$RUN/kill_actions.txt"; PY_PID=$(pgrep -f 'fast_sweep_profile_60s.py --run' | head -n1 || true); echo "python_pid=$PY_PID" | tee -a "$RUN/kill_actions.txt"; if [ -n "$PY_PID" ]; then kill -TERM "$PY_PID" || true; sleep 2; ps -p "$PY_PID" -o pid,stat,etime,%cpu,%mem,cmd | tee -a "$RUN/kill_actions.txt" || true; kill -KILL "$PY_PID" || true; fi; echo '=== pgrep after kill ===' | tee -a "$RUN/kill_actions.txt"; pgrep -af 'fast_sweep_profile_60s.py --run' | tee -a "$RUN/kill_actions.txt" || true;
+=== cancel/terminate all active tpch0_1 again ===
+93728|t
+=== active now ===
+93864|active|SELECT pid||'|'||state||'|'||left(query,120) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' ORDER BY q

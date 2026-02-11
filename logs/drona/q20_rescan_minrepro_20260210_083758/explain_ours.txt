@@ -1,0 +1,78 @@
+SET
+SET
+SET
+SET
+LOAD
+SET
+SET
+SET
+SET
+SET
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=BeginCustomScan pid=94933 build_seq=0 node=0x5b9e003b9dd0 plan=0x5b9e003bcff8 rel=lineitem relid=16413 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=BeginCustomScan pid=94933 build_seq=0 node=0x5b9e004a9ae0 plan=0x5b9e003c7070 rel=nation relid=16392 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=BeginCustomScan pid=94933 build_seq=0 node=0x5b9e004ab470 plan=0x5b9e003c7178 rel=supplier relid=16401 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=BeginCustomScan pid=94933 build_seq=0 node=0x5b9e004acb88 plan=0x5b9e003c5cf0 rel=partsupp relid=16404 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=BeginCustomScan pid=94933 build_seq=0 node=0x5b9e004db308 plan=0x5b9e003c7280 rel=part relid=16398 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=query_state_begin pid=94933 build_seq=1 qs=0x5b9e005479f8 qctx=0x5b9e003b9430
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=filter_built pid=94933 build_seq=1 rel=lineitem relid=16413 rows=600572 allow_bytes=75072 blk_index_bytes=1584188
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=query_state_ready pid=94933 build_seq=1 eval_calls=1 load_calls=1 policy_run_calls=1 allow_build_calls=1 blk_index_build_calls=1 n_filters=1
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=EndCustomScan pid=94933 build_seq=1 node=0x5b9e004a9ae0 rel=nation relid=16392 scan=SeqScan filter=off rescans=0 tuples_seen=0 tuples_passed=0
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=EndCustomScan pid=94933 build_seq=1 node=0x5b9e004ab470 rel=supplier relid=16401 scan=SeqScan filter=off rescans=0 tuples_seen=0 tuples_passed=0
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=EndCustomScan pid=94933 build_seq=1 node=0x5b9e004acb88 rel=partsupp relid=16404 scan=SeqScan filter=off rescans=0 tuples_seen=0 tuples_passed=0
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=EndCustomScan pid=94933 build_seq=1 node=0x5b9e004db308 rel=part relid=16398 scan=SeqScan filter=off rescans=0 tuples_seen=0 tuples_passed=0
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  rescan_profile: event=EndCustomScan pid=94933 build_seq=1 node=0x5b9e003b9dd0 rel=lineitem relid=16413 scan=SeqScan filter=off rescans=0 tuples_seen=0 tuples_passed=0
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/explain_ours.sql:34: NOTICE:  policy_profile: eval_ms=0.115 artifact_load_ms=19.220 artifact_parse_ms=0.029 stamp_ms=22.475 bin_ms=10.981 local_sat_ms=0.302 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=39.221 ctid_map_ms=2.949 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=5 n_policy_targets=1 n_filters=1 bytes_artifacts_loaded=12011519 bytes_allow=75072 bytes_ctid=4804576 bytes_blk_index=1584188 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+                                                                                                                                             QUERY PLAN                                                                                                                                             
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  Sort
+         Output: supplier.s_name, NULL::character varying(40)
+         Sort Key: supplier.s_name
+         ->  Nested Loop
+               Output: supplier.s_name, NULL::character varying(40)
+               Join Filter: (supplier.s_nationkey = nation.n_nationkey)
+               ->  Custom Scan (custom_filter) on public.nation
+                     Output: nation.n_nationkey
+                     custom_filter: 
+                     ->  Seq Scan on public.nation
+                           Output: nation.n_nationkey
+                           Filter: (nation.n_name = 'BRAZIL'::bpchar)
+               ->  Nested Loop Semi Join
+                     Output: supplier.s_name, supplier.s_nationkey
+                     Join Filter: (supplier.s_suppkey = partsupp.ps_suppkey)
+                     ->  Custom Scan (custom_filter) on public.supplier
+                           Output: supplier.s_name, supplier.s_nationkey, supplier.s_suppkey
+                           custom_filter: 
+                           ->  Seq Scan on public.supplier
+                                 Output: supplier.s_name, supplier.s_nationkey, supplier.s_suppkey
+                     ->  Materialize
+                           Output: partsupp.ps_suppkey
+                           ->  Nested Loop Semi Join
+                                 Output: partsupp.ps_suppkey
+                                 Join Filter: (partsupp.ps_partkey = part.p_partkey)
+                                 ->  Custom Scan (custom_filter) on public.partsupp
+                                       Output: partsupp.ps_partkey, partsupp.ps_suppkey
+                                       custom_filter: 
+                                       ->  Seq Scan on public.partsupp
+                                             Output: partsupp.ps_partkey, partsupp.ps_suppkey
+                                             Filter: ((partsupp.ps_availqty)::numeric > (SubPlan 1))
+                                             SubPlan 1
+                                               ->  Aggregate
+                                                     Output: (0.5 * sum(lineitem.l_quantity))
+                                                     ->  Custom Scan (custom_filter) on public.lineitem
+                                                           Output: lineitem.l_quantity
+                                                           custom_filter: 
+                                                           ->  Seq Scan on public.lineitem
+                                                                 Output: lineitem.l_quantity
+                                                                 Filter: ((lineitem.l_shipdate >= '1995-01-01'::date) AND (lineitem.l_shipdate < '1996-01-01 00:00:00'::timestamp without time zone) AND (lineitem.l_partkey = partsupp.ps_partkey) AND (lineitem.l_suppkey = partsupp.ps_suppkey))
+                                 ->  Materialize
+                                       Output: part.p_partkey
+                                       ->  Custom Scan (custom_filter) on public.part
+                                             Output: part.p_partkey
+                                             custom_filter: 
+                                             ->  Seq Scan on public.part
+                                                   Output: part.p_partkey
+                                                   Filter: ((part.p_name)::text ~~ 'midnight%'::text)
+(50 rows)
+

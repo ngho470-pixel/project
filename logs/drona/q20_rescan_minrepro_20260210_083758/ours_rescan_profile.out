@@ -1,0 +1,57 @@
+Timing is on.
+SET
+Time: 0.102 ms
+SET
+Time: 0.048 ms
+SET
+Time: 0.033 ms
+SET
+Time: 0.032 ms
+SET
+Time: 0.038 ms
+ pg_backend_pid 
+----------------
+          94935
+(1 row)
+
+Time: 0.182 ms
+LOAD
+Time: 1.844 ms
+SET
+Time: 0.056 ms
+SET
+Time: 0.033 ms
+SET
+Time: 0.034 ms
+SET
+Time: 0.030 ms
+SET
+Time: 0.033 ms
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=BeginCustomScan pid=94935 build_seq=0 node=0x5b9e003b80f0 plan=0x5b9e003b03a8 rel=lineitem relid=16413 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=BeginCustomScan pid=94935 build_seq=0 node=0x5b9e00491d50 plan=0x788ac1e13370 rel=nation relid=16392 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=BeginCustomScan pid=94935 build_seq=0 node=0x5b9e004936e0 plan=0x788ac1e13478 rel=supplier relid=16401 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=BeginCustomScan pid=94935 build_seq=0 node=0x5b9e00494df8 plan=0x5b9e003b56f8 rel=partsupp relid=16404 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=BeginCustomScan pid=94935 build_seq=0 node=0x5b9e004c3578 plan=0x788ac1e13580 rel=part relid=16398 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=query_state_begin pid=94935 build_seq=1 qs=0x5b9e0052fc68 qctx=0x5b9e003b7750
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=filter_built pid=94935 build_seq=1 rel=lineitem relid=16413 rows=600572 allow_bytes=75072 blk_index_bytes=1584188
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=query_state_ready pid=94935 build_seq=1 eval_calls=1 load_calls=1 policy_run_calls=1 allow_build_calls=1 blk_index_build_calls=1 n_filters=1
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=94935 build_seq=1 node=0x5b9e00491d50 rel=nation relid=16392 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e004936e0 rel=supplier relid=16401 scan=SeqScan filter=off rescan_count=1
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=94935 build_seq=1 node=0x5b9e004936e0 rel=supplier relid=16401 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=94935 build_seq=1 node=0x5b9e00494df8 rel=partsupp relid=16404 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=off rescan_count=1
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ExecCustomScan(first) pid=94935 build_seq=1 node=0x5b9e004c3578 rel=part relid=16398 scan=SeqScan filter=off
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=2
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=3
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=4
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=8
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=16
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=32
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=64
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=128
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=256
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  rescan_profile: event=ReScanCustomScan pid=94935 build_seq=1 node=0x5b9e003b80f0 rel=lineitem relid=16413 scan=SeqScan filter=on rescan_count=512
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: ERROR:  canceling statement due to statement timeout
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/run_ours.sql:36: NOTICE:  policy_profile: eval_ms=0.103 artifact_load_ms=19.180 artifact_parse_ms=0.025 stamp_ms=22.545 bin_ms=10.496 local_sat_ms=0.298 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=38.861 ctid_map_ms=2.919 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=5 n_policy_targets=1 n_filters=1 bytes_artifacts_loaded=12011519 bytes_allow=75072 bytes_ctid=4804576 bytes_blk_index=1584188 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+Time: 20000.469 ms (00:20.000)

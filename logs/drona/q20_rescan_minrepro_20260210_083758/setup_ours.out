@@ -1,0 +1,19 @@
+SET
+SET
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/setup_ours.sql:4: NOTICE:  relation "files" already exists, skipping
+CREATE TABLE
+LOAD
+TRUNCATE TABLE
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/setup_ours.sql:7: NOTICE:  relation "files" already exists, skipping
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/setup_ours.sql:7: NOTICE:  table "tmp_dict_0" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/q20_rescan_minrepro_20260210_083758/setup_ours.sql:7: NOTICE:  table "tmp_dict_1" does not exist, skipping
+ build_base 
+------------
+ 
+(1 row)
+
+ artifact_bytes 
+----------------
+       12011528
+(1 row)
+
