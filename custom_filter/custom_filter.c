@@ -2972,8 +2972,13 @@ cf_exec(CustomScanState *node)
     {
         if (cf_query_state)
         {
-            if (!st->filter)
-                st->filter = cf_find_filter(cf_query_state, st->relid);
+            /*
+             * Always rebind the filter pointer from the current query-state.
+             * If query-state is rebuilt mid-query (e.g., due to subplan contexts),
+             * old pointers can become stale and appear "valid" while holding
+             * corrupted metadata (ctid_pairs_len/n_rows/etc).
+             */
+            st->filter = cf_find_filter(cf_query_state, st->relid);
 
             /*
              * Guardrail: if a scan state captured a stale filter pointer (e.g. due
