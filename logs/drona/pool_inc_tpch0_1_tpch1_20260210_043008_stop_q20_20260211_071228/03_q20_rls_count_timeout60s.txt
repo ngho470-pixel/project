@@ -1,0 +1,15 @@
+ 
+bash: -c: option requires an argument
+Timing is on.
+SET
+Time: 0.122 ms
+SET
+Time: 0.039 ms
+SET
+Time: 0.033 ms
+SET
+Time: 0.038 ms
+SET
+Time: 0.045 ms
+ERROR:  canceling statement due to statement timeout
+Time: 60000.452 ms (01:00.000)

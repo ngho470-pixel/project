@@ -1,0 +1,40 @@
+ 
+=== before: pgrep harness ===
+bash: -c: option requires an argument
+67673 /home/nghosh/research/z3_lab/venv/bin/python -u fast_sweep_profile_60s.py --run --dbs tpch0_1 tpch1 --ks 1 5 10 15 20 --policy-pool 1-20 --policy /tmp/z3_lab/policy.txt --queries /tmp/z3_lab/queries.txt --policies-enabled /tmp/z3_lab/policies_enabled.txt --custom-filter-so /tmp/z3_lab/custom_filter.so --artifact-builder-so /tmp/z3_lab/artifact_builder.so --hot-runs 5 --statement-timeout 1800s --correctness-sample 0 --times-csv /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/times.csv --profile-csv /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/profile.csv --correctness-csv /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/correctness.csv --summary-csv /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/summary.csv --plots-dir /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/plots --seed 20260210
+82112 zsh -c bash -lc  set -euo pipefail RUN=/home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008  echo "=== before: pgrep harness ===" pgrep -af "fast_sweep_profile_60s.py --run" || true  echo "=== before: active backends tpch0_1 ===" export PGPASSWORD=12345 psql -h localhost -U postgres -d tpch0_1 -P pager=off -c " SELECT pid, state, now()-query_start AS age, left(query,120) AS q FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' ORDER BY age DESC; " || true  # Cancel/terminate active backend queries (exclude ourselves) echo "=== cancel tpch0_1 actives (exclude self) ===" psql -h localhost -U postgres -d tpch0_1 -P pager=off -c " SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' AND pid <> pg_backend_pid(); " || true sleep 2  echo "=== terminate tpch0_1 actives (exclude self) ===" psql -h localhost -U postgres -d tpch0_1 -P pager=off -c " SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' AND pid <> pg_backend_pid(); " || true  # Kill harness python explicitly PIDS=$(pgrep -af "fast_sweep_profile_60s.py --run" | awk '$2 ~ /python/ {print $1}' || true) echo "python_pids=[$PIDS]" if [ -n "$PIDS" ]; then   echo "$PIDS" | while read -r p; do     [ -n "$p" ] || continue     kill -TERM "$p" || true   done   sleep 1   echo "$PIDS" | while read -r p; do     [ -n "$p" ] || continue     kill -KILL "$p" || true   done fi  sleep 1  echo "=== after: pgrep harness ===" pgrep -af "fast_sweep_profile_60s.py --run" || true  echo "=== after: active backends tpch0_1 ===" psql -h localhost -U postgres -d tpch0_1 -P pager=off -c " SELECT pid, state, now()-query_start AS age, left(query,120) AS q FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' ORDER BY age DESC; " || true  
+=== before: active backends tpch0_1 ===
+  pid  | state  |       age       |                                                            q                                                             
+-------+--------+-----------------+--------------------------------------------------------------------------------------------------------------------------
+ 81758 | active | 00:01:46.841496 | select s_name, count(*) as numwait from supplier, lineitem l1, orders, nation where s_suppkey = l1.l_suppkey and o_order
+ 82116 | active | 00:00:00        |                                                                                                                         +
+       |        |                 | SELECT pid, state, now()-query_start AS age, left(query,120) AS q                                                       +
+       |        |                 | FROM pg_stat_activity                                                                                                   +
+       |        |                 | WHERE datname='tpch0_1' AND sta
+(2 rows)
+
+=== cancel tpch0_1 actives (exclude self) ===
+ pg_cancel_backend 
+-------------------
+ t
+(1 row)
+
+=== terminate tpch0_1 actives (exclude self) ===
+ pg_terminate_backend 
+----------------------
+ t
+(1 row)
+
+python_pids=[67673]
+zsh:kill:44: kill 67673 failed: no such process
+=== after: pgrep harness ===
+82112 zsh -c bash -lc  set -euo pipefail RUN=/home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008  echo "=== before: pgrep harness ===" pgrep -af "fast_sweep_profile_60s.py --run" || true  echo "=== before: active backends tpch0_1 ===" export PGPASSWORD=12345 psql -h localhost -U postgres -d tpch0_1 -P pager=off -c " SELECT pid, state, now()-query_start AS age, left(query,120) AS q FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' ORDER BY age DESC; " || true  # Cancel/terminate active backend queries (exclude ourselves) echo "=== cancel tpch0_1 actives (exclude self) ===" psql -h localhost -U postgres -d tpch0_1 -P pager=off -c " SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' AND pid <> pg_backend_pid(); " || true sleep 2  echo "=== terminate tpch0_1 actives (exclude self) ===" psql -h localhost -U postgres -d tpch0_1 -P pager=off -c " SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' AND pid <> pg_backend_pid(); " || true  # Kill harness python explicitly PIDS=$(pgrep -af "fast_sweep_profile_60s.py --run" | awk '$2 ~ /python/ {print $1}' || true) echo "python_pids=[$PIDS]" if [ -n "$PIDS" ]; then   echo "$PIDS" | while read -r p; do     [ -n "$p" ] || continue     kill -TERM "$p" || true   done   sleep 1   echo "$PIDS" | while read -r p; do     [ -n "$p" ] || continue     kill -KILL "$p" || true   done fi  sleep 1  echo "=== after: pgrep harness ===" pgrep -af "fast_sweep_profile_60s.py --run" || true  echo "=== after: active backends tpch0_1 ===" psql -h localhost -U postgres -d tpch0_1 -P pager=off -c " SELECT pid, state, now()-query_start AS age, left(query,120) AS q FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' ORDER BY age DESC; " || true  
+=== after: active backends tpch0_1 ===
+  pid  | state  |   age    |                                 q                                 
+-------+--------+----------+-------------------------------------------------------------------
+ 82145 | active | 00:00:00 |                                                                  +
+       |        |          | SELECT pid, state, now()-query_start AS age, left(query,120) AS q+
+       |        |          | FROM pg_stat_activity                                            +
+       |        |          | WHERE datname='tpch0_1' AND sta
+(1 row)
+

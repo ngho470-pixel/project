@@ -1,0 +1,14 @@
+ 
+bash: -c: option requires an argument
+  pid  | state  | wait_event_type | wait_event |       age       |                                                                                                    q                                                                                                     
+-------+--------+-----------------+------------+-----------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 68500 | active |                 |            | 00:13:01.903826 | select s_name, s_address from supplier, nation where s_suppkey in ( select ps_suppkey from partsupp where ps_partkey in ( select p_partkey from part where p_name like 'midnight%' ) and ps_availqty > (
+ 81240 | active |                 |            | 00:00:00        |                                                                                                                                                                                                         +
+       |        |                 |            |                 | SELECT pid, state, wait_event_type, wait_event, now()-query_start AS age,                                                                                                                               +
+       |        |                 |            |                 |        left(query,200) AS q                                                                                                                                                                             +
+       |        |                 |            |                 | FROM pg_stat_activity                                                                                                                                                                                   +
+       |        |                 |            |                 | WHERE datname='tpch0_1' AND state='active'                                                                                                                                                              +
+       |        |                 |            |                 | ORDER BY age DESC;                                                                                                                                                                                      +
+       |        |                 |            |                 | 
+(2 rows)
+

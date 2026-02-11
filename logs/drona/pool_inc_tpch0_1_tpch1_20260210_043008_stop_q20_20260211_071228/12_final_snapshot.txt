@@ -1,0 +1,53 @@
+ 
+=== final: tail run.out ===
+bash: -c: option requires an argument
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=6
+[progress] db=tpch0_1 K=1 baseline=ours query=7
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=7
+[progress] db=tpch0_1 K=1 baseline=ours query=8
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=8
+[progress] db=tpch0_1 K=1 baseline=ours query=9
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=9
+[progress] db=tpch0_1 K=1 baseline=ours query=10
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=10
+[progress] db=tpch0_1 K=1 baseline=ours query=11
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=11
+[progress] db=tpch0_1 K=1 baseline=ours query=12
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=12
+[progress] db=tpch0_1 K=1 baseline=ours query=13
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=13
+[progress] db=tpch0_1 K=1 baseline=ours query=14
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=14
+[progress] db=tpch0_1 K=1 baseline=ours query=15
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=15
+[progress] db=tpch0_1 K=1 baseline=ours query=16
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=16
+[progress] db=tpch0_1 K=1 baseline=ours query=17
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=17
+[progress] db=tpch0_1 K=1 baseline=ours query=18
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=18
+[progress] db=tpch0_1 K=1 baseline=ours query=19
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=19
+[progress] db=tpch0_1 K=1 baseline=ours query=20
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=20
+[progress] db=tpch0_1 K=1 baseline=ours query=21
+=== final: tail times.csv ===
+query,tpch0_1,1,1,ours,16,,,90.980,51036,91.218,51548,91.165,51332,90.825,51332,90.769,51340,90.717,51344,90.939,51379,ok,,
+query,tpch0_1,1,1,rls_with_index,16,,,60.666,44692,60.627,45184,60.625,44928,60.567,44936,60.536,44940,60.569,44944,60.585,44986,ok,,
+query,tpch0_1,1,1,ours,17,,,8102.836,234208,7892.249,237216,7862.065,237460,7892.531,238160,7862.181,238160,7861.842,238624,7874.174,237924,ok,,
+query,tpch0_1,1,1,rls_with_index,17,,,10090.524,201424,10030.155,201936,10000.268,201936,9970.780,201908,9940.864,201908,10000.387,201936,9988.491,201924,ok,,
+query,tpch0_1,1,1,ours,18,,,452.750,228184,392.033,228524,391.990,228656,391.912,228668,391.798,228680,391.780,228692,391.903,228644,ok,,
+query,tpch0_1,1,1,rls_with_index,18,,,241.365,129772,241.259,134332,241.165,134576,241.209,134580,241.216,134584,241.204,134588,241.211,134532,ok,,
+query,tpch0_1,1,1,ours,19,,,181.331,149956,150.962,164568,150.919,164660,150.850,164700,150.870,164728,150.853,164732,150.891,164677,ok,,
+query,tpch0_1,1,1,rls_with_index,19,,,19215.574,122568,19242.906,122568,19185.259,122568,19214.495,122568,19214.092,122568,19094.592,122568,19190.269,122568,ok,,
+query,tpch0_1,1,1,ours,20,,,1800021.630,243592,,,,,,,,,,,0.000,0,error,timeout,ERROR:  canceling statement due to statement timeout
+query,tpch0_1,1,1,rls_with_index,20,,,74730.495,202132,,,,,,,,,,,0.000,0,error,db_error,ERROR:  canceling statement due to user request
+=== final: ls run dir ===
+total 44K
+drwxrwxr-x  2 nghosh nghosh 4.0K Feb 10 04:30 .
+drwxr-xr-x 15 nghosh nghosh 4.0K Feb 10 04:30 ..
+-rw-rw-r--  1 nghosh nghosh   55 Feb 10 04:30 correctness.csv
+-rw-rw-r--  1 nghosh nghosh    6 Feb 10 04:30 pid
+-rw-rw-r--  1 nghosh nghosh  16K Feb 10 07:18 profile.csv
+-rw-rw-r--  1 nghosh nghosh 2.7K Feb 10 07:19 run.out
+-rw-rw-r--  1 nghosh nghosh 6.0K Feb 10 07:19 times.csv

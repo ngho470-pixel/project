@@ -1,0 +1,59 @@
+ 
+BASH=/usr/bin/bash
+BASHOPTS=checkwinsize:cmdhist:complete_fullquote:extquote:force_fignore:globasciiranges:globskipdots:hostcomplete:interactive_comments:login_shell:patsub_replacement:progcomp:promptvars:sourcepath
+BASH_ALIASES=()
+BASH_ARGC=([0]="1")
+BASH_ARGV=([0]="pipefail")
+BASH_CMDS=()
+BASH_EXECUTION_STRING=set
+BASH_LINENO=()
+BASH_LOADABLES_PATH=/usr/local/lib/bash:/usr/lib/bash:/opt/local/lib/bash:/usr/pkg/lib/bash:/opt/pkg/lib/bash:.
+BASH_SOURCE=()
+BASH_VERSINFO=([0]="5" [1]="2" [2]="21" [3]="1" [4]="release" [5]="x86_64-pc-linux-gnu")
+BASH_VERSION='5.2.21(1)-release'
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
+DEBUGINFOD_URLS='https://debuginfod.ubuntu.com '
+DEFAULT_XDG_CONFIG_DIRS=/etc/xdg
+DEFAULT_XDG_DATA_DIRS=/usr/local/share/:/usr/share/
+DIRSTACK=()
+EUID=1001
+GROUPS=()
+HOME=/home/nghosh
+HOSTNAME=dell-R760
+HOSTTYPE=x86_64
+IFS=$' \t\n'
+LANG=en_US.UTF-8
+LC_ALL=C.UTF-8
+LC_CTYPE=C.UTF-8
+LOGNAME=nghosh
+MACHTYPE=x86_64-pc-linux-gnu
+OLDPWD=/home/nghosh
+OPTERR=1
+OPTIND=1
+OSTYPE=linux-gnu
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+PIPESTATUS=([0]="1")
+PPID=81560
+PS4='+ '
+PWD=/home/nghosh
+SHELL=/usr/bin/zsh
+SHELLOPTS=braceexpand:hashall:interactive-comments
+SHLVL=2
+SSH_CLIENT='10.208.23.135 34706 22'
+SSH_CONNECTION='10.208.23.135 34706 10.208.20.245 22'
+TERM=dumb
+UID=1001
+USER=nghosh
+XDG_DATA_DIRS=/usr/share/gnome:/usr/local/share:/usr/share:/var/lib/snapd/desktop
+XDG_RUNTIME_DIR=/run/user/1001
+XDG_SESSION_CLASS=user
+XDG_SESSION_ID=1505
+XDG_SESSION_TYPE=tty
+_=']'
+snap_bin_path=/snap/bin
+snap_xdg_path=/var/lib/snapd/desktop
+02afba6b7f07671a0b99b5776ab1bee32adae9dd7c3b9109decec1f3294c7d76  /tmp/z3_lab/policy.txt
+541f6cca277a464afed5f0b22d9ce89cc2faaf128e1b5b55776517df474fd067  /tmp/z3_lab/queries.txt
+375006d7bc01d8b9a2987ea32928cf1d63ea9c88b8773b5a0ce864755a96da0b  /tmp/z3_lab/policies_enabled.txt
+3e2ab0bd90371e8907be82d657a3c7bd866f359818024d7c57050032fbcc8bc8  /tmp/z3_lab/custom_filter.so
+cb763000ae3cd215da052bf92c36c27053fececabd7683558c614e3b3405e554  /tmp/z3_lab/artifact_builder.so

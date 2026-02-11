@@ -43,3 +43,5 @@
 [progress] db=tpch0_1 K=1 baseline=ours query=19
 [progress] db=tpch0_1 K=1 baseline=rls_with_index query=19
 [progress] db=tpch0_1 K=1 baseline=ours query=20
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=20
+[progress] db=tpch0_1 K=1 baseline=ours query=21

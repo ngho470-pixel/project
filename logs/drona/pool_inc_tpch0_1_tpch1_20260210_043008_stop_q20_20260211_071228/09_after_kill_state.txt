@@ -1,0 +1,67 @@
+ 
+=== after: pgrep fast_sweep_profile_60s.py --run ===
+bash: -c: option requires an argument
+67673 /home/nghosh/research/z3_lab/venv/bin/python -u fast_sweep_profile_60s.py --run --dbs tpch0_1 tpch1 --ks 1 5 10 15 20 --policy-pool 1-20 --policy /tmp/z3_lab/policy.txt --queries /tmp/z3_lab/queries.txt --policies-enabled /tmp/z3_lab/policies_enabled.txt --custom-filter-so /tmp/z3_lab/custom_filter.so --artifact-builder-so /tmp/z3_lab/artifact_builder.so --hot-runs 5 --statement-timeout 1800s --correctness-sample 0 --times-csv /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/times.csv --profile-csv /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/profile.csv --correctness-csv /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/correctness.csv --summary-csv /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/summary.csv --plots-dir /home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008/plots --seed 20260210
+81489 zsh -c bash -lc  set -euo pipefail RUN=/home/nghosh/research/z3_lab/logs/pool_inc_tpch0_1_tpch1_20260210_043008 echo "=== after: pgrep fast_sweep_profile_60s.py --run ===" pgrep -af "fast_sweep_profile_60s.py --run" || true  echo "=== after: ps harness ===" HPID=$(cat "$RUN/pid" 2>/dev/null || true) if [ -n "$HPID" ]; then   ps -p "$HPID" -o pid,stat,etime,%cpu,%mem,cmd || true fi  echo "=== after: pg_stat_activity active ===" export PGPASSWORD=12345 psql -h localhost -U postgres -d tpch0_1 -P pager=off -c " SELECT pid, state, wait_event_type, wait_event, now()-query_start AS age,        left(query,200) AS q FROM pg_stat_activity WHERE datname='tpch0_1' AND state='active' ORDER BY age DESC; "   echo "=== after: tail run.out ===" tail -n 40 "$RUN/run.out" | sed -e 's/?$//' || true  echo "=== after: tail times.csv ===" tail -n 5 "$RUN/times.csv" | sed -e 's/?$//' || true 
+=== after: ps harness ===
+    PID STAT     ELAPSED %CPU %MEM CMD
+=== after: pg_stat_activity active ===
+  pid  | state  | wait_event_type | wait_event |      age       |                                                                                                    q                                                                                                     
+-------+--------+-----------------+------------+----------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 81367 | active |                 |            | 00:00:02.13191 | select s_name, s_address from supplier, nation where s_suppkey in ( select ps_suppkey from partsupp where ps_partkey in ( select p_partkey from part where p_name like 'midnight%' ) and ps_availqty > (
+ 81496 | active |                 |            | 00:00:00       |                                                                                                                                                                                                         +
+       |        |                 |            |                | SELECT pid, state, wait_event_type, wait_event, now()-query_start AS age,                                                                                                                               +
+       |        |                 |            |                |        left(query,200) AS q                                                                                                                                                                             +
+       |        |                 |            |                | FROM pg_stat_activity                                                                                                                                                                                   +
+       |        |                 |            |                | WHERE datname='tpch0_1' AND state='active'                                                                                                                                                              +
+       |        |                 |            |                | ORDER BY age DESC;                                                                                                                                                                                      +
+       |        |                 |            |                | 
+(2 rows)
+
+=== after: tail run.out ===
+[progress] db=tpch0_1 K=1 baseline=ours query=1
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=1
+[progress] db=tpch0_1 K=1 baseline=ours query=2
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=2
+[progress] db=tpch0_1 K=1 baseline=ours query=3
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=3
+[progress] db=tpch0_1 K=1 baseline=ours query=4
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=4
+[progress] db=tpch0_1 K=1 baseline=ours query=5
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=5
+[progress] db=tpch0_1 K=1 baseline=ours query=6
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=6
+[progress] db=tpch0_1 K=1 baseline=ours query=7
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=7
+[progress] db=tpch0_1 K=1 baseline=ours query=8
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=8
+[progress] db=tpch0_1 K=1 baseline=ours query=9
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=9
+[progress] db=tpch0_1 K=1 baseline=ours query=10
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=10
+[progress] db=tpch0_1 K=1 baseline=ours query=11
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=11
+[progress] db=tpch0_1 K=1 baseline=ours query=12
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=12
+[progress] db=tpch0_1 K=1 baseline=ours query=13
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=13
+[progress] db=tpch0_1 K=1 baseline=ours query=14
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=14
+[progress] db=tpch0_1 K=1 baseline=ours query=15
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=15
+[progress] db=tpch0_1 K=1 baseline=ours query=16
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=16
+[progress] db=tpch0_1 K=1 baseline=ours query=17
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=17
+[progress] db=tpch0_1 K=1 baseline=ours query=18
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=18
+[progress] db=tpch0_1 K=1 baseline=ours query=19
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=19
+[progress] db=tpch0_1 K=1 baseline=ours query=20
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=20
+=== after: tail times.csv ===
+query,tpch0_1,1,1,ours,18,,,452.750,228184,392.033,228524,391.990,228656,391.912,228668,391.798,228680,391.780,228692,391.903,228644,ok,,
+query,tpch0_1,1,1,rls_with_index,18,,,241.365,129772,241.259,134332,241.165,134576,241.209,134580,241.216,134584,241.204,134588,241.211,134532,ok,,
+query,tpch0_1,1,1,ours,19,,,181.331,149956,150.962,164568,150.919,164660,150.850,164700,150.870,164728,150.853,164732,150.891,164677,ok,,
+query,tpch0_1,1,1,rls_with_index,19,,,19215.574,122568,19242.906,122568,19185.259,122568,19214.495,122568,19214.092,122568,19094.592,122568,19190.269,122568,ok,,
+query,tpch0_1,1,1,ours,20,,,1800021.630,243592,,,,,,,,,,,0.000,0,error,timeout,ERROR:  canceling statement due to statement timeout
