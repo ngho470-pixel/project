@@ -223,6 +223,22 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--query-ids", nargs="*", default=None)
     p.add_argument("--skip-query-ids", nargs="*", default=None)
     p.add_argument("--correctness-sample", type=int, default=3, help="Queries sampled per K for COUNT correctness (0=all)")
+    p.add_argument(
+        "--profile-debug-mode",
+        default="trace",
+        choices=["off", "contract", "trace"],
+        help="custom_filter.debug_mode used for the OURS profile-capture run (default: trace)",
+    )
+    p.add_argument(
+        "--ours-profile-rescan",
+        action="store_true",
+        help="Enable custom_filter.profile_rescan=on for the OURS profile-capture run",
+    )
+    p.add_argument(
+        "--dump-ours-notices",
+        action="store_true",
+        help="Write full NOTICE lines from the OURS profile-capture run into the profile CSV directory",
+    )
     return p.parse_args()
 
 
@@ -841,20 +857,24 @@ def run_ours_profile_capture(
     query_sql: str,
     enabled_path: Path,
     statement_timeout_ms: int,
-) -> Tuple[RunMetrics, str, Dict[str, str], int]:
+    ours_profile_rescan: bool = False,
+    ours_debug_mode: str = "trace",
+) -> Tuple[RunMetrics, str, Dict[str, str], int, List[str]]:
     conn = None
     try:
         conn = connect(db, "postgres")
         with conn.cursor() as cur:
-            set_session_for_baseline(cur, "ours", enabled_path, statement_timeout_ms, ours_debug_mode="trace")
+            set_session_for_baseline(cur, "ours", enabled_path, statement_timeout_ms, ours_debug_mode=ours_debug_mode)
+            if ours_profile_rescan:
+                cur.execute("SET custom_filter.profile_rescan = on;")
             cur.execute("SET client_min_messages = notice;")
             metrics, notices = execute_with_rss_and_notices(cur, query_sql)
             payload, kv, cnt = extract_policy_profile(notices)
-            return metrics, payload, kv, cnt
+            return metrics, payload, kv, cnt, notices
     except Exception as exc:  # noqa: BLE001
         msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
         etype, emsg = classify_error(exc, msg)
-        return make_error_metrics(etype, emsg), "", {}, 0
+        return make_error_metrics(etype, emsg), "", {}, 0, []
     finally:
         if conn is not None:
             conn.close()
@@ -1404,7 +1424,7 @@ def run_smoke_check(
         if ours_count != rls_count:
             raise HarnessError(f"smoke failed: count mismatch for q={qid} ours={ours_count} rls={rls_count}")
 
-    prof_metrics, prof_payload, prof_kv, prof_cnt = run_ours_profile_capture(
+    prof_metrics, prof_payload, prof_kv, prof_cnt, _notices = run_ours_profile_capture(
         db, qmap["3"], enabled_path, statement_timeout_ms
     )
     has_profile = bool(prof_payload) and "bytes_artifacts_loaded=" in prof_payload
@@ -1426,8 +1446,8 @@ def run_experiment(args: argparse.Namespace) -> None:
     if not dbs:
         raise HarnessError("no databases provided")
     hot_runs = args.hot_runs
-    if hot_runs != 5:
-        raise HarnessError("For stress matrix run, --hot-runs must be 5")
+    if hot_runs < 1 or hot_runs > 5:
+        raise HarnessError("--hot-runs must be in 1..5")
     statement_timeout_ms = parse_timeout_ms(args.statement_timeout)
 
     policy_lines = load_policy_lines(Path(args.policy))
@@ -1536,13 +1556,21 @@ def run_experiment(args: argparse.Namespace) -> None:
                     row = build_time_row(db, k, policy_ids, baseline, qid, cold, hots, expected_hot=hot_runs)
                     append_csv_row(times_csv, TIMES_COLUMNS, row)
                     if baseline == "ours":
-                        prof_metrics, prof_payload, prof_kv, prof_cnt = run_ours_profile_capture(
-                            db, qsql, enabled_path, statement_timeout_ms
+                        prof_metrics, prof_payload, prof_kv, prof_cnt, notices = run_ours_profile_capture(
+                            db,
+                            qsql,
+                            enabled_path,
+                            statement_timeout_ms,
+                            ours_profile_rescan=bool(args.ours_profile_rescan),
+                            ours_debug_mode=str(args.profile_debug_mode),
                         )
                         prow = build_profile_row(
                             db, k, policy_ids, qid, prof_metrics, prof_payload, prof_kv, prof_cnt
                         )
                         append_csv_row(profile_csv, PROFILE_COLUMNS, prow)
+                        if args.dump_ours_notices and notices:
+                            out_path = profile_csv.parent / f"ours_notices_db={db}_K={k}_q={qid}.txt"
+                            out_path.write_text("\n".join(notices) + "\n", encoding="utf-8")
 
             # correctness for sampled queries
             for qid, qsql in correctness_queries:
