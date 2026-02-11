@@ -1,0 +1,5 @@
+ 
+bash: -c: option requires an argument
+ERROR:  syntax error at or near "pg_stat_activityWHERE"
+LINE 1: ...tart AS query_age,       left(query,240) AS qFROM pg_stat_ac...
+                                                             ^

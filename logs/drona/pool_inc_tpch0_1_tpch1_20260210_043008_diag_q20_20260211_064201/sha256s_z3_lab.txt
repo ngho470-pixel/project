@@ -1,0 +1,7 @@
+ 
+bash: -c: option requires an argument
+02afba6b7f07671a0b99b5776ab1bee32adae9dd7c3b9109decec1f3294c7d76  /tmp/z3_lab/policy.txt
+541f6cca277a464afed5f0b22d9ce89cc2faaf128e1b5b55776517df474fd067  /tmp/z3_lab/queries.txt
+375006d7bc01d8b9a2987ea32928cf1d63ea9c88b8773b5a0ce864755a96da0b  /tmp/z3_lab/policies_enabled.txt
+3e2ab0bd90371e8907be82d657a3c7bd866f359818024d7c57050032fbcc8bc8  /tmp/z3_lab/custom_filter.so
+cb763000ae3cd215da052bf92c36c27053fececabd7683558c614e3b3405e554  /tmp/z3_lab/artifact_builder.so
