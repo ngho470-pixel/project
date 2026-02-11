@@ -1,0 +1,8 @@
+db=tpch0_1
+K=15
+query_id=13
+enabled_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+enabled_tmp=/tmp/z3_lab/policies_enabled_db=tpch0_1_K=15_q=13_20260211_004455.txt
+ours_status=ok ours_count=1 ours_ms=206.963 ours_err= 
+rls_status=ok rls_count=0 rls_ms=8.878 rls_err= 
+MISMATCH ours=1 rls=0

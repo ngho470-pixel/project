@@ -1,0 +1,27 @@
+Aggregate
+  Output: count(*)
+  ->  Sort
+        Output: (count(orders.o_orderkey)), (count(*))
+        Sort Key: (count(*)) DESC, (count(orders.o_orderkey)) DESC
+        ->  HashAggregate
+              Output: (count(orders.o_orderkey)), count(*)
+              Group Key: count(orders.o_orderkey)
+              ->  HashAggregate
+                    Output: customer.c_custkey, count(orders.o_orderkey)
+                    Group Key: customer.c_custkey
+                    ->  Hash Right Join
+                          Output: customer.c_custkey, orders.o_orderkey
+                          Hash Cond: (orders.o_custkey = customer.c_custkey)
+                          ->  Custom Scan (custom_filter) on public.orders
+                                Output: orders.o_orderkey, orders.o_custkey
+                                custom_filter: 
+                                ->  Seq Scan on public.orders
+                                      Output: orders.o_orderkey, orders.o_custkey
+                                      Filter: ((orders.o_comment)::text !~~ '%express%requests%'::text)
+                          ->  Hash
+                                Output: customer.c_custkey
+                                ->  Custom Scan (custom_filter) on public.customer
+                                      Output: customer.c_custkey
+                                      custom_filter: 
+                                      ->  Seq Scan on public.customer
+                                            Output: customer.c_custkey

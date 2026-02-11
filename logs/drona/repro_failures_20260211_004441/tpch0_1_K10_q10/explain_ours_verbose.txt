@@ -1,0 +1,47 @@
+Aggregate
+  Output: count(*)
+  ->  Sort
+        Output: customer.c_custkey, customer.c_name, (sum((lineitem.l_extendedprice * ('1'::numeric - lineitem.l_discount)))), customer.c_acctbal, nation.n_name, customer.c_address, customer.c_phone, customer.c_comment
+        Sort Key: (sum((lineitem.l_extendedprice * ('1'::numeric - lineitem.l_discount)))) DESC
+        ->  HashAggregate
+              Output: customer.c_custkey, customer.c_name, sum((lineitem.l_extendedprice * ('1'::numeric - lineitem.l_discount))), customer.c_acctbal, nation.n_name, customer.c_address, customer.c_phone, customer.c_comment
+              Group Key: customer.c_custkey, customer.c_name, customer.c_acctbal, customer.c_phone, nation.n_name, customer.c_address, customer.c_comment
+              ->  Hash Join
+                    Output: customer.c_custkey, customer.c_name, customer.c_acctbal, nation.n_name, customer.c_address, customer.c_phone, customer.c_comment, lineitem.l_extendedprice, lineitem.l_discount
+                    Hash Cond: (customer.c_nationkey = nation.n_nationkey)
+                    ->  Hash Join
+                          Output: customer.c_custkey, customer.c_name, customer.c_acctbal, customer.c_address, customer.c_phone, customer.c_comment, customer.c_nationkey, lineitem.l_extendedprice, lineitem.l_discount
+                          Hash Cond: (orders.o_custkey = customer.c_custkey)
+                          ->  Hash Join
+                                Output: orders.o_custkey, lineitem.l_extendedprice, lineitem.l_discount
+                                Hash Cond: (lineitem.l_orderkey = orders.o_orderkey)
+                                ->  Custom Scan (custom_filter) on public.lineitem
+                                      Output: lineitem.l_extendedprice, lineitem.l_discount, lineitem.l_orderkey
+                                      custom_filter: 
+                                      ->  Bitmap Heap Scan on public.lineitem
+                                            Output: lineitem.l_extendedprice, lineitem.l_discount, lineitem.l_orderkey
+                                            Recheck Cond: (lineitem.l_returnflag = 'R'::bpchar)
+                                            ->  Bitmap Index Scan on cf_rls_k10_lineitem_l_returnflag_10
+                                                  Index Cond: (lineitem.l_returnflag = 'R'::bpchar)
+                                ->  Hash
+                                      Output: orders.o_custkey, orders.o_orderkey
+                                      ->  Custom Scan (custom_filter) on public.orders
+                                            Output: orders.o_custkey, orders.o_orderkey
+                                            custom_filter: 
+                                            ->  Seq Scan on public.orders
+                                                  Output: orders.o_custkey, orders.o_orderkey
+                                                  Filter: ((orders.o_orderdate >= '1994-04-01'::date) AND (orders.o_orderdate < '1994-07-01 00:00:00'::timestamp without time zone))
+                          ->  Hash
+                                Output: customer.c_custkey, customer.c_name, customer.c_acctbal, customer.c_address, customer.c_phone, customer.c_comment, customer.c_nationkey
+                                ->  Custom Scan (custom_filter) on public.customer
+                                      Output: customer.c_custkey, customer.c_name, customer.c_acctbal, customer.c_address, customer.c_phone, customer.c_comment, customer.c_nationkey
+                                      custom_filter: 
+                                      ->  Seq Scan on public.customer
+                                            Output: customer.c_custkey, customer.c_name, customer.c_acctbal, customer.c_address, customer.c_phone, customer.c_comment, customer.c_nationkey
+                    ->  Hash
+                          Output: nation.n_name, nation.n_nationkey
+                          ->  Custom Scan (custom_filter) on public.nation
+                                Output: nation.n_name, nation.n_nationkey
+                                custom_filter: 
+                                ->  Seq Scan on public.nation
+                                      Output: nation.n_name, nation.n_nationkey
