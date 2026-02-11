@@ -1,0 +1,20 @@
+[db] start db=tpch0_1
+[policy_set] db=tpch0_1 K=20 enabled_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+[setup_ours] K=20 setup_ms=18570.946 disk=46155726
+[index_infer] K=20 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_name:text_pattern_ops', 'customer.c_nationkey', 'customer.c_phone:text_pattern_ops', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'lineitem.l_tax', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_brand', 'part.p_partkey', 'part.p_size', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_nationkey', 'supplier.s_suppkey']
+[setup_rls] K=20 setup_ms=3635.368 disk=110084096 indexes=['cf_rls_k20_customer_c_acctbal_1', 'cf_rls_k20_customer_c_custkey_2', 'cf_rls_k20_customer_c_mktsegment_3', 'cf_rls_k20_customer_c_name_4', 'cf_rls_k20_customer_c_nationkey_5', 'cf_rls_k20_customer_c_phone_6', 'cf_rls_k20_lineitem_l_discount_7', 'cf_rls_k20_lineitem_l_extendedprice_8', 'cf_rls_k20_lineitem_l_linestatus_9', 'cf_rls_k20_lineitem_l_orderkey_10', 'cf_rls_k20_lineitem_l_partkey_11', 'cf_rls_k20_lineitem_l_quantity_12', 'cf_rls_k20_lineitem_l_returnflag_13', 'cf_rls_k20_lineitem_l_shipinstruct_14', 'cf_rls_k20_lineitem_l_shipmode_15', 'cf_rls_k20_lineitem_l_suppkey_16', 'cf_rls_k20_lineitem_l_tax_17', 'cf_rls_k20_nation_n_name_18', 'cf_rls_k20_nation_n_nationkey_19', 'cf_rls_k20_nation_n_regionkey_20', 'cf_rls_k20_orders_o_custkey_21', 'cf_rls_k20_orders_o_orderkey_22', 'cf_rls_k20_orders_o_orderpriority_23', 'cf_rls_k20_orders_o_orderstatus_24', 'cf_rls_k20_orders_o_totalprice_25', 'cf_rls_k20_part_p_brand_26', 'cf_rls_k20_part_p_partkey_27', 'cf_rls_k20_part_p_size_28', 'cf_rls_k20_partsupp_ps_partkey_29', 'cf_rls_k20_partsupp_ps_suppkey_30', 'cf_rls_k20_partsupp_ps_supplycost_31', 'cf_rls_k20_region_r_name_32', 'cf_rls_k20_region_r_regionkey_33', 'cf_rls_k20_supplier_s_nationkey_34', 'cf_rls_k20_supplier_s_suppkey_35']
+[correctness_sample] db=tpch0_1 K=20 queries=['17', '18', '19']
+[progress] db=tpch0_1 K=20 baseline=ours query=17
+[progress] db=tpch0_1 K=20 baseline=rls_with_index query=17
+[progress] db=tpch0_1 K=20 baseline=ours query=18
+[progress] db=tpch0_1 K=20 baseline=rls_with_index query=18
+[progress] db=tpch0_1 K=20 baseline=ours query=19
+[progress] db=tpch0_1 K=20 baseline=rls_with_index query=19
+[db] done db=tpch0_1
+[summary] db=tpch0_1 scale=0.1 K=20 median_hot ours=242.196ms rls=241.244ms ratio=1.004 cross_ratio=2.876 disk ours=46155726 rls=110084096 median_rss ours=189880KB rls=136836KB
+[plot] matplotlib unavailable: No module named 'matplotlib'
+[done] times_csv=logs/q17_19_k20_allowbitsfix_20260210_125123/times.csv
+[done] profile_csv=logs/q17_19_k20_allowbitsfix_20260210_125123/profile.csv
+[done] correctness_csv=logs/q17_19_k20_allowbitsfix_20260210_125123/correctness.csv
+[done] summary_csv=logs/q17_19_k20_allowbitsfix_20260210_125123/summary.csv
+[done] plots_dir=logs/q17_19_k20_allowbitsfix_20260210_125123/plots
