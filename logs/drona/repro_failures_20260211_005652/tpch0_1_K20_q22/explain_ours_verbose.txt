@@ -1,0 +1,34 @@
+Aggregate
+  Output: count(*)
+  ->  GroupAggregate
+        Output: (SUBSTRING(customer.c_phone FROM 1 FOR 2)), NULL::bigint, NULL::numeric
+        Group Key: (SUBSTRING(customer.c_phone FROM 1 FOR 2))
+        InitPlan 1 (returns $0)
+          ->  Aggregate
+                Output: avg(customer_1.c_acctbal)
+                ->  Custom Scan (custom_filter) on public.customer customer_1
+                      Output: customer_1.c_acctbal
+                      custom_filter: 
+                      ->  Seq Scan on public.customer customer_1
+                            Output: customer_1.c_acctbal
+                            Filter: ((customer_1.c_acctbal > 0.00) AND (SUBSTRING(customer_1.c_phone FROM 1 FOR 2) = ANY ('{12,20,23,18,17,21,14}'::text[])))
+        ->  Sort
+              Output: (SUBSTRING(customer.c_phone FROM 1 FOR 2))
+              Sort Key: (SUBSTRING(customer.c_phone FROM 1 FOR 2))
+              ->  Nested Loop Anti Join
+                    Output: SUBSTRING(customer.c_phone FROM 1 FOR 2)
+                    ->  Custom Scan (custom_filter) on public.customer
+                          Output: customer.c_phone, customer.c_custkey
+                          custom_filter: 
+                          ->  Bitmap Heap Scan on public.customer
+                                Output: customer.c_phone, customer.c_custkey
+                                Recheck Cond: (customer.c_acctbal > $0)
+                                Filter: (SUBSTRING(customer.c_phone FROM 1 FOR 2) = ANY ('{12,20,23,18,17,21,14}'::text[]))
+                                ->  Bitmap Index Scan on cf_rls_k20_customer_c_acctbal_1
+                                      Index Cond: (customer.c_acctbal > $0)
+                    ->  Custom Scan (custom_filter) on public.orders
+                          Output: orders.o_custkey
+                          custom_filter: 
+                          ->  Index Scan using cf_rls_k20_orders_o_custkey_21 on public.orders
+                                Output: orders.o_custkey
+                                Index Cond: (orders.o_custkey = customer.c_custkey)

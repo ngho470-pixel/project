@@ -1,0 +1,62 @@
+Aggregate
+  Output: count(*)
+  ->  GroupAggregate
+        Output: nation.n_name, (EXTRACT(year FROM orders.o_orderdate)), NULL::numeric
+        Group Key: nation.n_name, (EXTRACT(year FROM orders.o_orderdate))
+        ->  Sort
+              Output: nation.n_name, (EXTRACT(year FROM orders.o_orderdate))
+              Sort Key: nation.n_name, (EXTRACT(year FROM orders.o_orderdate)) DESC
+              ->  Hash Join
+                    Output: nation.n_name, EXTRACT(year FROM orders.o_orderdate)
+                    Hash Cond: (supplier.s_nationkey = nation.n_nationkey)
+                    ->  Nested Loop
+                          Output: supplier.s_nationkey, orders.o_orderdate
+                          ->  Hash Join
+                                Output: lineitem.l_orderkey, supplier.s_nationkey
+                                Hash Cond: (lineitem.l_suppkey = supplier.s_suppkey)
+                                ->  Hash Join
+                                      Output: lineitem.l_suppkey, lineitem.l_orderkey, partsupp.ps_suppkey
+                                      Hash Cond: ((lineitem.l_suppkey = partsupp.ps_suppkey) AND (lineitem.l_partkey = partsupp.ps_partkey))
+                                      ->  Hash Join
+                                            Output: part.p_partkey, lineitem.l_suppkey, lineitem.l_partkey, lineitem.l_orderkey
+                                            Hash Cond: (lineitem.l_partkey = part.p_partkey)
+                                            ->  Custom Scan (custom_filter) on public.lineitem
+                                                  Output: lineitem.l_suppkey, lineitem.l_partkey, lineitem.l_orderkey
+                                                  custom_filter: 
+                                                  ->  Seq Scan on public.lineitem
+                                                        Output: lineitem.l_suppkey, lineitem.l_partkey, lineitem.l_orderkey
+                                            ->  Hash
+                                                  Output: part.p_partkey
+                                                  ->  Custom Scan (custom_filter) on public.part
+                                                        Output: part.p_partkey
+                                                        custom_filter: 
+                                                        ->  Seq Scan on public.part
+                                                              Output: part.p_partkey
+                                                              Filter: ((part.p_name)::text ~~ '%dim%'::text)
+                                      ->  Hash
+                                            Output: partsupp.ps_suppkey, partsupp.ps_partkey
+                                            ->  Custom Scan (custom_filter) on public.partsupp
+                                                  Output: partsupp.ps_suppkey, partsupp.ps_partkey
+                                                  custom_filter: 
+                                                  ->  Seq Scan on public.partsupp
+                                                        Output: partsupp.ps_suppkey, partsupp.ps_partkey
+                                ->  Hash
+                                      Output: supplier.s_suppkey, supplier.s_nationkey
+                                      ->  Custom Scan (custom_filter) on public.supplier
+                                            Output: supplier.s_suppkey, supplier.s_nationkey
+                                            custom_filter: 
+                                            ->  Seq Scan on public.supplier
+                                                  Output: supplier.s_suppkey, supplier.s_nationkey
+                          ->  Custom Scan (custom_filter) on public.orders
+                                Output: orders.o_orderdate, orders.o_orderkey
+                                custom_filter: 
+                                ->  Index Scan using cf_rls_k15_orders_o_orderkey_20 on public.orders
+                                      Output: orders.o_orderdate, orders.o_orderkey
+                                      Index Cond: (orders.o_orderkey = lineitem.l_orderkey)
+                    ->  Hash
+                          Output: nation.n_name, nation.n_nationkey
+                          ->  Custom Scan (custom_filter) on public.nation
+                                Output: nation.n_name, nation.n_nationkey
+                                custom_filter: 
+                                ->  Seq Scan on public.nation
+                                      Output: nation.n_name, nation.n_nationkey

@@ -1,0 +1,134 @@
+Aggregate
+  Output: count(*)
+  ->  GroupAggregate
+        Output: nation.n_name, (EXTRACT(year FROM orders.o_orderdate)), NULL::numeric
+        Group Key: nation.n_name, (EXTRACT(year FROM orders.o_orderdate))
+        ->  Incremental Sort
+              Output: nation.n_name, (EXTRACT(year FROM orders.o_orderdate))
+              Sort Key: nation.n_name, (EXTRACT(year FROM orders.o_orderdate)) DESC
+              Presorted Key: nation.n_name
+              ->  Nested Loop
+                    Output: nation.n_name, EXTRACT(year FROM orders.o_orderdate)
+                    Join Filter: (nation.n_nationkey = supplier.s_nationkey)
+                    ->  Index Scan using cf_rls_k15_nation_n_name_16 on public.nation
+                          Output: nation.n_nationkey, nation.n_name, nation.n_regionkey, nation.n_comment
+                    ->  Materialize
+                          Output: supplier.s_nationkey, orders.o_orderdate
+                          ->  Nested Loop
+                                Output: supplier.s_nationkey, orders.o_orderdate
+                                ->  Nested Loop
+                                      Output: lineitem.l_orderkey, supplier.s_nationkey
+                                      Join Filter: (supplier.s_suppkey = lineitem.l_suppkey)
+                                      ->  Nested Loop
+                                            Output: lineitem.l_suppkey, lineitem.l_orderkey, partsupp.ps_suppkey
+                                            Join Filter: ((lineitem.l_suppkey = partsupp.ps_suppkey) AND (lineitem.l_partkey = partsupp.ps_partkey))
+                                            ->  Bitmap Heap Scan on public.lineitem
+                                                  Output: lineitem.l_orderkey, lineitem.l_partkey, lineitem.l_suppkey, lineitem.l_linenumber, lineitem.l_quantity, lineitem.l_extendedprice, lineitem.l_discount, lineitem.l_tax, lineitem.l_returnflag, lineitem.l_linestatus, lineitem.l_shipdate, lineitem.l_commitdate, lineitem.l_receiptdate, lineitem.l_shipinstruct, lineitem.l_shipmode, lineitem.l_comment
+                                                  Recheck Cond: (((lineitem.l_discount >= 0.02) AND (lineitem.l_discount <= 0.05)) OR ((lineitem.l_discount >= 0.06) AND (lineitem.l_discount <= 0.08)))
+                                                  Filter: ((lineitem.l_extendedprice > '0'::numeric) AND (lineitem.l_extendedprice > '0'::numeric) AND (lineitem.l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((lineitem.l_returnflag = 'R'::bpchar) OR (lineitem.l_linestatus = 'F'::bpchar)) AND ((lineitem.l_shipmode = ANY ('{MAIL,SHIP}'::bpchar[])) OR (lineitem.l_shipmode = ANY ('{TRUCK,RAIL}'::bpchar[]))) AND ((lineitem.l_returnflag = 'R'::bpchar) OR (lineitem.l_returnflag = 'A'::bpchar)) AND ((lineitem.l_tax <= 0.07) OR (lineitem.l_discount <= 0.05)) AND (((lineitem.l_discount >= 0.02) AND (lineitem.l_discount <= 0.05) AND (lineitem.l_quantity <= '25'::numeric)) OR ((lineitem.l_discount >= 0.06) AND (lineitem.l_discount <= 0.08) AND (lineitem.l_quantity <= '10'::numeric))) AND (((lineitem.l_shipmode = ANY ('{AIR,"AIR REG"}'::bpchar[])) AND (lineitem.l_quantity <= '15'::numeric) AND (lineitem.l_discount <= 0.05) AND (lineitem.l_linestatus = 'F'::bpchar)) OR ((lineitem.l_shipmode = ANY ('{MAIL,SHIP}'::bpchar[])) AND (lineitem.l_quantity <= '30'::numeric) AND (lineitem.l_discount <= 0.07) AND (lineitem.l_returnflag = 'R'::bpchar))) AND (SubPlan 7))
+                                                  ->  BitmapOr
+                                                        ->  Bitmap Index Scan on cf_rls_k15_lineitem_l_discount_7
+                                                              Index Cond: ((lineitem.l_discount >= 0.02) AND (lineitem.l_discount <= 0.05))
+                                                        ->  Bitmap Index Scan on cf_rls_k15_lineitem_l_discount_7
+                                                              Index Cond: ((lineitem.l_discount >= 0.06) AND (lineitem.l_discount <= 0.08))
+                                                  SubPlan 7
+                                                    ->  Result
+                                                          One-Time Filter: (((lineitem.l_shipmode = ANY ('{MAIL,SHIP}'::bpchar[])) AND (lineitem.l_shipinstruct = 'DELIVER IN PERSON'::bpchar)) OR ((lineitem.l_shipmode = ANY ('{TRUCK,RAIL}'::bpchar[])) AND (lineitem.l_returnflag = ANY ('{R,A}'::bpchar[]))))
+                                                          ->  Index Scan using cf_rls_k15_orders_o_orderkey_20 on public.orders orders_1
+                                                                Output: orders_1.o_orderkey, orders_1.o_custkey, orders_1.o_orderstatus, orders_1.o_totalprice, orders_1.o_orderdate, orders_1.o_orderpriority, orders_1.o_clerk, orders_1.o_shippriority, orders_1.o_comment
+                                                                Index Cond: (orders_1.o_orderkey = lineitem.l_orderkey)
+                                                                Filter: (((orders_1.o_orderstatus = 'F'::bpchar) OR (orders_1.o_orderpriority = ANY ('{1-URGENT,2-HIGH}'::bpchar[]))) AND (hashed SubPlan 2) AND (SubPlan 3) AND (hashed SubPlan 5) AND (SubPlan 6))
+                                                                SubPlan 2
+                                                                  ->  Index Scan using cf_rls_k15_customer_c_acctbal_1 on public.customer
+                                                                        Output: customer.c_custkey
+                                                                        Index Cond: ((customer.c_acctbal > '0'::numeric) AND (customer.c_acctbal < '9000'::numeric))
+                                                                        Filter: ((customer.c_nationkey < 10) AND ((customer.c_name)::text ~~ 'Customer%'::text) AND ((customer.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer.c_mktsegment = 'BUILDING'::bpchar)) AND ((customer.c_mktsegment = 'FURNITURE'::bpchar) OR (customer.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND ((customer.c_phone ~~ '2%'::text) OR (customer.c_phone ~~ '3%'::text)) AND ((customer.c_mktsegment = 'MACHINERY'::bpchar) OR (customer.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (customer.c_nationkey = ANY ('{1,3,5,7}'::integer[])) AND ((customer.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (((customer.c_acctbal >= '500'::numeric) AND (customer.c_acctbal <= '7000'::numeric)) OR ((customer.c_phone ~~ '1%'::text) AND (customer.c_phone ~~ '%-%'::text))) AND (((customer.c_mktsegment = 'AUTOMOBILE'::bpchar) AND (customer.c_acctbal > '0'::numeric)) OR ((customer.c_mktsegment = 'FURNITURE'::bpchar) AND (customer.c_acctbal > '500'::numeric)) OR ((customer.c_mktsegment = 'BUILDING'::bpchar) AND (customer.c_acctbal > '1000'::numeric))))
+                                                                SubPlan 3
+                                                                  ->  Index Scan using cf_rls_k15_customer_c_custkey_2 on public.customer customer_1
+                                                                        Index Cond: (customer_1.c_custkey = orders_1.o_custkey)
+                                                                        Filter: ((customer_1.c_acctbal > '0'::numeric) AND (customer_1.c_nationkey < 10) AND ((customer_1.c_name)::text ~~ 'Customer%'::text) AND (customer_1.c_acctbal < '9000'::numeric) AND ((customer_1.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer_1.c_mktsegment = 'BUILDING'::bpchar)) AND ((customer_1.c_mktsegment = 'FURNITURE'::bpchar) OR (customer_1.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND ((customer_1.c_phone ~~ '2%'::text) OR (customer_1.c_phone ~~ '3%'::text)) AND ((customer_1.c_mktsegment = 'MACHINERY'::bpchar) OR (customer_1.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (customer_1.c_nationkey = ANY ('{1,3,5,7}'::integer[])) AND (((customer_1.c_acctbal >= '500'::numeric) AND (customer_1.c_acctbal <= '7000'::numeric)) OR ((customer_1.c_phone ~~ '1%'::text) AND (customer_1.c_phone ~~ '%-%'::text))) AND (((customer_1.c_mktsegment = 'AUTOMOBILE'::bpchar) AND (customer_1.c_acctbal > '0'::numeric)) OR ((customer_1.c_mktsegment = 'FURNITURE'::bpchar) AND (customer_1.c_acctbal > '500'::numeric)) OR ((customer_1.c_mktsegment = 'BUILDING'::bpchar) AND (customer_1.c_acctbal > '1000'::numeric))) AND (((orders_1.o_orderstatus = 'F'::bpchar) AND (customer_1.c_acctbal > '0'::numeric)) OR ((orders_1.o_orderpriority = ANY ('{1-URGENT,2-HIGH}'::bpchar[])) AND (customer_1.c_mktsegment = 'BUILDING'::bpchar))))
+                                                                SubPlan 5
+                                                                  ->  Nested Loop
+                                                                        Output: customer_2.c_custkey
+                                                                        Join Filter: (customer_2.c_nationkey = nation_1.n_nationkey)
+                                                                        ->  Index Scan using cf_rls_k15_customer_c_acctbal_1 on public.customer customer_2
+                                                                              Output: customer_2.c_custkey, customer_2.c_name, customer_2.c_address, customer_2.c_nationkey, customer_2.c_phone, customer_2.c_acctbal, customer_2.c_mktsegment, customer_2.c_comment
+                                                                              Index Cond: ((customer_2.c_acctbal > '0'::numeric) AND (customer_2.c_acctbal < '9000'::numeric))
+                                                                              Filter: ((customer_2.c_nationkey < 10) AND ((customer_2.c_name)::text ~~ 'Customer%'::text) AND ((customer_2.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer_2.c_mktsegment = 'BUILDING'::bpchar)) AND ((customer_2.c_mktsegment = 'FURNITURE'::bpchar) OR (customer_2.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND ((customer_2.c_phone ~~ '2%'::text) OR (customer_2.c_phone ~~ '3%'::text)) AND ((customer_2.c_mktsegment = 'MACHINERY'::bpchar) OR (customer_2.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (customer_2.c_nationkey = ANY ('{1,3,5,7}'::integer[])) AND (((customer_2.c_acctbal >= '500'::numeric) AND (customer_2.c_acctbal <= '7000'::numeric)) OR ((customer_2.c_phone ~~ '1%'::text) AND (customer_2.c_phone ~~ '%-%'::text))) AND (((customer_2.c_mktsegment = 'AUTOMOBILE'::bpchar) AND (customer_2.c_acctbal > '0'::numeric)) OR ((customer_2.c_mktsegment = 'FURNITURE'::bpchar) AND (customer_2.c_acctbal > '500'::numeric)) OR ((customer_2.c_mktsegment = 'BUILDING'::bpchar) AND (customer_2.c_acctbal > '1000'::numeric))))
+                                                                        ->  Seq Scan on public.nation nation_1
+                                                                              Output: nation_1.n_nationkey, nation_1.n_name, nation_1.n_regionkey, nation_1.n_comment
+                                                                              Filter: ((nation_1.n_name = ANY ('{GERMANY,FRANCE}'::bpchar[])) OR (nation_1.n_name = ANY ('{BRAZIL,CANADA}'::bpchar[])))
+                                                                SubPlan 6
+                                                                  ->  Result
+                                                                        One-Time Filter: (orders_1.o_orderstatus = ANY ('{O,F}'::bpchar[]))
+                                                                        ->  Nested Loop
+                                                                              ->  Hash Join
+                                                                                    Output: nation_2.n_regionkey
+                                                                                    Hash Cond: (nation_2.n_nationkey = customer_3.c_nationkey)
+                                                                                    ->  Seq Scan on public.nation nation_2
+                                                                                          Output: nation_2.n_nationkey, nation_2.n_name, nation_2.n_regionkey, nation_2.n_comment
+                                                                                    ->  Hash
+                                                                                          Output: customer_3.c_nationkey
+                                                                                          ->  Index Scan using cf_rls_k15_customer_c_custkey_2 on public.customer customer_3
+                                                                                                Output: customer_3.c_nationkey
+                                                                                                Index Cond: (customer_3.c_custkey = orders_1.o_custkey)
+                                                                                                Filter: ((customer_3.c_acctbal > '0'::numeric) AND (customer_3.c_nationkey < 10) AND ((customer_3.c_name)::text ~~ 'Customer%'::text) AND (customer_3.c_acctbal < '9000'::numeric) AND ((customer_3.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer_3.c_mktsegment = 'BUILDING'::bpchar)) AND ((customer_3.c_mktsegment = 'FURNITURE'::bpchar) OR (customer_3.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND ((customer_3.c_phone ~~ '2%'::text) OR (customer_3.c_phone ~~ '3%'::text)) AND ((customer_3.c_mktsegment = 'MACHINERY'::bpchar) OR (customer_3.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (customer_3.c_nationkey = ANY ('{1,3,5,7}'::integer[])) AND (((customer_3.c_acctbal >= '500'::numeric) AND (customer_3.c_acctbal <= '7000'::numeric)) OR ((customer_3.c_phone ~~ '1%'::text) AND (customer_3.c_phone ~~ '%-%'::text))) AND (((customer_3.c_mktsegment = 'AUTOMOBILE'::bpchar) AND (customer_3.c_acctbal > '0'::numeric)) OR ((customer_3.c_mktsegment = 'FURNITURE'::bpchar) AND (customer_3.c_acctbal > '500'::numeric)) OR ((customer_3.c_mktsegment = 'BUILDING'::bpchar) AND (customer_3.c_acctbal > '1000'::numeric))))
+                                                                              ->  Index Scan using cf_rls_k15_region_r_regionkey_24 on public.region
+                                                                                    Output: region.r_regionkey, region.r_name, region.r_comment
+                                                                                    Index Cond: (region.r_regionkey = nation_2.n_regionkey)
+                                                                                    Filter: ((region.r_name = 'EUROPE'::bpchar) OR (region.r_name = 'ASIA'::bpchar))
+                                            ->  Hash Join
+                                                  Output: part.p_partkey, partsupp.ps_suppkey, partsupp.ps_partkey
+                                                  Hash Cond: (partsupp.ps_partkey = part.p_partkey)
+                                                  ->  Seq Scan on public.partsupp
+                                                        Output: partsupp.ps_partkey, partsupp.ps_suppkey, partsupp.ps_availqty, partsupp.ps_supplycost, partsupp.ps_comment
+                                                  ->  Hash
+                                                        Output: part.p_partkey
+                                                        ->  Seq Scan on public.part
+                                                              Output: part.p_partkey
+                                                              Filter: ((part.p_name)::text ~~ '%dim%'::text)
+                                      ->  Seq Scan on public.supplier
+                                            Output: supplier.s_suppkey, supplier.s_name, supplier.s_address, supplier.s_nationkey, supplier.s_phone, supplier.s_acctbal, supplier.s_comment
+                                ->  Index Scan using cf_rls_k15_orders_o_orderkey_20 on public.orders
+                                      Output: orders.o_orderkey, orders.o_custkey, orders.o_orderstatus, orders.o_totalprice, orders.o_orderdate, orders.o_orderpriority, orders.o_clerk, orders.o_shippriority, orders.o_comment
+                                      Index Cond: (orders.o_orderkey = lineitem.l_orderkey)
+                                      Filter: ((hashed SubPlan 9) AND (SubPlan 10) AND (hashed SubPlan 12) AND (SubPlan 13))
+                                      SubPlan 9
+                                        ->  Index Scan using cf_rls_k15_customer_c_acctbal_1 on public.customer customer_4
+                                              Output: customer_4.c_custkey
+                                              Index Cond: ((customer_4.c_acctbal > '0'::numeric) AND (customer_4.c_acctbal < '9000'::numeric))
+                                              Filter: ((customer_4.c_nationkey < 10) AND ((customer_4.c_name)::text ~~ 'Customer%'::text) AND ((customer_4.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer_4.c_mktsegment = 'BUILDING'::bpchar)) AND ((customer_4.c_mktsegment = 'FURNITURE'::bpchar) OR (customer_4.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND ((customer_4.c_phone ~~ '2%'::text) OR (customer_4.c_phone ~~ '3%'::text)) AND ((customer_4.c_mktsegment = 'MACHINERY'::bpchar) OR (customer_4.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (customer_4.c_nationkey = ANY ('{1,3,5,7}'::integer[])) AND ((customer_4.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer_4.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (((customer_4.c_acctbal >= '500'::numeric) AND (customer_4.c_acctbal <= '7000'::numeric)) OR ((customer_4.c_phone ~~ '1%'::text) AND (customer_4.c_phone ~~ '%-%'::text))) AND (((customer_4.c_mktsegment = 'AUTOMOBILE'::bpchar) AND (customer_4.c_acctbal > '0'::numeric)) OR ((customer_4.c_mktsegment = 'FURNITURE'::bpchar) AND (customer_4.c_acctbal > '500'::numeric)) OR ((customer_4.c_mktsegment = 'BUILDING'::bpchar) AND (customer_4.c_acctbal > '1000'::numeric))))
+                                      SubPlan 10
+                                        ->  Index Scan using cf_rls_k15_customer_c_custkey_2 on public.customer customer_5
+                                              Index Cond: (customer_5.c_custkey = orders.o_custkey)
+                                              Filter: ((customer_5.c_acctbal > '0'::numeric) AND (customer_5.c_nationkey < 10) AND ((customer_5.c_name)::text ~~ 'Customer%'::text) AND (customer_5.c_acctbal < '9000'::numeric) AND ((customer_5.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer_5.c_mktsegment = 'BUILDING'::bpchar)) AND ((customer_5.c_mktsegment = 'FURNITURE'::bpchar) OR (customer_5.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND ((customer_5.c_phone ~~ '2%'::text) OR (customer_5.c_phone ~~ '3%'::text)) AND ((customer_5.c_mktsegment = 'MACHINERY'::bpchar) OR (customer_5.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (customer_5.c_nationkey = ANY ('{1,3,5,7}'::integer[])) AND (((customer_5.c_acctbal >= '500'::numeric) AND (customer_5.c_acctbal <= '7000'::numeric)) OR ((customer_5.c_phone ~~ '1%'::text) AND (customer_5.c_phone ~~ '%-%'::text))) AND (((customer_5.c_mktsegment = 'AUTOMOBILE'::bpchar) AND (customer_5.c_acctbal > '0'::numeric)) OR ((customer_5.c_mktsegment = 'FURNITURE'::bpchar) AND (customer_5.c_acctbal > '500'::numeric)) OR ((customer_5.c_mktsegment = 'BUILDING'::bpchar) AND (customer_5.c_acctbal > '1000'::numeric))) AND (((orders.o_orderstatus = 'F'::bpchar) AND (customer_5.c_acctbal > '0'::numeric)) OR ((orders.o_orderpriority = ANY ('{1-URGENT,2-HIGH}'::bpchar[])) AND (customer_5.c_mktsegment = 'BUILDING'::bpchar))))
+                                      SubPlan 12
+                                        ->  Nested Loop
+                                              Output: customer_6.c_custkey
+                                              Join Filter: (customer_6.c_nationkey = nation_3.n_nationkey)
+                                              ->  Index Scan using cf_rls_k15_customer_c_acctbal_1 on public.customer customer_6
+                                                    Output: customer_6.c_custkey, customer_6.c_name, customer_6.c_address, customer_6.c_nationkey, customer_6.c_phone, customer_6.c_acctbal, customer_6.c_mktsegment, customer_6.c_comment
+                                                    Index Cond: ((customer_6.c_acctbal > '0'::numeric) AND (customer_6.c_acctbal < '9000'::numeric))
+                                                    Filter: ((customer_6.c_nationkey < 10) AND ((customer_6.c_name)::text ~~ 'Customer%'::text) AND ((customer_6.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer_6.c_mktsegment = 'BUILDING'::bpchar)) AND ((customer_6.c_mktsegment = 'FURNITURE'::bpchar) OR (customer_6.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND ((customer_6.c_phone ~~ '2%'::text) OR (customer_6.c_phone ~~ '3%'::text)) AND ((customer_6.c_mktsegment = 'MACHINERY'::bpchar) OR (customer_6.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (customer_6.c_nationkey = ANY ('{1,3,5,7}'::integer[])) AND (((customer_6.c_acctbal >= '500'::numeric) AND (customer_6.c_acctbal <= '7000'::numeric)) OR ((customer_6.c_phone ~~ '1%'::text) AND (customer_6.c_phone ~~ '%-%'::text))) AND (((customer_6.c_mktsegment = 'AUTOMOBILE'::bpchar) AND (customer_6.c_acctbal > '0'::numeric)) OR ((customer_6.c_mktsegment = 'FURNITURE'::bpchar) AND (customer_6.c_acctbal > '500'::numeric)) OR ((customer_6.c_mktsegment = 'BUILDING'::bpchar) AND (customer_6.c_acctbal > '1000'::numeric))))
+                                              ->  Seq Scan on public.nation nation_3
+                                                    Output: nation_3.n_nationkey, nation_3.n_name, nation_3.n_regionkey, nation_3.n_comment
+                                                    Filter: ((nation_3.n_name = ANY ('{GERMANY,FRANCE}'::bpchar[])) OR (nation_3.n_name = ANY ('{BRAZIL,CANADA}'::bpchar[])))
+                                      SubPlan 13
+                                        ->  Result
+                                              One-Time Filter: (orders.o_orderstatus = ANY ('{O,F}'::bpchar[]))
+                                              ->  Nested Loop
+                                                    ->  Hash Join
+                                                          Output: nation_4.n_regionkey
+                                                          Hash Cond: (nation_4.n_nationkey = customer_7.c_nationkey)
+                                                          ->  Seq Scan on public.nation nation_4
+                                                                Output: nation_4.n_nationkey, nation_4.n_name, nation_4.n_regionkey, nation_4.n_comment
+                                                          ->  Hash
+                                                                Output: customer_7.c_nationkey
+                                                                ->  Index Scan using cf_rls_k15_customer_c_custkey_2 on public.customer customer_7
+                                                                      Output: customer_7.c_nationkey
+                                                                      Index Cond: (customer_7.c_custkey = orders.o_custkey)
+                                                                      Filter: ((customer_7.c_acctbal > '0'::numeric) AND (customer_7.c_nationkey < 10) AND ((customer_7.c_name)::text ~~ 'Customer%'::text) AND (customer_7.c_acctbal < '9000'::numeric) AND ((customer_7.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer_7.c_mktsegment = 'BUILDING'::bpchar)) AND ((customer_7.c_mktsegment = 'FURNITURE'::bpchar) OR (customer_7.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND ((customer_7.c_phone ~~ '2%'::text) OR (customer_7.c_phone ~~ '3%'::text)) AND ((customer_7.c_mktsegment = 'MACHINERY'::bpchar) OR (customer_7.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (customer_7.c_nationkey = ANY ('{1,3,5,7}'::integer[])) AND (((customer_7.c_acctbal >= '500'::numeric) AND (customer_7.c_acctbal <= '7000'::numeric)) OR ((customer_7.c_phone ~~ '1%'::text) AND (customer_7.c_phone ~~ '%-%'::text))) AND (((customer_7.c_mktsegment = 'AUTOMOBILE'::bpchar) AND (customer_7.c_acctbal > '0'::numeric)) OR ((customer_7.c_mktsegment = 'FURNITURE'::bpchar) AND (customer_7.c_acctbal > '500'::numeric)) OR ((customer_7.c_mktsegment = 'BUILDING'::bpchar) AND (customer_7.c_acctbal > '1000'::numeric))))
+                                                    ->  Index Scan using cf_rls_k15_region_r_regionkey_24 on public.region region_1
+                                                          Output: region_1.r_regionkey, region_1.r_name, region_1.r_comment
+                                                          Index Cond: (region_1.r_regionkey = nation_4.n_regionkey)
+                                                          Filter: ((region_1.r_name = 'EUROPE'::bpchar) OR (region_1.r_name = 'ASIA'::bpchar))
