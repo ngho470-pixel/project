@@ -1,0 +1,51 @@
+Timing is on.
+psql:logs/artifact_files_upsert_20260210_103200/test_a.sql:4: NOTICE:  relation "files" already exists, skipping
+CREATE TABLE
+Time: 0.242 ms
+DROP INDEX
+Time: 0.796 ms
+DELETE 3
+Time: 0.985 ms
+INSERT 0 3
+Time: 0.204 ms
+ name | n 
+------+---
+ x    | 2
+ y    | 1
+(2 rows)
+
+Time: 0.313 ms
+LOAD
+Time: 0.418 ms
+CREATE FUNCTION
+Time: 0.369 ms
+psql:logs/artifact_files_upsert_20260210_103200/test_a.sql:20: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_a.sql:20: NOTICE:  table "tmp_dict_0" does not exist, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_a.sql:20: NOTICE:  table "tmp_dict_1" does not exist, skipping
+ build_base 
+------------
+ 
+(1 row)
+
+Time: 1844.456 ms (00:01.844)
+ name | n 
+------+---
+(0 rows)
+
+Time: 0.343 ms
+    indexname    |                                indexdef                                
+-----------------+------------------------------------------------------------------------
+ files_name_uidx | CREATE UNIQUE INDEX files_name_uidx ON public.files USING btree (name)
+(1 row)
+
+Time: 1.671 ms
+INSERT 0 1
+Time: 0.224 ms
+INSERT 0 1
+Time: 0.132 ms
+ nbytes | hex 
+--------+-----
+      1 | ff
+(1 row)
+
+Time: 0.196 ms

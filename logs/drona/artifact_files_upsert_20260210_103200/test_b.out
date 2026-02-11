@@ -1,0 +1,50 @@
+Timing is on.
+ nrows_before | ndistinct_before | bytes_before | payload_bytes_before 
+--------------+------------------+--------------+----------------------
+           14 |               14 |      5423104 |             12011531
+(1 row)
+
+Time: 1.235 ms
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  table "tmp_dict_0" does not exist, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  table "tmp_dict_1" does not exist, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files" already exists, skipping
+psql:logs/artifact_files_upsert_20260210_103200/test_b.sql:17: NOTICE:  relation "files_name_uidx" already exists, skipping
+DO
+Time: 17586.594 ms (00:17.587)
+ nrows_after | ndistinct_after | bytes_after | payload_bytes_after 
+-------------+-----------------+-------------+---------------------
+          14 |              14 |    51593216 |            12011531
+(1 row)
+
+Time: 0.347 ms
+VACUUM
+Time: 13.314 ms
+ nrows_after_vacuum | ndistinct_after_vacuum | bytes_after_vacuum | payload_bytes_after_vacuum 
+--------------------+------------------------+--------------------+----------------------------
+                 14 |                     14 |           51593216 |                   12011531
+(1 row)
+
+Time: 0.271 ms
+ name | n 
+------+---
+(0 rows)
+
+Time: 0.153 ms

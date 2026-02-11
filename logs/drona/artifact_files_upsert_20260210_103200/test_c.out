@@ -1,0 +1,26 @@
+Timing is on.
+SET
+Time: 0.111 ms
+SET
+Time: 0.037 ms
+SET
+Time: 0.033 ms
+SET
+Time: 0.037 ms
+LOAD
+Time: 2.096 ms
+SET
+Time: 0.060 ms
+SET
+Time: 0.035 ms
+SET
+Time: 0.034 ms
+SET
+Time: 0.034 ms
+psql:logs/artifact_files_upsert_20260210_103200/test_c.sql:16: NOTICE:  policy_profile: eval_ms=0.038 artifact_load_ms=20.597 artifact_parse_ms=0.024 stamp_ms=22.308 bin_ms=10.146 local_sat_ms=0.305 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=38.259 ctid_map_ms=2.824 filter_ms=205.660 child_exec_ms=40.054 ctid_extract_ms=33.614 ctid_to_rid_ms=13.799 allow_check_ms=13.145 projection_ms=16.158 n_scanned_tables=1 n_policy_targets=1 n_filters=1 bytes_artifacts_loaded=12011519 bytes_allow=75072 bytes_ctid=4804576 bytes_blk_index=1584188 rows_seen=600572 rows_passed=299856 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+   n    
+--------
+ 299856
+(1 row)
+
+Time: 283.937 ms

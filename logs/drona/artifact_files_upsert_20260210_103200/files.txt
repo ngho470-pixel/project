@@ -1,0 +1,8 @@
+files.txt
+sha256s.txt
+test_a.out
+test_a.sql
+test_b.out
+test_b.sql
+test_c.out
+test_c.sql
