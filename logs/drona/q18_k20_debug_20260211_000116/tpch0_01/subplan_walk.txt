@@ -1,0 +1,2 @@
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_SUBPLAN pid=194180 build_seq=1 pstmt=0x5b9e01499a88 subplans_count=0 walk_subplans=1
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_SUBPLAN pid=194180 build_seq=1 scans_main=3 scans_total=3 scans_subplans_added=0

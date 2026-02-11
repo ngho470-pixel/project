@@ -1,0 +1,3 @@
+psql OURS ids:      PGPASSWORD=*** psql -h localhost -U postgres -d <db> -f setup_ours.sql -f run_q18.sql
+psql OURS explain:  PGPASSWORD=*** psql -h localhost -U postgres -d <db> -f setup_ours_noids.sql -f explain_ours_verbose.sql
+psql RLS count:     PGPASSWORD=*** psql -h localhost -U rls_user -d <db> (COUNT wrapper)

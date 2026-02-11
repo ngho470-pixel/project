@@ -1,0 +1,10 @@
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 qs=0x5b9e01b6ab38 ready=1 n_filters=3 n_policy_targets=3 n_scanned_tables=3 n_wrapped_tables=3
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 target[0]=customer
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 target[1]=lineitem
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 target[2]=orders
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 scanned[0]=lineitem
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 scanned[1]=orders
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 scanned[2]=customer
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 filter[0] key_relid=65135 rel=customer allow_bits=0x5b9e018f62c0 allow_nbytes=188 blk_index=0x5b9e018f63c8 n_blocks=37 ctid_pairs=(nil) ctid_pairs_len=0 n_rows=1500
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 filter[1] key_relid=65141 rel=lineitem allow_bits=0x5b9e018f7f00 allow_nbytes=7522 blk_index=0x5b9e0161f6a0 n_blocks=1130 ctid_pairs=(nil) ctid_pairs_len=0 n_rows=60175
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/q18_count.sql:3: NOTICE:  CF_QS pid=194180 build_seq=1 filter[2] key_relid=65138 rel=orders allow_bits=0x5b9e01d25fd0 allow_nbytes=1875 blk_index=0x5b9e016ab430 n_blocks=262 ctid_pairs=(nil) ctid_pairs_len=0 n_rows=15000

@@ -1,0 +1,105 @@
+SET
+SET
+SET
+SET
+SET
+LOAD
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:9: NOTICE:  relation "files" already exists, skipping
+CREATE TABLE
+DROP FUNCTION
+CREATE FUNCTION
+TRUNCATE TABLE
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  relation "files" already exists, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_jc_0" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_jc_1" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_jc_2" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_jc_3" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_jc_4" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_jc_5" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_0" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_1" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_2" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_3" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_4" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_5" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_6" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_7" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_8" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_9" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_10" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_11" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_12" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_13" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_14" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_15" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_16" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_17" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_18" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_19" does not exist, skipping
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/setup_ours_noids.sql:13: NOTICE:  table "tmp_dict_20" does not exist, skipping
+ build_base 
+------------
+ 
+(1 row)
+
+LOAD
+SET
+SET
+SET
+SET
+SET
+SET
+psql:/home/nghosh/research/z3_lab/logs/drona/q18_k20_debug_20260211_000116/explain_ours_verbose.sql:4: NOTICE:  policy_profile: eval_ms=0.996 artifact_load_ms=9.365 artifact_parse_ms=0.936 stamp_ms=0.490 bin_ms=0.020 local_sat_ms=10.378 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=32.766 ctid_map_ms=0.307 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=3 n_policy_targets=3 n_filters=3 bytes_artifacts_loaded=4650659 bytes_allow=9585 bytes_ctid=613400 bytes_blk_index=201936 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=-1 rss_kb_after_eval=-1 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=-1 peak_rss_kb_end=-1
+                                                                           QUERY PLAN                                                                           
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate
+   Output: count(*)
+   ->  GroupAggregate
+         Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, NULL::numeric
+         Group Key: orders.o_totalprice, orders.o_orderdate, customer.c_name, customer.c_custkey, orders.o_orderkey
+         ->  Sort
+               Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice
+               Sort Key: orders.o_totalprice DESC, orders.o_orderdate, customer.c_name, customer.c_custkey, orders.o_orderkey
+               ->  Hash Join
+                     Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice
+                     Hash Cond: (lineitem.l_orderkey = orders.o_orderkey)
+                     ->  Custom Scan (custom_filter) on public.lineitem
+                           Output: lineitem.l_orderkey
+                           custom_filter: 
+                           ->  Seq Scan on public.lineitem
+                                 Output: lineitem.l_orderkey
+                     ->  Hash
+                           Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, lineitem_1.l_orderkey
+                           ->  Hash Join
+                                 Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, lineitem_1.l_orderkey
+                                 Hash Cond: (orders.o_custkey = customer.c_custkey)
+                                 ->  Hash Join
+                                       Output: orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, orders.o_custkey, lineitem_1.l_orderkey
+                                       Inner Unique: true
+                                       Hash Cond: (orders.o_orderkey = lineitem_1.l_orderkey)
+                                       ->  Custom Scan (custom_filter) on public.orders
+                                             Output: orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, orders.o_custkey
+                                             custom_filter: 
+                                             ->  Seq Scan on public.orders
+                                                   Output: orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, orders.o_custkey
+                                       ->  Hash
+                                             Output: lineitem_1.l_orderkey
+                                             ->  HashAggregate
+                                                   Output: lineitem_1.l_orderkey
+                                                   Group Key: lineitem_1.l_orderkey
+                                                   Filter: (sum(lineitem_1.l_quantity) > '314'::numeric)
+                                                   ->  Custom Scan (custom_filter) on public.lineitem lineitem_1
+                                                         Output: lineitem_1.l_orderkey, lineitem_1.l_quantity
+                                                         custom_filter: 
+                                                         ->  Seq Scan on public.lineitem lineitem_1
+                                                               Output: lineitem_1.l_orderkey, lineitem_1.l_quantity
+                                 ->  Hash
+                                       Output: customer.c_name, customer.c_custkey
+                                       ->  Custom Scan (custom_filter) on public.customer
+                                             Output: customer.c_name, customer.c_custkey
+                                             custom_filter: 
+                                             ->  Seq Scan on public.customer
+                                                   Output: customer.c_name, customer.c_custkey
+(48 rows)
+
