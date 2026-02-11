@@ -114,6 +114,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--artifact-builder-so", default="/tmp/z3_lab/artifact_builder.so")
     p.add_argument("--statement-timeout", default="600s")
     p.add_argument("--watchdog-grace-s", type=int, default=15)
+    p.add_argument("--skip-query-ids", nargs="*", default=[], help="Query IDs to skip (e.g. 20)")
     p.add_argument("--out-dir", default="")
     return p.parse_args()
 
@@ -155,6 +156,9 @@ def main() -> int:
     out_dir.joinpath("cmd.txt").write_text(" ".join([os.path.basename(__file__)] + os.sys.argv[1:]) + "\n", encoding="utf-8")
 
     queries = h.load_queries(queries_path)
+    skip_qids = {str(x).strip() for x in (args.skip_query_ids or []) if str(x).strip()}
+    if skip_qids:
+        queries = [(qid, qsql) for qid, qsql in queries if qid not in skip_qids]
     policy_lines = h.load_policy_lines(policy_path)
     pool_ids = h.parse_policy_pool(str(args.policy_pool), max_policy_id=len(policy_lines))
 
