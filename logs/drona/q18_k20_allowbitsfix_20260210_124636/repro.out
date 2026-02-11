@@ -1,0 +1,7 @@
+Timing is on.
+SET
+Time: 0.100 ms
+psql:/home/nghosh/research/z3_lab/logs/q18_k20_allowbitsfix_20260210_124636/repro.sql:4: ERROR:  trailing junk after numeric literal at or near "60s"
+LINE 1: SET statement_timeout=60s;
+                              ^
+Time: 0.080 ms
