@@ -986,6 +986,8 @@ typedef struct CfExec
 
     struct TableFilterState *filter;
     bool need_filter_rebind;
+    uint64 bound_build_seq;
+    bool attempted_filter_rebuild;
     uint64 rescan_calls;
     bool exec_logged;
 } CfExec;
@@ -1159,6 +1161,19 @@ cf_ensure_query_state(EState *estate, const char *query_str, PlannedStmt *pstmt)
 
     cf_query_state = cf_build_query_state(estate, query_str);
     cf_query_cxt = qctx;
+    cf_query_plannedstmt = pstmt ? pstmt : estate->es_plannedstmt;
+    return cf_query_state;
+}
+
+static PolicyQueryState *
+cf_force_rebuild_query_state(EState *estate, const char *query_str, PlannedStmt *pstmt)
+{
+    if (!estate || !estate->es_query_cxt)
+        return cf_query_state;
+    if (cf_in_internal_query)
+        return cf_query_state;
+    cf_query_state = cf_build_query_state(estate, query_str);
+    cf_query_cxt = estate->es_query_cxt;
     cf_query_plannedstmt = pstmt ? pstmt : estate->es_plannedstmt;
     return cf_query_state;
 }
@@ -2864,6 +2879,8 @@ cf_create_state(CustomScan *cscan)
     st->tid_logged = false;
     st->filter = NULL;
     st->need_filter_rebind = true;
+    st->bound_build_seq = 0;
+    st->attempted_filter_rebuild = false;
     st->rescan_calls = 0;
     st->exec_logged = false;
 
@@ -2900,6 +2917,8 @@ cf_begin(CustomScanState *node, EState *estate, int eflags)
      */
     st->filter = cf_in_executor_start_init ? NULL : cf_find_filter(cf_query_state, st->relid);
     st->need_filter_rebind = true;
+    st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
+    st->attempted_filter_rebuild = false;
 
     st->child_plan = ExecInitNode((Plan *) linitial(cscan->custom_plans),
                                   estate,
@@ -2946,6 +2965,9 @@ cf_exec(CustomScanState *node)
 
     INSTR_TIME_SET_CURRENT(validation_start);
 
+    if (cf_query_state && st->bound_build_seq != cf_query_state->build_seq)
+        st->need_filter_rebind = true;
+
     if (st->need_filter_rebind)
     {
         if (cf_query_state)
@@ -2964,6 +2986,7 @@ cf_exec(CustomScanState *node)
                 if (reb && reb->allow_bits)
                     st->filter = reb;
             }
+            st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
             st->need_filter_rebind = false;
 
             if (cf_profile_rescan && !st->exec_logged && st->relid != InvalidOid)
@@ -3001,6 +3024,7 @@ cf_exec(CustomScanState *node)
         bool allow = true;
         if (tf)
             tf->seen++;
+allow_check:
         if (tf && tf->allow_bits)
         {
             if (tf->n_rows > 0 && tf->allow_nbytes == 0)
@@ -3181,6 +3205,86 @@ cf_exec(CustomScanState *node)
         }
         else if (tf && !tf->allow_bits)
         {
+            /*
+             * Robustness: if a scan state captured a stale filter pointer (e.g. due
+             * to query-state being rebuilt), try to rebind and, if needed, force a
+             * rebuild once so we either recover or fail with useful context.
+             */
+            TableFilterState *reb = cf_query_state ? cf_find_filter(cf_query_state, st->relid) : NULL;
+            if (reb && reb->allow_bits)
+            {
+                st->filter = reb;
+                st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
+                tf = reb;
+                goto allow_check;
+            }
+
+            EState *estate = node->ss.ps.state;
+            if (!st->attempted_filter_rebuild && estate)
+            {
+                st->attempted_filter_rebuild = true;
+                (void) cf_force_rebuild_query_state(estate,
+                                                    debug_query_string ? debug_query_string : "",
+                                                    estate->es_plannedstmt);
+                reb = cf_query_state ? cf_find_filter(cf_query_state, st->relid) : NULL;
+                if (reb && reb->allow_bits)
+                {
+                    st->filter = reb;
+                    st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
+                    tf = reb;
+                    goto allow_check;
+                }
+            }
+
+            if (cf_trace_enabled())
+            {
+                PolicyQueryState *qs = cf_query_state;
+                const char *rn = st->relname[0] ? st->relname : "<unknown>";
+                bool in_targets = false;
+                bool scanned = false;
+                bool should_filter = false;
+                bool wrapped = false;
+                if (qs && st->relname[0])
+                {
+                    in_targets = cf_table_in_list(st->relname, qs->policy_targets, qs->n_policy_targets);
+                    scanned = cf_table_scanned(qs, st->relname);
+                    should_filter = cf_table_should_filter(qs, st->relname);
+                    wrapped = cf_table_wrapped(qs, st->relname);
+                }
+                elog(NOTICE,
+                     "custom_filter: missing_allow_bits_debug qs=%p build_seq=%llu st=%p rel=%s relid=%u tf=%p "
+                     "in_policy_targets=%d scanned=%d should_filter=%d wrapped=%d n_filters=%d n_policy_targets=%d n_scanned_tables=%d",
+                     (void *) qs,
+                     (unsigned long long) (qs ? qs->build_seq : 0),
+                     (void *) st,
+                     rn,
+                     st->relid,
+                     (void *) tf,
+                     in_targets ? 1 : 0,
+                     scanned ? 1 : 0,
+                     should_filter ? 1 : 0,
+                     wrapped ? 1 : 0,
+                     qs ? qs->n_filters : 0,
+                     qs ? qs->n_policy_targets : 0,
+                     qs ? qs->n_scanned_tables : 0);
+                if (qs && qs->filters)
+                {
+                    for (int i = 0; i < qs->n_filters; i++)
+                    {
+                        TableFilterState *k = &qs->filters[i];
+                        elog(NOTICE,
+                             "custom_filter: missing_allow_bits_debug key[%d] rel=%s relid=%u allow_bits=%p allow_nbytes=%zu blk_index=%p n_blocks=%u",
+                             i,
+                             k->relname[0] ? k->relname : "<unknown>",
+                             k->relid,
+                             (void *) k->allow_bits,
+                             k->allow_nbytes,
+                             (void *) k->blk_index,
+                             k->n_blocks);
+                    }
+                }
+            }
+
             ereport(ERROR,
                     (errmsg("custom_filter[engine_error]: missing allow_bits for policy-required table rel=%s",
                             st->relname[0] ? st->relname : "<unknown>")));
