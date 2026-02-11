@@ -189,9 +189,11 @@ static void insert_file(const char *name, bytea *data) {
     values[0] = CStringGetTextDatum(name);
     values[1] = PointerGetDatum(data);
     int ret = SPI_execute_with_args(
-        "INSERT INTO public.files (name, file) VALUES ($1, $2)",
+        "INSERT INTO public.files (name, file) "
+        "VALUES ($1, $2) "
+        "ON CONFLICT (name) DO UPDATE SET file = EXCLUDED.file",
         2, argtypes, values, nulls, false, 0);
-    if (ret != SPI_OK_INSERT)
+    if (ret != SPI_OK_INSERT && ret != SPI_OK_UPDATE)
         ereport(ERROR, (errmsg("failed to insert file %s", name)));
 }
 
@@ -293,6 +295,12 @@ Datum build_base(PG_FUNCTION_ARGS) {
     }
     SPI_execute("SET LOCAL search_path TO public, pg_catalog", false, 0);
     SPI_execute("CREATE TABLE IF NOT EXISTS public.files (name text, file bytea)", false, 0);
+    SPI_execute(
+        "DELETE FROM public.files f "
+        "USING public.files f2 "
+        "WHERE f.name = f2.name AND f.ctid < f2.ctid",
+        false, 0);
+    SPI_execute("CREATE UNIQUE INDEX IF NOT EXISTS files_name_uidx ON public.files(name)", false, 0);
 
     int join_atom_count = 0;
     int *col_class = NULL;

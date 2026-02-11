@@ -1328,10 +1328,9 @@ cf_load_artifacts_batch(char **needed_files, int needed_count,
                                           TYPALIGN_INT);
 
     const char *sql =
-        "SELECT DISTINCT ON (name) name, file "
+        "SELECT name, file "
         "FROM public.files "
-        "WHERE name = ANY($1::text[]) "
-        "ORDER BY name, ctid DESC";
+        "WHERE name = ANY($1::text[])";
     Oid argtypes[1];
     Datum values[1];
     char nulls[1] = { ' ' };
