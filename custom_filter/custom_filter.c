@@ -2233,6 +2233,8 @@ cf_build_query_state(EState *estate, const char *query_str)
     qs->artifact_load_calls++;
     if (!cf_load_artifacts_batch(qs->needed_files, qs->n_needed_files, qctx, arts, &missing))
     {
+        /* SPI calls may have changed CurrentMemoryContext; reset before exits/cleanup. */
+        MemoryContextSwitchTo(qctx);
         SPI_finish();
         cf_in_internal_query = false;
         free_policy_eval_result(eval_res);
@@ -2240,6 +2242,8 @@ cf_build_query_state(EState *estate, const char *query_str)
         ereport(ERROR,
                 (errmsg("custom_filter: missing artifacts: %s", missing.data)));
     }
+    /* Defensive: SPI_execute* can leave us in SPI Proc context. */
+    MemoryContextSwitchTo(qctx);
 
     for (int i = 0; i < qs->n_needed_files; i++)
     {
@@ -2345,6 +2349,12 @@ cf_build_query_state(EState *estate, const char *query_str)
                 n_filters++;
         }
     }
+
+    /*
+     * Ensure query-state allocations are always under qctx, even if SPI internals
+     * changed CurrentMemoryContext during SPI_execute* calls.
+     */
+    MemoryContextSwitchTo(qctx);
 
     qs->n_filters = n_filters;
     if (n_filters > 0)
