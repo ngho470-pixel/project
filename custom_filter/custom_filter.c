@@ -2200,11 +2200,26 @@ cf_build_query_state(EState *estate, const char *query_str)
         return qs;
     }
 
-    MemoryContext old_spi_ctx = MemoryContextSwitchTo(qctx);
+    /*
+     * SPI_connect() switches CurrentMemoryContext to SPI Proc.
+     * Query-state data must NOT live there; bind-time executor reads it long after
+     * SPI calls return. Force all qs-owned allocations into qctx.
+     */
+    MemoryContextSwitchTo(qctx);
+    if (cf_debug_ids)
+    {
+        CF_DEBUG_QS_LOG("pid=%d build_seq=%llu post_SPI_connect cur_mctx=%p(%s) qctx=%p(%s)",
+                        (int) getpid(),
+                        (unsigned long long) qs->build_seq,
+                        (void *) CurrentMemoryContext,
+                        cf_mctx_safe_name(CurrentMemoryContext),
+                        (void *) qctx,
+                        cf_mctx_safe_name(qctx));
+    }
+
     LoadedArtifact *arts = qs->n_needed_files > 0
                                ? (LoadedArtifact *) palloc0(sizeof(LoadedArtifact) * qs->n_needed_files)
                                : NULL;
-    MemoryContextSwitchTo(old_spi_ctx);
     StringInfoData missing;
     initStringInfo(&missing);
     instr_time load_start;
@@ -2212,9 +2227,7 @@ cf_build_query_state(EState *estate, const char *query_str)
 
     for (int i = 0; i < qs->n_needed_files; i++)
     {
-        MemoryContext old_name_ctx = MemoryContextSwitchTo(qctx);
         arts[i].name = pstrdup(qs->needed_files[i]);
-        MemoryContextSwitchTo(old_name_ctx);
     }
 
     qs->artifact_load_calls++;
@@ -2252,11 +2265,9 @@ cf_build_query_state(EState *estate, const char *query_str)
         }
     }
 
-    old_spi_ctx = MemoryContextSwitchTo(qctx);
     PolicyArtifactC *policy_arts = qs->n_needed_files > 0
                                        ? (PolicyArtifactC *) palloc0(sizeof(PolicyArtifactC) * qs->n_needed_files)
                                        : NULL;
-    MemoryContextSwitchTo(old_spi_ctx);
     int policy_art_count = 0;
     for (int i = 0; i < qs->n_needed_files; i++)
     {
@@ -2338,8 +2349,27 @@ cf_build_query_state(EState *estate, const char *query_str)
     qs->n_filters = n_filters;
     if (n_filters > 0)
     {
-        /* IMPORTANT: capture the allocation context; SPI_connect can change CurrentMemoryContext. */
+        /*
+         * Regression guard: filters must be allocated under qctx (or its child),
+         * never in SPI Proc context.
+         */
+        if (!cf_memory_context_contains(qctx, CurrentMemoryContext))
+            ereport(ERROR,
+                    (errmsg("custom_filter[memctx_violation]: qs->filters allocation outside qctx"),
+                     errdetail("qctx=%p(%s) current=%p(%s)",
+                               (void *) qctx, cf_mctx_safe_name(qctx),
+                               (void *) CurrentMemoryContext, cf_mctx_safe_name(CurrentMemoryContext))));
         qs->filters_alloc_mctx = CurrentMemoryContext;
+        if (cf_debug_ids)
+        {
+            CF_DEBUG_QS_LOG("pid=%d build_seq=%llu filters_alloc_site cur_mctx=%p(%s) qctx=%p(%s)",
+                            (int) getpid(),
+                            (unsigned long long) qs->build_seq,
+                            (void *) CurrentMemoryContext,
+                            cf_mctx_safe_name(CurrentMemoryContext),
+                            (void *) qctx,
+                            cf_mctx_safe_name(qctx));
+        }
         qs->filters = (TableFilterState *) palloc0(sizeof(TableFilterState) * n_filters);
     }
 
