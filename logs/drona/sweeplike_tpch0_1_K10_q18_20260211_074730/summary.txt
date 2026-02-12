@@ -1,0 +1,10 @@
+db=tpch0_1
+K=10
+target_qid=18
+enabled_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+enabled_path=/tmp/z3_lab/policies_enabled_sweeplike_tpch0_1_K10_q18_20260211_074730.txt
+ours_count=None
+rls_count=0
+ours_error=('db_error', 'SSL SYSCALL error: EOF detected')
+rls_error=None
+status=error
