@@ -1061,6 +1061,11 @@ typedef struct PolicyQueryState
     bool metrics_logged;
     int n_filters;
     TableFilterState *filters;
+    /* Debug-only corruption guard for qs->filters (set at ready, checked later). */
+    uint64 filters_guard_hash;
+    bool filters_guard_set;
+    bool filters_guard_reported;
+    const char *filters_guard_last_ok_phase;
     char **needed_files;
     int n_needed_files;
     char **policy_targets;
@@ -1113,6 +1118,149 @@ typedef struct PolicyQueryState
     uint64 allow_build_calls;
     uint64 blk_index_build_calls;
 } PolicyQueryState;
+
+/*
+ * Debug-only corruption guard for qs->filters[].
+ *
+ * We hash a subset of TableFilterState fields that should be stable for the
+ * lifetime of a single statement, excluding runtime counters (seen/passed/misses)
+ * to avoid false positives.
+ */
+static inline uint64
+cf_fnv1a64_update(uint64 h, const void *data, size_t len)
+{
+    const unsigned char *p = (const unsigned char *) data;
+    while (len--)
+    {
+        h ^= (uint64) (*p++);
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+static uint64
+cf_filters_guard_compute_hash(const PolicyQueryState *qs)
+{
+    /* FNV-1a 64-bit offset basis. */
+    uint64 h = 1469598103934665603ULL;
+    if (!qs)
+        return h;
+
+    h = cf_fnv1a64_update(h, &qs->n_filters, sizeof(qs->n_filters));
+    if (!qs->filters || qs->n_filters <= 0)
+        return h;
+
+    for (int i = 0; i < qs->n_filters; i++)
+    {
+        const TableFilterState *tf = &qs->filters[i];
+        h = cf_fnv1a64_update(h, &tf->relid, sizeof(tf->relid));
+        size_t rn = strnlen(tf->relname, NAMEDATALEN);
+        h = cf_fnv1a64_update(h, &rn, sizeof(rn));
+        if (rn > 0)
+            h = cf_fnv1a64_update(h, tf->relname, rn);
+        h = cf_fnv1a64_update(h, &tf->n_rows, sizeof(tf->n_rows));
+        h = cf_fnv1a64_update(h, &tf->allow_bits, sizeof(tf->allow_bits));
+        h = cf_fnv1a64_update(h, &tf->allow_nbytes, sizeof(tf->allow_nbytes));
+        h = cf_fnv1a64_update(h, &tf->allow_popcount, sizeof(tf->allow_popcount));
+        h = cf_fnv1a64_update(h, &tf->ctid_pairs, sizeof(tf->ctid_pairs));
+        h = cf_fnv1a64_update(h, &tf->ctid_pairs_len, sizeof(tf->ctid_pairs_len));
+        h = cf_fnv1a64_update(h, &tf->ctid_bytes, sizeof(tf->ctid_bytes));
+        h = cf_fnv1a64_update(h, &tf->blk_index, sizeof(tf->blk_index));
+        h = cf_fnv1a64_update(h, &tf->n_blocks, sizeof(tf->n_blocks));
+        h = cf_fnv1a64_update(h, &tf->blk_index_bytes, sizeof(tf->blk_index_bytes));
+    }
+
+    return h;
+}
+
+static const char *
+cf_mctx_safe_name(MemoryContext mctx)
+{
+    if (!mctx)
+        return "<null>";
+    if (mctx->ident)
+        return mctx->ident;
+    if (mctx->name)
+        return mctx->name;
+    return "<unnamed>";
+}
+
+static void
+cf_filters_guard_set(PolicyQueryState *qs, const char *phase)
+{
+    if (!qs)
+        return;
+    qs->filters_guard_hash = cf_filters_guard_compute_hash(qs);
+    qs->filters_guard_set = true;
+    qs->filters_guard_reported = false;
+    qs->filters_guard_last_ok_phase = phase;
+}
+
+static void
+cf_filters_guard_check(PolicyQueryState *qs, const char *phase)
+{
+    if (!cf_debug_ids || !qs || !qs->filters_guard_set)
+        return;
+
+    uint64 h = cf_filters_guard_compute_hash(qs);
+    if (h == qs->filters_guard_hash)
+    {
+        qs->filters_guard_last_ok_phase = phase;
+        return;
+    }
+
+    if (qs->filters_guard_reported)
+        return;
+
+    /* One-shot report of the first detected change. */
+    qs->filters_guard_reported = true;
+
+    uintptr_t start = (uintptr_t) qs->filters;
+    uintptr_t end = start + (uintptr_t) qs->n_filters * (uintptr_t) sizeof(TableFilterState);
+
+    StringInfoData msg;
+    initStringInfo(&msg);
+    appendStringInfo(&msg,
+                     "CF_GUARD_CHANGED pid=%d qs=%p build_seq=%llu phase=%s last_ok=%s "
+                     "filters_ptr=%p range=[0x%lx,0x%lx) n_filters=%d old_hash=%llu new_hash=%llu",
+                     (int) getpid(),
+                     (void *) qs,
+                     (unsigned long long) qs->build_seq,
+                     phase ? phase : "<null>",
+                     qs->filters_guard_last_ok_phase ? qs->filters_guard_last_ok_phase : "<unset>",
+                     (void *) qs->filters,
+                     (unsigned long) start,
+                     (unsigned long) end,
+                     qs->n_filters,
+                     (unsigned long long) qs->filters_guard_hash,
+                     (unsigned long long) h);
+
+    /* Dump filter entries inline (qs->n_filters is small in our workloads). */
+    int lim = qs->n_filters;
+    if (lim > 32)
+        lim = 32;
+    for (int i = 0; i < lim; i++)
+    {
+        const TableFilterState *tf = &qs->filters[i];
+        appendStringInfo(&msg,
+                         " f%d(tf=%p relid=%u rel=%s allow=%p nbytes=%zu rows=%u ctid=%p ctid_len=%u blk=%p nblk=%u)",
+                         i,
+                         (void *) tf,
+                         (unsigned int) tf->relid,
+                         tf->relname[0] ? tf->relname : "<unknown>",
+                         (void *) tf->allow_bits,
+                         tf->allow_nbytes,
+                         tf->n_rows,
+                         (void *) tf->ctid_pairs,
+                         tf->ctid_pairs_len,
+                         (void *) tf->blk_index,
+                         tf->n_blocks);
+    }
+    if (qs->n_filters > lim)
+        appendStringInfoString(&msg, " ...");
+
+    elog(NOTICE, "%s", msg.data);
+}
 
 typedef struct LoadedArtifact
 {
@@ -2452,6 +2600,8 @@ finalize:
     MemoryContextSwitchTo(oldctx);
     if (cf_debug_ids)
     {
+        cf_filters_guard_set(qs, "query_state_ready");
+
         CF_DEBUG_QS_LOG("pid=%d build_seq=%llu qs=%p ready=%d n_filters=%d n_policy_targets=%d n_scanned_tables=%d n_wrapped_tables=%d",
                         (int) getpid(),
                         (unsigned long long) qs->build_seq,
@@ -2493,6 +2643,38 @@ finalize:
                             (void *) tf->ctid_pairs,
                             tf->ctid_pairs_len,
                             tf->n_rows);
+        }
+
+        /* Memory context ownership snapshot (safe: chunk-start pointers only). */
+        MemoryContext qs_mctx = GetMemoryChunkContext(qs);
+        MemoryContext filters_mctx = qs->filters ? GetMemoryChunkContext(qs->filters) : NULL;
+        CF_DEBUG_QS_LOG("pid=%d build_seq=%llu memctx qs=%p mctx=%p(%s) qctx=%p(%s) filters_ptr=%p mctx=%p(%s)",
+                        (int) getpid(),
+                        (unsigned long long) qs->build_seq,
+                        (void *) qs,
+                        (void *) qs_mctx,
+                        cf_mctx_safe_name(qs_mctx),
+                        (void *) qctx,
+                        cf_mctx_safe_name(qctx),
+                        (void *) qs->filters,
+                        (void *) filters_mctx,
+                        cf_mctx_safe_name(filters_mctx));
+        for (int i = 0; i < qs->n_filters; i++)
+        {
+            TableFilterState *tf = &qs->filters[i];
+            MemoryContext allow_mctx = tf->allow_bits ? GetMemoryChunkContext(tf->allow_bits) : NULL;
+            MemoryContext blk_mctx = tf->blk_index ? GetMemoryChunkContext(tf->blk_index) : NULL;
+            CF_DEBUG_QS_LOG("pid=%d build_seq=%llu memctx rel=%s relid=%u allow=%p mctx=%p(%s) blk=%p mctx=%p(%s)",
+                            (int) getpid(),
+                            (unsigned long long) qs->build_seq,
+                            tf->relname[0] ? tf->relname : "<unknown>",
+                            (unsigned int) tf->relid,
+                            (void *) tf->allow_bits,
+                            (void *) allow_mctx,
+                            cf_mctx_safe_name(allow_mctx),
+                            (void *) tf->blk_index,
+                            (void *) blk_mctx,
+                            cf_mctx_safe_name(blk_mctx));
         }
     }
     CF_RESCAN_LOG("event=query_state_ready pid=%d build_seq=%llu eval_calls=%llu load_calls=%llu policy_run_calls=%llu allow_build_calls=%llu blk_index_build_calls=%llu n_filters=%d",
@@ -3231,6 +3413,7 @@ cf_exec(CustomScanState *node)
     {
         if (cf_query_state)
         {
+            cf_filters_guard_check(cf_query_state, "BindFilter");
             /*
              * Always rebind the filter pointer from the current query-state.
              * If query-state is rebuilt mid-query (e.g., due to subplan contexts),
@@ -3285,6 +3468,8 @@ cf_exec(CustomScanState *node)
             if (!st->debug_exec_logged)
             {
                 cf_debug_log_scan_ids("ExecCustomScan(first)", st, node);
+                if (cf_query_state)
+                    cf_filters_guard_check(cf_query_state, "ExecCustomScan(first)");
                 st->debug_exec_logged = true;
             }
 
@@ -3328,6 +3513,8 @@ allow_check:
         {
             if (tf->n_rows > 0 && tf->allow_nbytes == 0)
             {
+                if (cf_query_state)
+                    cf_filters_guard_check(cf_query_state, "engine_error/allow_nbytes_zero");
                 ereport(ERROR,
                         (errmsg("custom_filter[engine_error]: allow_nbytes is zero for rel=%s rows=%u",
                                 st->relname[0] ? st->relname : "<unknown>",
@@ -3337,6 +3524,8 @@ allow_check:
             {
                 if ((tf->ctid_pairs_len & 1u) != 0)
                 {
+                    if (cf_query_state)
+                        cf_filters_guard_check(cf_query_state, "engine_error/ctid_pairs_len_odd");
                     ereport(ERROR,
                             (errmsg("custom_filter[engine_error]: malformed ctid_pairs_len for rel=%s len=%u",
                                     st->relname[0] ? st->relname : "<unknown>",
@@ -3344,6 +3533,8 @@ allow_check:
                 }
                 if ((uint64) tf->ctid_pairs_len != ((uint64) tf->n_rows * 2ull))
                 {
+                    if (cf_query_state)
+                        cf_filters_guard_check(cf_query_state, "engine_error/ctid_len_mismatch");
                     ereport(ERROR,
                             (errmsg("custom_filter[engine_error]: ctid length mismatch for rel=%s len=%u rows=%u",
                                     st->relname[0] ? st->relname : "<unknown>",
@@ -3353,6 +3544,8 @@ allow_check:
             }
             else if (tf->ctid_pairs_len != 0)
             {
+                if (cf_query_state)
+                    cf_filters_guard_check(cf_query_state, "engine_error/ctid_ptr_missing");
                 ereport(ERROR,
                         (errmsg("custom_filter[engine_error]: ctid_pairs pointer missing for rel=%s len=%u rows=%u",
                                 st->relname[0] ? st->relname : "<unknown>",
@@ -3361,6 +3554,8 @@ allow_check:
             }
             if (tf->n_rows > 0 && (!tf->blk_index || tf->n_blocks == 0))
             {
+                if (cf_query_state)
+                    cf_filters_guard_check(cf_query_state, "engine_error/missing_blk_index");
                 ereport(ERROR,
                         (errmsg("custom_filter[engine_error]: missing ctid block index for rel=%s rows=%u",
                                 st->relname[0] ? st->relname : "<unknown>",
@@ -3369,6 +3564,8 @@ allow_check:
             size_t expected_allow_nbytes = (size_t) ((tf->n_rows + 7) / 8);
             if (tf->allow_nbytes != expected_allow_nbytes)
             {
+                if (cf_query_state)
+                    cf_filters_guard_check(cf_query_state, "engine_error/allow_nbytes_mismatch");
                 ereport(ERROR,
                         (errmsg("custom_filter[engine_error]: allow_nbytes mismatch for rel=%s bytes=%zu expected=%zu rows=%u",
                                 st->relname[0] ? st->relname : "<unknown>",
@@ -3734,6 +3931,9 @@ void
 cf_rescan(CustomScanState *node)
 {
     CfExec *st = (CfExec *) node;
+
+    if (cf_query_state)
+        cf_filters_guard_check(cf_query_state, "ReScanCustomScan");
 
     if (st->child_plan)
         ExecReScan(st->child_plan);
