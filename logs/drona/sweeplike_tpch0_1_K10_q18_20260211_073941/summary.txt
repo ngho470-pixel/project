@@ -1,0 +1,10 @@
+db=tpch0_1
+K=10
+target_qid=18
+enabled_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+enabled_path=/tmp/z3_lab/policies_enabled_sweeplike_tpch0_1_K10_q18_20260211_073941.txt
+ours_count=0
+rls_count=0
+ours_error=('db_error', 'ERROR:  custom_filter[engine_error]: ctid_pairs pointer missing for rel=lineitem len=13331648 rows=2')
+rls_error=None
+status=error

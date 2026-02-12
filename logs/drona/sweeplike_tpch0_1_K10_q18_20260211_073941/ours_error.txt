@@ -1,0 +1,1 @@
+db_error: ERROR:  custom_filter[engine_error]: ctid_pairs pointer missing for rel=lineitem len=13331648 rows=2

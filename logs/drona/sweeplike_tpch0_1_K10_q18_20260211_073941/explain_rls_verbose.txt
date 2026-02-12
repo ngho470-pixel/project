@@ -1,0 +1,51 @@
+Aggregate
+  Output: count(*)
+  ->  GroupAggregate
+        Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, NULL::numeric
+        Group Key: orders.o_totalprice, orders.o_orderdate, customer.c_name, customer.c_custkey, orders.o_orderkey
+        ->  Sort
+              Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice
+              Sort Key: orders.o_totalprice DESC, orders.o_orderdate, customer.c_name, customer.c_custkey, orders.o_orderkey
+              ->  Nested Loop
+                    Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice
+                    Join Filter: (orders.o_orderkey = lineitem.l_orderkey)
+                    ->  Nested Loop
+                          Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, lineitem_1.l_orderkey
+                          Join Filter: (customer.c_custkey = orders.o_custkey)
+                          ->  Hash Join
+                                Output: orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, orders.o_custkey, lineitem_1.l_orderkey
+                                Inner Unique: true
+                                Hash Cond: (orders.o_orderkey = lineitem_1.l_orderkey)
+                                ->  Seq Scan on public.orders
+                                      Output: orders.o_orderkey, orders.o_custkey, orders.o_orderstatus, orders.o_totalprice, orders.o_orderdate, orders.o_orderpriority, orders.o_clerk, orders.o_shippriority, orders.o_comment
+                                ->  Hash
+                                      Output: lineitem_1.l_orderkey
+                                      ->  GroupAggregate
+                                            Output: lineitem_1.l_orderkey
+                                            Group Key: lineitem_1.l_orderkey
+                                            Filter: (sum(lineitem_1.l_quantity) > '314'::numeric)
+                                            ->  Sort
+                                                  Output: lineitem_1.l_orderkey, lineitem_1.l_quantity
+                                                  Sort Key: lineitem_1.l_orderkey
+                                                  ->  Bitmap Heap Scan on public.lineitem lineitem_1
+                                                        Output: lineitem_1.l_orderkey, lineitem_1.l_quantity
+                                                        Recheck Cond: (((lineitem_1.l_discount >= 0.02) AND (lineitem_1.l_discount <= 0.05)) OR ((lineitem_1.l_discount >= 0.06) AND (lineitem_1.l_discount <= 0.08)))
+                                                        Filter: ((lineitem_1.l_extendedprice > '0'::numeric) AND (lineitem_1.l_extendedprice > '0'::numeric) AND (lineitem_1.l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((lineitem_1.l_returnflag = 'R'::bpchar) OR (lineitem_1.l_linestatus = 'F'::bpchar)) AND ((lineitem_1.l_shipmode = ANY ('{MAIL,SHIP}'::bpchar[])) OR (lineitem_1.l_shipmode = ANY ('{TRUCK,RAIL}'::bpchar[]))) AND ((lineitem_1.l_returnflag = 'R'::bpchar) OR (lineitem_1.l_returnflag = 'A'::bpchar)) AND ((lineitem_1.l_tax <= 0.07) OR (lineitem_1.l_discount <= 0.05)) AND (((lineitem_1.l_discount >= 0.02) AND (lineitem_1.l_discount <= 0.05) AND (lineitem_1.l_quantity <= '25'::numeric)) OR ((lineitem_1.l_discount >= 0.06) AND (lineitem_1.l_discount <= 0.08) AND (lineitem_1.l_quantity <= '10'::numeric))) AND (((lineitem_1.l_shipmode = ANY ('{AIR,"AIR REG"}'::bpchar[])) AND (lineitem_1.l_quantity <= '15'::numeric) AND (lineitem_1.l_discount <= 0.05) AND (lineitem_1.l_linestatus = 'F'::bpchar)) OR ((lineitem_1.l_shipmode = ANY ('{MAIL,SHIP}'::bpchar[])) AND (lineitem_1.l_quantity <= '30'::numeric) AND (lineitem_1.l_discount <= 0.07) AND (lineitem_1.l_returnflag = 'R'::bpchar))))
+                                                        ->  BitmapOr
+                                                              ->  Bitmap Index Scan on cf_rls_k10_lineitem_l_discount_6
+                                                                    Index Cond: ((lineitem_1.l_discount >= 0.02) AND (lineitem_1.l_discount <= 0.05))
+                                                              ->  Bitmap Index Scan on cf_rls_k10_lineitem_l_discount_6
+                                                                    Index Cond: ((lineitem_1.l_discount >= 0.06) AND (lineitem_1.l_discount <= 0.08))
+                          ->  Index Scan using cf_rls_k10_customer_c_acctbal_1 on public.customer
+                                Output: customer.c_custkey, customer.c_name, customer.c_address, customer.c_nationkey, customer.c_phone, customer.c_acctbal, customer.c_mktsegment, customer.c_comment
+                                Index Cond: ((customer.c_acctbal > '0'::numeric) AND (customer.c_acctbal < '9000'::numeric))
+                                Filter: ((customer.c_nationkey < 10) AND ((customer.c_name)::text ~~ 'Customer%'::text) AND ((customer.c_mktsegment = 'AUTOMOBILE'::bpchar) OR (customer.c_mktsegment = 'BUILDING'::bpchar)) AND ((customer.c_mktsegment = 'FURNITURE'::bpchar) OR (customer.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND ((customer.c_phone ~~ '2%'::text) OR (customer.c_phone ~~ '3%'::text)) AND ((customer.c_mktsegment = 'MACHINERY'::bpchar) OR (customer.c_mktsegment = 'HOUSEHOLD'::bpchar)) AND (customer.c_nationkey = ANY ('{1,3,5,7}'::integer[])) AND (((customer.c_acctbal >= '500'::numeric) AND (customer.c_acctbal <= '7000'::numeric)) OR ((customer.c_phone ~~ '1%'::text) AND (customer.c_phone ~~ '%-%'::text))) AND (((customer.c_mktsegment = 'AUTOMOBILE'::bpchar) AND (customer.c_acctbal > '0'::numeric)) OR ((customer.c_mktsegment = 'FURNITURE'::bpchar) AND (customer.c_acctbal > '500'::numeric)) OR ((customer.c_mktsegment = 'BUILDING'::bpchar) AND (customer.c_acctbal > '1000'::numeric))))
+                    ->  Bitmap Heap Scan on public.lineitem
+                          Output: lineitem.l_orderkey, lineitem.l_partkey, lineitem.l_suppkey, lineitem.l_linenumber, lineitem.l_quantity, lineitem.l_extendedprice, lineitem.l_discount, lineitem.l_tax, lineitem.l_returnflag, lineitem.l_linestatus, lineitem.l_shipdate, lineitem.l_commitdate, lineitem.l_receiptdate, lineitem.l_shipinstruct, lineitem.l_shipmode, lineitem.l_comment
+                          Recheck Cond: (((lineitem.l_discount >= 0.02) AND (lineitem.l_discount <= 0.05)) OR ((lineitem.l_discount >= 0.06) AND (lineitem.l_discount <= 0.08)))
+                          Filter: ((lineitem.l_extendedprice > '0'::numeric) AND (lineitem.l_extendedprice > '0'::numeric) AND (lineitem.l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((lineitem.l_returnflag = 'R'::bpchar) OR (lineitem.l_linestatus = 'F'::bpchar)) AND ((lineitem.l_shipmode = ANY ('{MAIL,SHIP}'::bpchar[])) OR (lineitem.l_shipmode = ANY ('{TRUCK,RAIL}'::bpchar[]))) AND ((lineitem.l_returnflag = 'R'::bpchar) OR (lineitem.l_returnflag = 'A'::bpchar)) AND ((lineitem.l_tax <= 0.07) OR (lineitem.l_discount <= 0.05)) AND (((lineitem.l_discount >= 0.02) AND (lineitem.l_discount <= 0.05) AND (lineitem.l_quantity <= '25'::numeric)) OR ((lineitem.l_discount >= 0.06) AND (lineitem.l_discount <= 0.08) AND (lineitem.l_quantity <= '10'::numeric))) AND (((lineitem.l_shipmode = ANY ('{AIR,"AIR REG"}'::bpchar[])) AND (lineitem.l_quantity <= '15'::numeric) AND (lineitem.l_discount <= 0.05) AND (lineitem.l_linestatus = 'F'::bpchar)) OR ((lineitem.l_shipmode = ANY ('{MAIL,SHIP}'::bpchar[])) AND (lineitem.l_quantity <= '30'::numeric) AND (lineitem.l_discount <= 0.07) AND (lineitem.l_returnflag = 'R'::bpchar))))
+                          ->  BitmapOr
+                                ->  Bitmap Index Scan on cf_rls_k10_lineitem_l_discount_6
+                                      Index Cond: ((lineitem.l_discount >= 0.02) AND (lineitem.l_discount <= 0.05))
+                                ->  Bitmap Index Scan on cf_rls_k10_lineitem_l_discount_6
+                                      Index Cond: ((lineitem.l_discount >= 0.06) AND (lineitem.l_discount <= 0.08))
