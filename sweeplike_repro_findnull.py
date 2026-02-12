@@ -144,6 +144,8 @@ def main() -> int:
 
     ours_count_val: Optional[int] = None
     rls_count_val: Optional[int] = None
+    ours_error: Optional[Tuple[str, str]] = None
+    rls_error: Optional[Tuple[str, str]] = None
 
     # OURS connection
     conn_o = h.connect(db, "postgres")
@@ -179,7 +181,7 @@ def main() -> int:
         etype, emsg = h.classify_error(exc, msg)
         out_dir.joinpath("ours_error.txt").write_text(f"{etype}: {emsg}\n", encoding="utf-8")
         write_lines(ours_notices_p, drain_notices(conn_o))
-        return 2
+        ours_error = (etype, emsg[:240])
     finally:
         conn_o.close()
 
@@ -209,13 +211,13 @@ def main() -> int:
         etype, emsg = h.classify_error(exc, msg)
         out_dir.joinpath("rls_error.txt").write_text(f"{etype}: {emsg}\n", encoding="utf-8")
         write_lines(rls_notices_p, drain_notices(conn_r))
-        return 3
+        rls_error = (etype, emsg[:240])
     finally:
         conn_r.close()
 
     # Summary
     status = "ok"
-    if ours_count_val is None or rls_count_val is None:
+    if ours_error is not None or rls_error is not None or ours_count_val is None or rls_count_val is None:
         status = "error"
     elif ours_count_val != rls_count_val:
         status = "mismatch"
@@ -229,6 +231,8 @@ def main() -> int:
                 f"enabled_path={enabled_path}",
                 f"ours_count={ours_count_val}",
                 f"rls_count={rls_count_val}",
+                f"ours_error={ours_error}",
+                f"rls_error={rls_error}",
                 f"status={status}",
             ]
         )
@@ -241,4 +245,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
