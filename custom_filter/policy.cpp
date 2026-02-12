@@ -143,6 +143,64 @@ static std::vector<std::string> parse_dict_values(bytea *b)
     return out;
 }
 
+static bool has_code_base_v2_header(const void *data, size_t len)
+{
+    if (!data || len < 12) return false;
+    const unsigned char *p = static_cast<const unsigned char *>(data);
+    return p[0] == 'C' && p[1] == 'B' && p[2] == '0' && p[3] == '2';
+}
+
+static bool decode_code_base_v2(const void *data,
+                                size_t len,
+                                std::vector<int32_t> *out_code,
+                                int *out_ntoks,
+                                uint32 *out_nrows)
+{
+    if (!data || !out_code || !out_ntoks || !out_nrows) return false;
+    if (!has_code_base_v2_header(data, len)) return false;
+    if (len < 12) return false;
+
+    const unsigned char *p = static_cast<const unsigned char *>(data);
+    int32_t nrows_raw = 0;
+    int32_t payload_len_raw = 0;
+    std::memcpy(&nrows_raw, p + 4, sizeof(int32_t));
+    std::memcpy(&payload_len_raw, p + 8, sizeof(int32_t));
+    if (nrows_raw < 0 || payload_len_raw < 0) return false;
+
+    size_t nrows = static_cast<size_t>(nrows_raw);
+    size_t payload_len = static_cast<size_t>(payload_len_raw);
+    size_t payload_off = 12;
+    if (payload_off + payload_len > len) return false;
+    size_t off = payload_off;
+    size_t end = payload_off + payload_len;
+
+    out_code->clear();
+    if (nrows > 0) out_code->reserve(nrows * 2);
+    int ntoks = -1;
+    for (size_t rid = 0; rid < nrows; rid++) {
+        if (off + sizeof(uint16_t) > end) return false;
+        uint16_t nt = 0;
+        std::memcpy(&nt, p + off, sizeof(uint16_t));
+        off += sizeof(uint16_t);
+        if (ntoks < 0) ntoks = static_cast<int>(nt);
+        else if (ntoks != static_cast<int>(nt)) return false;
+        size_t toks_bytes = static_cast<size_t>(nt) * sizeof(int32_t);
+        if (off + toks_bytes > end) return false;
+        if (rid > static_cast<size_t>(std::numeric_limits<int32_t>::max())) return false;
+        out_code->push_back(static_cast<int32_t>(rid));
+        size_t old = out_code->size();
+        out_code->resize(old + static_cast<size_t>(nt));
+        if (toks_bytes > 0)
+            std::memcpy(out_code->data() + old, p + off, toks_bytes);
+        off += toks_bytes;
+    }
+    if (off != end) return false;
+    if (ntoks < 0) ntoks = 0;
+    *out_ntoks = ntoks;
+    *out_nrows = static_cast<uint32>(nrows);
+    return true;
+}
+
 static void append_top_counts(const std::vector<uint64_t> &counts,
                               const std::vector<std::string> &sig_bits,
                               int topn)
@@ -823,6 +881,9 @@ struct TableInfo {
     std::string name;
     const int32_t *code = nullptr;
     size_t code_len = 0;
+    std::vector<int32_t> code_owned;
+    int cb02_ntoks = -1;
+    uint32 cb02_nrows = 0;
     uint32 n_rows = 0;
     std::map<std::string, int> schema_offset;
     int stride = 0;
@@ -1114,8 +1175,21 @@ static bool load_phase(const PolicyArtifactC *arts, int art_count,
             std::string table = name.substr(0, name.size() - 10);
             TableInfo &ti = out->tables[table];
             ti.name = table;
-            ti.code = (const int32_t *)arts[i].data;
-            ti.code_len = arts[i].len / sizeof(int32_t);
+            if (has_code_base_v2_header(arts[i].data, arts[i].len)) {
+                std::vector<int32_t> decoded;
+                int ntoks = 0;
+                uint32 nrows = 0;
+                if (!decode_code_base_v2(arts[i].data, arts[i].len, &decoded, &ntoks, &nrows))
+                    return false;
+                ti.code_owned.swap(decoded);
+                ti.code = ti.code_owned.empty() ? nullptr : ti.code_owned.data();
+                ti.code_len = ti.code_owned.size();
+                ti.cb02_ntoks = ntoks;
+                ti.cb02_nrows = nrows;
+            } else {
+                ti.code = (const int32_t *)arts[i].data;
+                ti.code_len = arts[i].len / sizeof(int32_t);
+            }
         } else if (name.size() > 5 && name.substr(name.size() - 5) == "_code") {
             std::string table = name.substr(0, name.size() - 5);
             TableInfo &ti = out->tables[table];
@@ -1262,6 +1336,13 @@ static bool load_phase(const PolicyArtifactC *arts, int art_count,
         if (ti.code_len % (size_t)ti.stride != 0)
             return false;
         ti.n_rows = (uint32)(ti.code_len / (size_t)ti.stride);
+        if (ti.cb02_ntoks >= 0) {
+            if (ti.stride < 1) return false;
+            if (ti.cb02_ntoks != (ti.stride - 1))
+                return false;
+            if (ti.cb02_nrows != ti.n_rows)
+                return false;
+        }
 
         for (const auto &c : join_cols) {
             int cid = out->join_class_by_col[c];

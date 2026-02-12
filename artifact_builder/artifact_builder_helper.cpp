@@ -29,16 +29,19 @@ extern "C" void bb_reserve(ByteaBuilder *bb, size_t nbytes) {
     bb->buf.reserve(nbytes);
 }
 
-extern "C" void bb_append_int32(ByteaBuilder *bb, int32 value) {
-    if (!bb) return;
-    char bytes[4];
-    std::memcpy(bytes, &value, 4);
-    bb->buf.insert(bb->buf.end(), bytes, bytes + 4);
+static inline void bb_append_bytes_fast(ByteaBuilder *bb, const void *src, size_t n) {
+    if (!bb || !src || n == 0) return;
+    size_t old = bb->buf.size();
+    bb->buf.resize(old + n);
+    std::memcpy(bb->buf.data() + old, src, n);
 }
 
-extern "C" void bb_append_bytes(ByteaBuilder *bb, const char *data, size_t len) {
-    if (!bb || !data || len == 0) return;
-    bb->buf.insert(bb->buf.end(), data, data + len);
+extern "C" void bb_append_int32(ByteaBuilder *bb, int32 value) {
+    bb_append_bytes_fast(bb, &value, sizeof(int32));
+}
+
+extern "C" void bb_append_bytes(ByteaBuilder *bb, const void *data, size_t len) {
+    bb_append_bytes_fast(bb, data, len);
 }
 
 extern "C" bytea *bb_to_bytea(ByteaBuilder *bb) {

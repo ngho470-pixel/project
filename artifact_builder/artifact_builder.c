@@ -202,6 +202,29 @@ static void insert_file_text(const char *name, const char *text) {
     insert_file(name, ba);
 }
 
+static size_t estimate_table_rows(const char *table) {
+    Oid argtypes[1] = {TEXTOID};
+    Datum values[1];
+    char nulls[1] = {' '};
+    values[0] = CStringGetTextDatum(table);
+    int ret = SPI_execute_with_args(
+        "SELECT GREATEST(COALESCE(c.reltuples, 0), 0)::bigint "
+        "FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = 'public' AND c.relname = $1",
+        1, argtypes, values, nulls, true, 1);
+    if (ret != SPI_OK_SELECT || SPI_processed == 0)
+        return 0;
+    bool isnull = false;
+    Datum d = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
+    if (isnull)
+        return 0;
+    int64 est = DatumGetInt64(d);
+    if (est <= 0)
+        return 0;
+    return (size_t) est;
+}
+
 static const char *dict_type_for_col(const char *table, const char *col) {
     if (!table || !col) return "text";
     Oid argtypes[2] = {TEXTOID, TEXTOID};
@@ -679,7 +702,30 @@ Datum build_base(PG_FUNCTION_ARGS) {
         if (!portal) ereport(ERROR, (errmsg("SPI_cursor_open failed for table %s", table)));
 
         ByteaBuilder *ctid_bb = bb_create();
-        ByteaBuilder *code_bb = bb_create();
+        ByteaBuilder *code_payload_bb = bb_create();
+        size_t est_rows = estimate_table_rows(table);
+        if (est_rows == 0)
+            est_rows = 1024;
+        if (est_rows > (SIZE_MAX / (sizeof(int32) * 2)))
+            est_rows = SIZE_MAX / (sizeof(int32) * 2);
+        bb_reserve(ctid_bb, est_rows * sizeof(int32) * 2);
+        size_t payload_per_row = sizeof(uint16);
+        if (token_count > 0) {
+            if ((size_t) token_count > (SIZE_MAX - payload_per_row) / sizeof(int32))
+                ereport(ERROR, (errmsg("token count overflow for %s", table)));
+            payload_per_row += (size_t) token_count * sizeof(int32);
+        }
+        if (est_rows > 0 && payload_per_row > 0) {
+            size_t max_rows = SIZE_MAX / payload_per_row;
+            if (est_rows > max_rows)
+                est_rows = max_rows;
+        }
+        bb_reserve(code_payload_bb, est_rows * payload_per_row);
+        int32 *row_tokens = NULL;
+        if (token_count > 0)
+            row_tokens = (int32 *) palloc(sizeof(int32) * token_count);
+        if (token_count > (int) UINT16_MAX)
+            ereport(ERROR, (errmsg("too many token columns for %s: %d", table, token_count)));
         int64 rid = 0;
         while (true) {
             SPI_cursor_fetch(portal, true, FETCH_BATCH);
@@ -697,11 +743,15 @@ Datum build_base(PG_FUNCTION_ARGS) {
                 bb_append_int32(ctid_bb, blk);
                 bb_append_int32(ctid_bb, off);
 
-                bb_append_int32(code_bb, (int32)rid);
+                uint16 ntoks = (uint16) token_count;
+                bb_append_bytes(code_payload_bb, &ntoks, sizeof(uint16));
                 for (int i = 0; i < token_count; i++) {
                     Datum tok = SPI_getbinval(tuple, tupdesc, 2 + i, &isnull);
                     int32 tval = isnull ? -1 : DatumGetInt32(tok);
-                    bb_append_int32(code_bb, tval);
+                    row_tokens[i] = tval;
+                }
+                if (token_count > 0) {
+                    bb_append_bytes(code_payload_bb, row_tokens, (size_t) token_count * sizeof(int32));
                 }
                 rid++;
             }
@@ -712,9 +762,26 @@ Datum build_base(PG_FUNCTION_ARGS) {
         char name_code[NAMEDATALEN * 2];
         snprintf(name_ctid, sizeof(name_ctid), "%s_ctid", table);
         snprintf(name_code, sizeof(name_code), "%s_code_base", table);
+        ByteaBuilder *code_bb = bb_create();
+        size_t payload_len = bb_size(code_payload_bb);
+        if (payload_len > (size_t) INT32_MAX)
+            ereport(ERROR, (errmsg("code payload too large for %s: %zu bytes", table, payload_len)));
+        if (rid > (int64) INT32_MAX)
+            ereport(ERROR, (errmsg("row count too large for %s: " INT64_FORMAT, table, rid)));
+        bb_reserve(code_bb, sizeof(uint32) + sizeof(int32) + sizeof(int32) + payload_len);
+        const char magic[4] = {'C', 'B', '0', '2'};
+        bb_append_bytes(code_bb, magic, sizeof(magic));
+        bb_append_int32(code_bb, (int32) rid);
+        bb_append_int32(code_bb, (int32) payload_len);
+        bytea *payload_ba = bb_to_bytea(code_payload_bb);
+        bb_append_bytes(code_bb, VARDATA(payload_ba), (size_t) VARSIZE_ANY_EXHDR(payload_ba));
         insert_file(name_ctid, bb_to_bytea(ctid_bb));
         insert_file(name_code, bb_to_bytea(code_bb));
+        if (row_tokens)
+            pfree(row_tokens);
+        pfree(payload_ba);
         bb_free(ctid_bb);
+        bb_free(code_payload_bb);
         bb_free(code_bb);
     }
 
