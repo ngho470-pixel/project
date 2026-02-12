@@ -1066,6 +1066,9 @@ typedef struct PolicyQueryState
     bool filters_guard_set;
     bool filters_guard_reported;
     const char *filters_guard_last_ok_phase;
+    /* Debug-only: where the filters array was allocated (CurrentMemoryContext at alloc time). */
+    MemoryContext filters_alloc_mctx;
+    MemoryContext qctx;
     char **needed_files;
     int n_needed_files;
     char **policy_targets;
@@ -1868,6 +1871,7 @@ cf_build_query_state(EState *estate, const char *query_str)
 
     PolicyQueryState *qs = (PolicyQueryState *) palloc0(sizeof(PolicyQueryState));
     qs->build_seq = ++cf_query_build_seq;
+    qs->qctx = qctx;
     CF_RESCAN_LOG("event=query_state_begin pid=%d build_seq=%llu qs=%p qctx=%p",
                   (int) getpid(),
                   (unsigned long long) qs->build_seq,
@@ -2333,7 +2337,11 @@ cf_build_query_state(EState *estate, const char *query_str)
 
     qs->n_filters = n_filters;
     if (n_filters > 0)
+    {
+        /* IMPORTANT: capture the allocation context; SPI_connect can change CurrentMemoryContext. */
+        qs->filters_alloc_mctx = CurrentMemoryContext;
         qs->filters = (TableFilterState *) palloc0(sizeof(TableFilterState) * n_filters);
+    }
 
     int fidx = 0;
     for (int i = 0; i < qs->n_needed_files; i++)
@@ -2584,7 +2592,17 @@ cf_build_query_state(EState *estate, const char *query_str)
         }
     }
 
+    /*
+     * Guard baseline must be set while qs->filters memory is still in its
+     * allocated state. If filters were accidentally allocated under SPI Proc
+     * context, SPI_finish() can reset that context and mutate/free qs->filters.
+     */
+    if (cf_debug_ids)
+        cf_filters_guard_set(qs, "pre_SPI_finish");
+
     SPI_finish();
+    if (cf_debug_ids)
+        cf_filters_guard_check(qs, "post_SPI_finish");
     cf_in_internal_query = false;
     free_policy_eval_result(eval_res);
 
@@ -2600,8 +2618,6 @@ finalize:
     MemoryContextSwitchTo(oldctx);
     if (cf_debug_ids)
     {
-        cf_filters_guard_set(qs, "query_state_ready");
-
         CF_DEBUG_QS_LOG("pid=%d build_seq=%llu qs=%p ready=%d n_filters=%d n_policy_targets=%d n_scanned_tables=%d n_wrapped_tables=%d",
                         (int) getpid(),
                         (unsigned long long) qs->build_seq,
@@ -2647,18 +2663,19 @@ finalize:
 
         /* Memory context ownership snapshot (safe: chunk-start pointers only). */
         MemoryContext qs_mctx = GetMemoryChunkContext(qs);
-        MemoryContext filters_mctx = qs->filters ? GetMemoryChunkContext(qs->filters) : NULL;
-        CF_DEBUG_QS_LOG("pid=%d build_seq=%llu memctx qs=%p mctx=%p(%s) qctx=%p(%s) filters_ptr=%p mctx=%p(%s)",
+        CF_DEBUG_QS_LOG("pid=%d build_seq=%llu memctx qctx=%p(%s) qs=%p qs_mctx=%p(%s) filters_ptr=%p filters_alloc_mctx=%p(%s) cur_mctx=%p(%s)",
                         (int) getpid(),
                         (unsigned long long) qs->build_seq,
+                        (void *) qctx,
+                        cf_mctx_safe_name(qctx),
                         (void *) qs,
                         (void *) qs_mctx,
                         cf_mctx_safe_name(qs_mctx),
-                        (void *) qctx,
-                        cf_mctx_safe_name(qctx),
                         (void *) qs->filters,
-                        (void *) filters_mctx,
-                        cf_mctx_safe_name(filters_mctx));
+                        (void *) qs->filters_alloc_mctx,
+                        cf_mctx_safe_name(qs->filters_alloc_mctx),
+                        (void *) CurrentMemoryContext,
+                        cf_mctx_safe_name(CurrentMemoryContext));
         for (int i = 0; i < qs->n_filters; i++)
         {
             TableFilterState *tf = &qs->filters[i];
