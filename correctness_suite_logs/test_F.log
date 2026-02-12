@@ -7,17 +7,39 @@ customer : customer.c_phone LIKE '%-%'
 
 EXPLAIN OFF (custom_filter.enabled=off):
 Aggregate
-  ->  Seq Scan on customer
+  ->  Index Only Scan using cf_rls_k11_customer_c_nationkey_4 on customer
 
 EXPLAIN ON (custom_filter.enabled=on):
-ERROR: ERROR:  unsupported LIKE pattern (prefix only): %-%
+ERROR: ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
 --- ON notices ---
 NOTICE:  policy_eval: target=customer tokens=IDENT:customer.c_phone OP:like STRING:'%-%'
+NOTICE:  policy_eval: target=customer join_classes=[]
+NOTICE:  policy_eval: policy[1] target=customer expr=customer.c_phone LIKE '%-%' ast=y1
+NOTICE:  policy_eval: atom y1 = const:customer.c_phone|like|%-%
+NOTICE:  policy_eval: combined_ast target=customer ast=y1
+NOTICE:  policy_eval: closure_count=1
+NOTICE:  policy_eval: target=customer tokens=IDENT:customer.c_phone OP:like STRING:'%-%'
+NOTICE:  policy_eval: target=customer join_classes=[]
+NOTICE:  policy_eval: policy[1] target=customer expr=customer.c_phone LIKE '%-%' ast=y1
+NOTICE:  policy_eval: atom y1 = const:customer.c_phone|like|%-%
+NOTICE:  policy_eval: combined_ast target=customer ast=y1
+NOTICE:  policy_eval: closure_count=1
 
 OURS EXECUTION:
-ERROR: ERROR:  unsupported LIKE pattern (prefix only): %-%
+ERROR: ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
 --- Ours notices ---
 NOTICE:  policy_eval: target=customer tokens=IDENT:customer.c_phone OP:like STRING:'%-%'
+NOTICE:  policy_eval: target=customer join_classes=[]
+NOTICE:  policy_eval: policy[1] target=customer expr=customer.c_phone LIKE '%-%' ast=y1
+NOTICE:  policy_eval: atom y1 = const:customer.c_phone|like|%-%
+NOTICE:  policy_eval: combined_ast target=customer ast=y1
+NOTICE:  policy_eval: closure_count=1
+NOTICE:  policy_eval: target=customer tokens=IDENT:customer.c_phone OP:like STRING:'%-%'
+NOTICE:  policy_eval: target=customer join_classes=[]
+NOTICE:  policy_eval: policy[1] target=customer expr=customer.c_phone LIKE '%-%' ast=y1
+NOTICE:  policy_eval: atom y1 = const:customer.c_phone|like|%-%
+NOTICE:  policy_eval: combined_ast target=customer ast=y1
+NOTICE:  policy_eval: closure_count=1
 
 GROUND TRUTH SOURCE: none
 GT COUNT: None

@@ -1,0 +1,48 @@
+Aggregate
+  Output: count(*)
+  ->  GroupAggregate
+        Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, NULL::numeric
+        Group Key: orders.o_totalprice, orders.o_orderdate, customer.c_name, customer.c_custkey, orders.o_orderkey
+        ->  Sort
+              Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice
+              Sort Key: orders.o_totalprice DESC, orders.o_orderdate, customer.c_name, customer.c_custkey, orders.o_orderkey
+              ->  Hash Join
+                    Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice
+                    Hash Cond: (lineitem.l_orderkey = orders.o_orderkey)
+                    ->  Custom Scan (custom_filter) on public.lineitem
+                          Output: lineitem.l_orderkey
+                          custom_filter: 
+                          ->  Seq Scan on public.lineitem
+                                Output: lineitem.l_orderkey
+                    ->  Hash
+                          Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, lineitem_1.l_orderkey
+                          ->  Hash Join
+                                Output: customer.c_name, customer.c_custkey, orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, lineitem_1.l_orderkey
+                                Hash Cond: (orders.o_custkey = customer.c_custkey)
+                                ->  Hash Join
+                                      Output: orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, orders.o_custkey, lineitem_1.l_orderkey
+                                      Inner Unique: true
+                                      Hash Cond: (orders.o_orderkey = lineitem_1.l_orderkey)
+                                      ->  Custom Scan (custom_filter) on public.orders
+                                            Output: orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, orders.o_custkey
+                                            custom_filter: 
+                                            ->  Seq Scan on public.orders
+                                                  Output: orders.o_orderkey, orders.o_orderdate, orders.o_totalprice, orders.o_custkey
+                                      ->  Hash
+                                            Output: lineitem_1.l_orderkey
+                                            ->  HashAggregate
+                                                  Output: lineitem_1.l_orderkey
+                                                  Group Key: lineitem_1.l_orderkey
+                                                  Filter: (sum(lineitem_1.l_quantity) > '314'::numeric)
+                                                  ->  Custom Scan (custom_filter) on public.lineitem lineitem_1
+                                                        Output: lineitem_1.l_orderkey, lineitem_1.l_quantity
+                                                        custom_filter: 
+                                                        ->  Seq Scan on public.lineitem lineitem_1
+                                                              Output: lineitem_1.l_orderkey, lineitem_1.l_quantity
+                                ->  Hash
+                                      Output: customer.c_name, customer.c_custkey
+                                      ->  Custom Scan (custom_filter) on public.customer
+                                            Output: customer.c_name, customer.c_custkey
+                                            custom_filter: 
+                                            ->  Seq Scan on public.customer
+                                                  Output: customer.c_name, customer.c_custkey

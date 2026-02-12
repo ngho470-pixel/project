@@ -10,125 +10,68 @@ EXPLAIN OFF (custom_filter.enabled=off):
 Aggregate
   ->  Merge Join
         Merge Cond: (o.o_orderkey = l.l_orderkey)
-        ->  Index Only Scan using orders_o_orderkey_idx on orders o
-        ->  Index Only Scan using lineitem_l_orderkey_idx on lineitem l
+        ->  Index Only Scan using cf_rls_k11_orders_o_orderkey_18 on orders o
+        ->  Index Only Scan using cf_rls_k11_lineitem_l_orderkey_8 on lineitem l
 
 EXPLAIN ON (custom_filter.enabled=on):
-Aggregate
-  ->  Hash Join
-        Hash Cond: (l.l_orderkey = o.o_orderkey)
-        ->  Custom Scan (custom_filter) on lineitem l
-              custom_filter: 
-              ->  Seq Scan on lineitem l
-        ->  Hash
-              ->  Custom Scan (custom_filter) on orders o
-                    custom_filter: 
-                    ->  Seq Scan on orders o
+ERROR: ERROR:  custom_filter: missing artifacts: customer_code_base, customer_ctid, dict/customer/c_mktsegment, dict/lineitem/l_shipmode, lineitem_code_base, lineitem_ctid, meta/cols/customer, meta/cols/lineitem, meta/cols/orders, meta/dict_sorted/customer/c_mktsegment, meta/dict_sorted/lineitem/l_shipmode, meta/dict_type/customer/c_mktsegment, meta/dict_type/lineitem/l_shipmode, meta/join_classes, orders_code_base, orders_ctid
 --- ON notices ---
-NOTICE:  policy_contract: atom y2 type=COL_CONST col=customer.c_mktsegment op=0 join_class=-1 dict=dict/customer/c_mktsegment dict_present=1 eval=exact vals=[HOUSEHOLD] toks=[3]
-NOTICE:  policy_contract: atom y3 type=COL_CONST col=lineitem.l_shipmode op=6 join_class=-1 dict=dict/lineitem/l_shipmode dict_present=1 eval=exact vals=[MAIL,SHIP] toks=[2,5]
-NOTICE:  policy_contract: atom y4 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
-NOTICE:  policy_contract: AST(lineitem)=lineitem.l_shipmode IN ('MAIL','SHIP')
-NOTICE:  policy: load_ms=0.173
-NOTICE:  policy: global_atoms table=lineitem count=1
-NOTICE:  policy: global_bins table=lineitem bins=2 rows=600572
-NOTICE:  policy: bundle_eval target=lineitem bundle_id=2 uses_atoms=1
-NOTICE:  policy: local_bins table=lineitem atoms=1 bins=2
-NOTICE:  policy: local_ms table=lineitem stamp=43.935 bin=42.991 eval=0.000 fill=3.645
-NOTICE:  policy: local_eval table=lineitem sat_calls=0 cache_hits=0
-NOTICE:  policy: allow_lineitem count = 171942 / 600572
-NOTICE:  policy: total_ms=92.921
-NOTICE:  policy_profile: bundle=2 target=lineitem K=0 query= local={lineitem:atoms=1,bins=2,sat=0,hits=0,ms=43.935/42.991/0.000/3.645,total_ms=90.571} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:171942/600572,ms=0.000,total_ms=0.000} total_ms=92.921
-NOTICE:  custom_filter: bundle target=lineitem allow_count=171942/600572
-NOTICE:  custom_filter: final_allow_orders count=59321/150000
-NOTICE:  custom_filter: final_allow_lineitem count=171942/600572
-NOTICE:  custom_filter: allow_lineitem popcount=171942/600572
-NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
-NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
-NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
-NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
-NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
-NOTICE:  custom_filter: ctid_index_ms=27.886 rel=lineitem
-NOTICE:  custom_filter: lineitem_ctid head [0,1 0,2 0,3 0,4 0,5]
-NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=135192B
-NOTICE:  custom_filter: allow_orders popcount=59321/150000
-NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
-NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
-NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
-NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
-NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
-NOTICE:  custom_filter: ctid_index_ms=5.423 rel=orders
-NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
-NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
-NOTICE:  custom_filter: retain total allow=93822B ctid=6004576B blk_index=166548B
-NOTICE:  custom_filter: allow_bits pre_exec rel=lineitem count=171942/600572 ptr=0x581a14007530 canary=ok mctx=0x581a13c8e930 qctx=0x581a13c8e930 qs=0x581a13c8fb08
-NOTICE:  custom_filter: allow_bits pre_exec rel=orders count=59321/150000 ptr=0x581a1407a450 canary=ok mctx=0x581a13c8e930 qctx=0x581a13c8e930 qs=0x581a13c8fb08
-NOTICE:  custom_filter: scan rel=lineitem type=SeqScan filter=on
-NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
-NOTICE:  custom_filter: allow_bits mismatch rel=lineitem allow=171942 passed=0
-NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=0 passed=0 misses=0 mode=contract
-NOTICE:  custom_filter: row validation time = 0.000 ms
-NOTICE:  custom_filter: allow_bits mismatch rel=orders allow=59321 passed=0
-NOTICE:  custom_filter exec: rel=orders oid=74197 seen=0 passed=0 misses=0 mode=contract
-NOTICE:  custom_filter: row validation time = 0.000 ms
-NOTICE:  policy_metrics: eval_ms=0.070 artifact_load_ms=13.174 artifact_parse_ms=0.374 stamp_ms=46.081 bin_ms=44.422 local_sat_ms=0.176 prop_ms=13.324 prop_iters=1 decode_ms=49.971 ctid_map_ms=33.309 filter_ms=0.000 rows_seen=0 rows_passed=0 policy_total_ms=161.429
-NOTICE:  policy_profile_query: K=0 query_id= total_ms=161.429 local_ms=94.445 prop_ms=13.324 decode_ms=49.971 sat_calls=3 cache_hits=0 closure_tables=3 filtered_targets=1
-NOTICE:  policy: scan_count table=lineitem count=1
-NOTICE:  policy: scan_count table=customer count=1
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:)
+NOTICE:  policy_eval: target=lineitem join_classes=[]
+NOTICE:  policy_eval: target=orders join_classes=[0]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD') ast=y4 and (y1 or y2)
+NOTICE:  policy_eval: policy[2] target=lineitem expr=lineitem.l_shipmode IN ('MAIL','SHIP') ast=y3
+NOTICE:  policy_eval: atom y1 = const:customer.c_mktsegment|=|AUTOMOBILE
+NOTICE:  policy_eval: atom y2 = const:customer.c_mktsegment|=|HOUSEHOLD
+NOTICE:  policy_eval: atom y3 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y4 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: combined_ast target=lineitem ast=y3
+NOTICE:  policy_eval: combined_ast target=orders ast=y4 and (y1 or y2)
+NOTICE:  policy_eval: closure_count=3
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:)
+NOTICE:  policy_eval: target=lineitem join_classes=[]
+NOTICE:  policy_eval: target=orders join_classes=[0]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD') ast=y4 and (y1 or y2)
+NOTICE:  policy_eval: policy[2] target=lineitem expr=lineitem.l_shipmode IN ('MAIL','SHIP') ast=y3
+NOTICE:  policy_eval: atom y1 = const:customer.c_mktsegment|=|AUTOMOBILE
+NOTICE:  policy_eval: atom y2 = const:customer.c_mktsegment|=|HOUSEHOLD
+NOTICE:  policy_eval: atom y3 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y4 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: combined_ast target=lineitem ast=y3
+NOTICE:  policy_eval: combined_ast target=orders ast=y4 and (y1 or y2)
+NOTICE:  policy_eval: closure_count=3
 
 OURS EXECUTION:
-COUNT: 67564
+ERROR: ERROR:  custom_filter: missing artifacts: customer_code_base, customer_ctid, dict/customer/c_mktsegment, dict/lineitem/l_shipmode, lineitem_code_base, lineitem_ctid, meta/cols/customer, meta/cols/lineitem, meta/cols/orders, meta/dict_sorted/customer/c_mktsegment, meta/dict_sorted/lineitem/l_shipmode, meta/dict_type/customer/c_mktsegment, meta/dict_type/lineitem/l_shipmode, meta/join_classes, orders_code_base, orders_ctid
 --- Ours notices ---
-NOTICE:  custom_filter: seqscan ctid mismatch rid=58 got=(4113,6) exp=(1,5)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=59 got=(4113,7) exp=(1,6)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=60 got=(4113,8) exp=(1,7)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=61 got=(4113,9) exp=(1,8)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=62 got=(4113,10) exp=(1,9)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=63 got=(4113,11) exp=(1,10)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=64 got=(4113,12) exp=(1,11)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=65 got=(4113,13) exp=(1,12)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=66 got=(4113,14) exp=(1,13)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=67 got=(4113,15) exp=(1,14)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=68 got=(4113,16) exp=(1,15)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=69 got=(4113,17) exp=(1,16)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=70 got=(4113,18) exp=(1,17)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=71 got=(4113,19) exp=(1,18)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=72 got=(4113,20) exp=(1,19)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=73 got=(4113,21) exp=(1,20)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=74 got=(4113,22) exp=(1,21)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=75 got=(4113,23) exp=(1,22)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=76 got=(4113,24) exp=(1,23)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=77 got=(4113,25) exp=(1,24)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=78 got=(4113,26) exp=(1,25)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=79 got=(4113,27) exp=(1,26)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=80 got=(4113,28) exp=(1,27)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=81 got=(4113,29) exp=(1,28)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=82 got=(4113,30) exp=(1,29)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=83 got=(4113,31) exp=(1,30)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=84 got=(4113,32) exp=(1,31)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=85 got=(4113,33) exp=(1,32)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=86 got=(4113,34) exp=(1,33)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=87 got=(4113,35) exp=(1,34)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=88 got=(4113,36) exp=(1,35)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=89 got=(4113,37) exp=(1,36)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=90 got=(4113,38) exp=(1,37)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=91 got=(4113,39) exp=(1,38)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=92 got=(4113,40) exp=(1,39)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=93 got=(4113,41) exp=(1,40)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=94 got=(4113,42) exp=(1,41)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=95 got=(4113,43) exp=(1,42)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=96 got=(4113,44) exp=(1,43)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=97 got=(4113,45) exp=(1,44)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=98 got=(4113,46) exp=(1,45)
-NOTICE:  custom_filter: seqscan ctid mismatch rid=99 got=(4113,47) exp=(1,46)
-NOTICE:  custom_filter exec: rel=lineitem oid=74200 seen=600572 passed=171942 misses=0 mode=contract
-NOTICE:  custom_filter: row validation time = 84.472 ms
-NOTICE:  custom_filter exec: rel=orders oid=74197 seen=150000 passed=59321 misses=0 mode=contract
-NOTICE:  custom_filter: row validation time = 16.622 ms
-NOTICE:  policy_metrics: eval_ms=0.068 artifact_load_ms=12.890 artifact_parse_ms=0.347 stamp_ms=45.950 bin_ms=44.405 local_sat_ms=0.177 prop_ms=13.116 prop_iters=1 decode_ms=49.999 ctid_map_ms=31.515 filter_ms=101.095 rows_seen=750572 rows_passed=231263 policy_total_ms=161.020
-NOTICE:  policy_profile_query: K=0 query_id= total_ms=161.020 local_ms=94.213 prop_ms=13.116 decode_ms=49.999 sat_calls=3 cache_hits=0 closure_tables=3 filtered_targets=1
-NOTICE:  policy: scan_count table=lineitem count=1
-NOTICE:  policy: scan_count table=customer count=1
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:)
+NOTICE:  policy_eval: target=lineitem join_classes=[]
+NOTICE:  policy_eval: target=orders join_classes=[0]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD') ast=y4 and (y1 or y2)
+NOTICE:  policy_eval: policy[2] target=lineitem expr=lineitem.l_shipmode IN ('MAIL','SHIP') ast=y3
+NOTICE:  policy_eval: atom y1 = const:customer.c_mktsegment|=|AUTOMOBILE
+NOTICE:  policy_eval: atom y2 = const:customer.c_mktsegment|=|HOUSEHOLD
+NOTICE:  policy_eval: atom y3 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y4 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: combined_ast target=lineitem ast=y3
+NOTICE:  policy_eval: combined_ast target=orders ast=y4 and (y1 or y2)
+NOTICE:  policy_eval: closure_count=3
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:)
+NOTICE:  policy_eval: target=lineitem join_classes=[]
+NOTICE:  policy_eval: target=orders join_classes=[0]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD') ast=y4 and (y1 or y2)
+NOTICE:  policy_eval: policy[2] target=lineitem expr=lineitem.l_shipmode IN ('MAIL','SHIP') ast=y3
+NOTICE:  policy_eval: atom y1 = const:customer.c_mktsegment|=|AUTOMOBILE
+NOTICE:  policy_eval: atom y2 = const:customer.c_mktsegment|=|HOUSEHOLD
+NOTICE:  policy_eval: atom y3 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y4 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: combined_ast target=lineitem ast=y3
+NOTICE:  policy_eval: combined_ast target=orders ast=y4 and (y1 or y2)
+NOTICE:  policy_eval: closure_count=3
 
 GROUND TRUTH SOURCE: rls
 GT COUNT: 67564

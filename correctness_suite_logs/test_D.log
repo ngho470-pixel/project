@@ -7,118 +7,51 @@ orders : orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation
 
 EXPLAIN OFF (custom_filter.enabled=off):
 Aggregate
-  ->  Index Only Scan using orders_o_orderstatus_idx on orders
+  ->  Index Only Scan using cf_rls_k11_orders_o_orderstatus_20 on orders
 
 EXPLAIN ON (custom_filter.enabled=on):
-Aggregate
-  ->  Custom Scan (custom_filter) on orders
-        custom_filter: 
-        ->  Seq Scan on orders
+ERROR: ERROR:  custom_filter: missing artifacts: customer_code_base, customer_ctid, dict/region/r_name, meta/cols/customer, meta/cols/nation, meta/cols/orders, meta/cols/region, meta/dict_sorted/region/r_name, meta/dict_type/region/r_name, meta/join_classes, nation_code_base, nation_ctid, orders_code_base, orders_ctid, region_code_base, region_ctid
 --- ON notices ---
-NOTICE:  policy_contract: offset const:region.r_name = 2 stride=3
-NOTICE:  policy_contract: offset join:customer.c_custkey class=0 = 1 stride=3
-NOTICE:  policy_contract: offset join:orders.o_custkey class=0 = 1 stride=2
-NOTICE:  policy_contract: offset join:customer.c_nationkey class=1 = 2 stride=3
-NOTICE:  policy_contract: offset join:nation.n_nationkey class=1 = 1 stride=3
-NOTICE:  policy_contract: offset join:nation.n_regionkey class=2 = 2 stride=3
-NOTICE:  policy_contract: offset join:region.r_regionkey class=2 = 1 stride=3
-NOTICE:  policy_contract: atom y1 type=COL_CONST col=region.r_name op=6 join_class=-1 dict=dict/region/r_name dict_present=1 eval=exact vals=[ASIA,EUROPE] toks=[2,3]
-NOTICE:  policy_contract: atom y2 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
-NOTICE:  policy_contract: atom y3 type=JOIN_EQ lhs=customer.c_nationkey rhs=nation.n_nationkey join_class=1 meta_lhs=1 meta_rhs=1 class_cols=[customer.c_nationkey, nation.n_nationkey]
-NOTICE:  policy_contract: atom y4 type=JOIN_EQ lhs=nation.n_regionkey rhs=region.r_regionkey join_class=2 meta_lhs=2 meta_rhs=2 class_cols=[nation.n_regionkey, region.r_regionkey]
-NOTICE:  policy_contract: AST(orders)=(((customer.c_custkey = orders.o_custkey AND customer.c_nationkey = nation.n_nationkey) AND nation.n_regionkey = region.r_regionkey) AND region.r_name IN ('ASIA','EUROPE'))
-NOTICE:  policy: load_ms=0.285
-NOTICE:  policy: global_atoms table=region count=1
-NOTICE:  policy: global_bins table=region bins=2 rows=5
-NOTICE:  policy: bundle_eval target=region bundle_id=1 uses_atoms=1
-NOTICE:  policy: local_bins table=region atoms=1 bins=2
-NOTICE:  policy: local_ms table=region stamp=0.002 bin=0.004 eval=0.000 fill=0.000
-NOTICE:  policy: local_eval table=region sat_calls=0 cache_hits=0
-NOTICE:  policy: local_ok source=bins table=region
-NOTICE:  policy: multi_join local_ok customer = 15000 / 15000
-NOTICE:  policy: multi_join local_ok nation = 25 / 25
-NOTICE:  policy: multi_join local_ok orders = 150000 / 150000
-NOTICE:  policy: multi_join local_ok region = 2 / 5
-NOTICE:  policy: multi_join class=0 allowed=3991 / 15000
-NOTICE:  policy: multi_join class=1 allowed=10 / 25
-NOTICE:  policy: multi_join class=2 allowed=2 / 5
-NOTICE:  policy: allow_orders count = 60036 / 150000
-NOTICE:  policy: total_ms=80.751
-NOTICE:  policy_profile: bundle=1 target=orders K=0 query= local={region:atoms=1,bins=2,sat=0,hits=0,ms=0.002/0.004/0.000/0.000,total_ms=0.006} prop={iter=1,ms=26.879,classes=[0:3991/15000,1:10/25,2:2/5]} decode={orders:60036/150000,ms=53.072,total_ms=53.072} total_ms=80.751
-NOTICE:  custom_filter: bundle target=orders allow_count=60036/150000
-NOTICE:  custom_filter: final_allow_orders count=60036/150000
-NOTICE:  custom_filter: allow_orders popcount=60036/150000
-NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
-NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
-NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
-NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
-NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
-NOTICE:  custom_filter: ctid_index_ms=4.701 rel=orders
-NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
-NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
-NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
-NOTICE:  custom_filter: allow_bits pre_exec rel=orders count=60036/150000 ptr=0x581a13ce8090 canary=ok mctx=0x581a13c7c2b0 qctx=0x581a13c7c2b0 qs=0x581a13c7d500
-NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
-NOTICE:  custom_filter: allow_bits mismatch rel=orders allow=60036 passed=0
-NOTICE:  custom_filter exec: rel=orders oid=74197 seen=0 passed=0 misses=0 mode=contract
-NOTICE:  custom_filter: row validation time = 0.000 ms
-NOTICE:  policy_metrics: eval_ms=0.168 artifact_load_ms=4.570 artifact_parse_ms=0.285 stamp_ms=0.002 bin_ms=0.004 local_sat_ms=0.000 prop_ms=26.879 prop_iters=1 decode_ms=53.072 ctid_map_ms=4.701 filter_ms=0.000 rows_seen=0 rows_passed=0 policy_total_ms=80.751
-NOTICE:  policy_profile_query: K=0 query_id= total_ms=80.751 local_ms=0.006 prop_ms=26.879 decode_ms=53.072 sat_calls=0 cache_hits=0 closure_tables=4 filtered_targets=1
-NOTICE:  policy: scan_count table=region count=1
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and IDENT:region.r_name OP:in LPAREN:( STRING:'EUROPE' COMMA:, STRING:'ASIA' RPAREN:)
+NOTICE:  policy_eval: target=orders join_classes=[0, 1, 2]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND region.r_name IN ('EUROPE','ASIA') ast=y2 and y3 and y4 and y1
+NOTICE:  policy_eval: atom y1 = const:region.r_name|in|ASIA,EUROPE
+NOTICE:  policy_eval: atom y2 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: atom y3 = join:customer.c_nationkey=nation.n_nationkey
+NOTICE:  policy_eval: atom y4 = join:nation.n_regionkey=region.r_regionkey
+NOTICE:  policy_eval: combined_ast target=orders ast=y2 and y3 and y4 and y1
+NOTICE:  policy_eval: closure_count=4
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and IDENT:region.r_name OP:in LPAREN:( STRING:'EUROPE' COMMA:, STRING:'ASIA' RPAREN:)
+NOTICE:  policy_eval: target=orders join_classes=[0, 1, 2]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND region.r_name IN ('EUROPE','ASIA') ast=y2 and y3 and y4 and y1
+NOTICE:  policy_eval: atom y1 = const:region.r_name|in|ASIA,EUROPE
+NOTICE:  policy_eval: atom y2 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: atom y3 = join:customer.c_nationkey=nation.n_nationkey
+NOTICE:  policy_eval: atom y4 = join:nation.n_regionkey=region.r_regionkey
+NOTICE:  policy_eval: combined_ast target=orders ast=y2 and y3 and y4 and y1
+NOTICE:  policy_eval: closure_count=4
 
 OURS EXECUTION:
-COUNT: 60036
+ERROR: ERROR:  custom_filter: missing artifacts: customer_code_base, customer_ctid, dict/region/r_name, meta/cols/customer, meta/cols/nation, meta/cols/orders, meta/cols/region, meta/dict_sorted/region/r_name, meta/dict_type/region/r_name, meta/join_classes, nation_code_base, nation_ctid, orders_code_base, orders_ctid, region_code_base, region_ctid
 --- Ours notices ---
-NOTICE:  policy_contract: offset const:region.r_name = 2 stride=3
-NOTICE:  policy_contract: offset join:customer.c_custkey class=0 = 1 stride=3
-NOTICE:  policy_contract: offset join:orders.o_custkey class=0 = 1 stride=2
-NOTICE:  policy_contract: offset join:customer.c_nationkey class=1 = 2 stride=3
-NOTICE:  policy_contract: offset join:nation.n_nationkey class=1 = 1 stride=3
-NOTICE:  policy_contract: offset join:nation.n_regionkey class=2 = 2 stride=3
-NOTICE:  policy_contract: offset join:region.r_regionkey class=2 = 1 stride=3
-NOTICE:  policy_contract: atom y1 type=COL_CONST col=region.r_name op=6 join_class=-1 dict=dict/region/r_name dict_present=1 eval=exact vals=[ASIA,EUROPE] toks=[2,3]
-NOTICE:  policy_contract: atom y2 type=JOIN_EQ lhs=customer.c_custkey rhs=orders.o_custkey join_class=0 meta_lhs=0 meta_rhs=0 class_cols=[customer.c_custkey, orders.o_custkey]
-NOTICE:  policy_contract: atom y3 type=JOIN_EQ lhs=customer.c_nationkey rhs=nation.n_nationkey join_class=1 meta_lhs=1 meta_rhs=1 class_cols=[customer.c_nationkey, nation.n_nationkey]
-NOTICE:  policy_contract: atom y4 type=JOIN_EQ lhs=nation.n_regionkey rhs=region.r_regionkey join_class=2 meta_lhs=2 meta_rhs=2 class_cols=[nation.n_regionkey, region.r_regionkey]
-NOTICE:  policy_contract: AST(orders)=(((customer.c_custkey = orders.o_custkey AND customer.c_nationkey = nation.n_nationkey) AND nation.n_regionkey = region.r_regionkey) AND region.r_name IN ('ASIA','EUROPE'))
-NOTICE:  policy: load_ms=0.219
-NOTICE:  policy: global_atoms table=region count=1
-NOTICE:  policy: global_bins table=region bins=2 rows=5
-NOTICE:  policy: bundle_eval target=region bundle_id=1 uses_atoms=1
-NOTICE:  policy: local_bins table=region atoms=1 bins=2
-NOTICE:  policy: local_ms table=region stamp=0.001 bin=0.003 eval=0.000 fill=0.000
-NOTICE:  policy: local_eval table=region sat_calls=0 cache_hits=0
-NOTICE:  policy: local_ok source=bins table=region
-NOTICE:  policy: multi_join local_ok customer = 15000 / 15000
-NOTICE:  policy: multi_join local_ok nation = 25 / 25
-NOTICE:  policy: multi_join local_ok orders = 150000 / 150000
-NOTICE:  policy: multi_join local_ok region = 2 / 5
-NOTICE:  policy: multi_join class=0 allowed=3991 / 15000
-NOTICE:  policy: multi_join class=1 allowed=10 / 25
-NOTICE:  policy: multi_join class=2 allowed=2 / 5
-NOTICE:  policy: allow_orders count = 60036 / 150000
-NOTICE:  policy: total_ms=78.715
-NOTICE:  policy_profile: bundle=1 target=orders K=0 query= local={region:atoms=1,bins=2,sat=0,hits=0,ms=0.001/0.003/0.000/0.000,total_ms=0.005} prop={iter=1,ms=24.410,classes=[0:3991/15000,1:10/25,2:2/5]} decode={orders:60036/150000,ms=53.687,total_ms=53.687} total_ms=78.715
-NOTICE:  custom_filter: bundle target=orders allow_count=60036/150000
-NOTICE:  custom_filter: final_allow_orders count=60036/150000
-NOTICE:  custom_filter: allow_orders popcount=60036/150000
-NOTICE:  custom_filter: ctid_map[0]=(0,1)->0
-NOTICE:  custom_filter: ctid_map[1]=(0,2)->1
-NOTICE:  custom_filter: ctid_map[2]=(0,3)->2
-NOTICE:  custom_filter: ctid_map[3]=(0,4)->3
-NOTICE:  custom_filter: ctid_map[4]=(0,5)->4
-NOTICE:  custom_filter: ctid_index_ms=4.489 rel=orders
-NOTICE:  custom_filter: orders_ctid head [0,1 0,2 0,3 0,4 0,5]
-NOTICE:  custom_filter: retain rel=orders allow=18750B ctid=1200000B blk_index=31356B
-NOTICE:  custom_filter: retain total allow=18750B ctid=1200000B blk_index=31356B
-NOTICE:  custom_filter: allow_bits pre_exec rel=orders count=60036/150000 ptr=0x581a13cdfeb0 canary=ok mctx=0x581a13c72240 qctx=0x581a13c72240 qs=0x581a13c73490
-NOTICE:  custom_filter: scan rel=orders type=SeqScan filter=on
-NOTICE:  custom_filter: tid_source rel=orders scan=SeqScan source=tts_tid
-NOTICE:  custom_filter exec: rel=orders oid=74197 seen=150000 passed=60036 misses=0 mode=contract
-NOTICE:  custom_filter: row validation time = 14.421 ms
-NOTICE:  policy_metrics: eval_ms=0.061 artifact_load_ms=2.688 artifact_parse_ms=0.219 stamp_ms=0.001 bin_ms=0.003 local_sat_ms=0.000 prop_ms=24.410 prop_iters=1 decode_ms=53.687 ctid_map_ms=4.489 filter_ms=14.421 rows_seen=150000 rows_passed=60036 policy_total_ms=78.715
-NOTICE:  policy_profile_query: K=0 query_id= total_ms=78.715 local_ms=0.005 prop_ms=24.410 decode_ms=53.687 sat_calls=0 cache_hits=0 closure_tables=4 filtered_targets=1
-NOTICE:  policy: scan_count table=region count=1
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and IDENT:region.r_name OP:in LPAREN:( STRING:'EUROPE' COMMA:, STRING:'ASIA' RPAREN:)
+NOTICE:  policy_eval: target=orders join_classes=[0, 1, 2]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND region.r_name IN ('EUROPE','ASIA') ast=y2 and y3 and y4 and y1
+NOTICE:  policy_eval: atom y1 = const:region.r_name|in|ASIA,EUROPE
+NOTICE:  policy_eval: atom y2 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: atom y3 = join:customer.c_nationkey=nation.n_nationkey
+NOTICE:  policy_eval: atom y4 = join:nation.n_regionkey=region.r_regionkey
+NOTICE:  policy_eval: combined_ast target=orders ast=y2 and y3 and y4 and y1
+NOTICE:  policy_eval: closure_count=4
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and IDENT:region.r_name OP:in LPAREN:( STRING:'EUROPE' COMMA:, STRING:'ASIA' RPAREN:)
+NOTICE:  policy_eval: target=orders join_classes=[0, 1, 2]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND region.r_name IN ('EUROPE','ASIA') ast=y2 and y3 and y4 and y1
+NOTICE:  policy_eval: atom y1 = const:region.r_name|in|ASIA,EUROPE
+NOTICE:  policy_eval: atom y2 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: atom y3 = join:customer.c_nationkey=nation.n_nationkey
+NOTICE:  policy_eval: atom y4 = join:nation.n_regionkey=region.r_regionkey
+NOTICE:  policy_eval: combined_ast target=orders ast=y2 and y3 and y4 and y1
+NOTICE:  policy_eval: closure_count=4
 
 GROUND TRUTH SOURCE: sql
 GT COUNT: 60036
