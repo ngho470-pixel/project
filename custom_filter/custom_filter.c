@@ -464,7 +464,7 @@ cf_log_policy_identity(const char *path)
     pfree(buf);
 }
 static PolicyQueryState *cf_build_query_state(EState *estate, const char *query_str);
-static TableFilterState *cf_find_filter(PolicyQueryState *qs, Oid relid);
+static TableFilterState *cf_find_filter(PolicyQueryState *qs, Oid relid, bool log_on_miss);
 static int32 cf_ctid_to_rid(TableFilterState *tf, BlockNumber blk, OffsetNumber off);
 static TupleTableSlot *cf_store_slot(CustomScanState *node, TupleTableSlot *slot);
 static bool cf_table_wrapped(PolicyQueryState *qs, const char *name);
@@ -1824,7 +1824,7 @@ cf_ctid_to_rid(TableFilterState *tf, BlockNumber blk, OffsetNumber off)
 }
 
 static TableFilterState *
-cf_find_filter(PolicyQueryState *qs, Oid relid)
+cf_find_filter(PolicyQueryState *qs, Oid relid, bool log_on_miss)
 {
     if (!qs || !qs->filters)
         return NULL;
@@ -1833,7 +1833,7 @@ cf_find_filter(PolicyQueryState *qs, Oid relid)
         if (qs->filters[i].relid == relid)
             return &qs->filters[i];
     }
-    if (cf_debug_ids)
+    if (cf_debug_ids && log_on_miss)
     {
         int n = qs->n_filters;
         if (n < 0) n = 0;
@@ -1868,6 +1868,12 @@ cf_build_query_state(EState *estate, const char *query_str)
 {
     MemoryContext qctx = estate && estate->es_query_cxt ? estate->es_query_cxt : CurrentMemoryContext;
     MemoryContext oldctx = MemoryContextSwitchTo(qctx);
+    if (CurrentMemoryContext != qctx)
+        ereport(ERROR,
+                (errmsg("custom_filter: query state allocated outside query context"),
+                 errdetail("qctx=%p(%s) current=%p(%s)",
+                           (void *) qctx, cf_mctx_safe_name(qctx),
+                           (void *) CurrentMemoryContext, cf_mctx_safe_name(CurrentMemoryContext))));
 
     PolicyQueryState *qs = (PolicyQueryState *) palloc0(sizeof(PolicyQueryState));
     qs->build_seq = ++cf_query_build_seq;
@@ -2363,9 +2369,9 @@ cf_build_query_state(EState *estate, const char *query_str)
          * Regression guard: filters must be allocated under qctx (or its child),
          * never in SPI Proc context.
          */
-        if (!cf_memory_context_contains(qctx, CurrentMemoryContext))
+        if (CurrentMemoryContext != qctx)
             ereport(ERROR,
-                    (errmsg("custom_filter[memctx_violation]: qs->filters allocation outside qctx"),
+                    (errmsg("custom_filter: qs->filters allocated outside query context"),
                      errdetail("qctx=%p(%s) current=%p(%s)",
                                (void *) qctx, cf_mctx_safe_name(qctx),
                                (void *) CurrentMemoryContext, cf_mctx_safe_name(CurrentMemoryContext))));
@@ -3412,7 +3418,7 @@ cf_begin(CustomScanState *node, EState *estate, int eflags)
      * During ExecutorStart init, leave filter binding to cf_exec() after the
      * top-level query-state has been constructed in cf_executor_start().
      */
-    st->filter = cf_in_executor_start_init ? NULL : cf_find_filter(cf_query_state, st->relid);
+    st->filter = cf_in_executor_start_init ? NULL : cf_find_filter(cf_query_state, st->relid, false);
     st->need_filter_rebind = true;
     st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
     st->attempted_filter_rebuild = false;
@@ -3470,6 +3476,16 @@ cf_exec(CustomScanState *node)
     {
         if (cf_query_state)
         {
+            bool should_filter = false;
+            bool in_policy_targets = false;
+            if (st->relname[0])
+            {
+                should_filter = cf_table_should_filter(cf_query_state, st->relname);
+                in_policy_targets = cf_table_in_list(st->relname,
+                                                     cf_query_state->policy_targets,
+                                                     cf_query_state->n_policy_targets);
+            }
+            bool expect_filter = should_filter || in_policy_targets;
             cf_filters_guard_check(cf_query_state, "BindFilter");
             /*
              * Always rebind the filter pointer from the current query-state.
@@ -3477,13 +3493,10 @@ cf_exec(CustomScanState *node)
              * old pointers can become stale and appear "valid" while holding
              * corrupted metadata (ctid_pairs_len/n_rows/etc).
              */
-            st->filter = cf_find_filter(cf_query_state, st->relid);
+            st->filter = cf_find_filter(cf_query_state, st->relid, expect_filter);
             if (cf_debug_ids && cf_query_state && !st->filter)
             {
-                bool should_filter = false;
-                if (st->relname[0])
-                    should_filter = cf_table_should_filter(cf_query_state, st->relname);
-                if (should_filter)
+                if (expect_filter)
                 {
                     CustomScan *cscan = (CustomScan *) node->ss.ps.plan;
                     EState *estate = node->ss.ps.state;
@@ -3496,12 +3509,14 @@ cf_exec(CustomScanState *node)
                             rte_oid = rte->relid;
                     }
                     elog(NOTICE,
-                         "CF_BIND_NULL pid=%d scanrelid=%d st_relid=%u st_relname=%s rte_oid=%u qs_ptr=%p build_seq=%llu",
+                         "CF_BIND_NULL pid=%d scanrelid=%d st_relid=%u st_relname=%s rte_oid=%u should_filter=%d in_policy_targets=%d qs_ptr=%p build_seq=%llu",
                          (int) getpid(),
                          (int) scanrelid,
                          (unsigned int) st->relid,
                          st->relname[0] ? st->relname : "<unknown>",
                          (unsigned int) rte_oid,
+                         should_filter ? 1 : 0,
+                         in_policy_targets ? 1 : 0,
                          (void *) cf_query_state,
                          (unsigned long long) cf_query_state->build_seq);
                 }
@@ -3514,7 +3529,7 @@ cf_exec(CustomScanState *node)
              */
             if (st->filter && !st->filter->allow_bits)
             {
-                TableFilterState *reb = cf_find_filter(cf_query_state, st->relid);
+                TableFilterState *reb = cf_find_filter(cf_query_state, st->relid, true);
                 if (reb && reb->allow_bits)
                     st->filter = reb;
             }
@@ -3763,7 +3778,7 @@ allow_check:
              * to query-state being rebuilt), try to rebind and, if needed, force a
              * rebuild once so we either recover or fail with useful context.
              */
-            TableFilterState *reb = cf_query_state ? cf_find_filter(cf_query_state, st->relid) : NULL;
+            TableFilterState *reb = cf_query_state ? cf_find_filter(cf_query_state, st->relid, true) : NULL;
             if (reb && reb->allow_bits)
             {
                 st->filter = reb;
@@ -3779,7 +3794,7 @@ allow_check:
                 (void) cf_force_rebuild_query_state(estate,
                                                     debug_query_string ? debug_query_string : "",
                                                     estate->es_plannedstmt);
-                reb = cf_query_state ? cf_find_filter(cf_query_state, st->relid) : NULL;
+                reb = cf_query_state ? cf_find_filter(cf_query_state, st->relid, true) : NULL;
                 if (reb && reb->allow_bits)
                 {
                     st->filter = reb;
