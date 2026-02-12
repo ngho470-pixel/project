@@ -1682,6 +1682,33 @@ cf_find_filter(PolicyQueryState *qs, Oid relid)
         if (qs->filters[i].relid == relid)
             return &qs->filters[i];
     }
+    if (cf_debug_ids)
+    {
+        int n = qs->n_filters;
+        if (n < 0) n = 0;
+        int lim = n < 8 ? n : 8;
+        StringInfoData buf;
+        initStringInfo(&buf);
+        appendStringInfo(&buf,
+                         "CF_FIND_NULL qs=%p qs_build_seq=%llu needle_relid=%u n_filters=%d filters_ptr=%p",
+                         (void *) qs,
+                         (unsigned long long) qs->build_seq,
+                         (unsigned int) relid,
+                         qs->n_filters,
+                         (void *) qs->filters);
+        for (int i = 0; i < lim; i++)
+        {
+            TableFilterState *f = &qs->filters[i];
+            appendStringInfo(&buf,
+                             " f%d(relid=%u,name=%s,allow=%p,rows=%u)",
+                             i,
+                             (unsigned int) f->relid,
+                             f->relname[0] ? f->relname : "<unknown>",
+                             (void *) f->allow_bits,
+                             f->n_rows);
+        }
+        elog(NOTICE, "%s", buf.data);
+    }
     return NULL;
 }
 
@@ -3211,6 +3238,34 @@ cf_exec(CustomScanState *node)
              * corrupted metadata (ctid_pairs_len/n_rows/etc).
              */
             st->filter = cf_find_filter(cf_query_state, st->relid);
+            if (cf_debug_ids && cf_query_state && !st->filter)
+            {
+                bool should_filter = false;
+                if (st->relname[0])
+                    should_filter = cf_table_should_filter(cf_query_state, st->relname);
+                if (should_filter)
+                {
+                    CustomScan *cscan = (CustomScan *) node->ss.ps.plan;
+                    EState *estate = node->ss.ps.state;
+                    Index scanrelid = cscan ? cscan->scan.scanrelid : 0;
+                    Oid rte_oid = InvalidOid;
+                    if (estate && scanrelid > 0)
+                    {
+                        RangeTblEntry *rte = rt_fetch(scanrelid, estate->es_range_table);
+                        if (rte)
+                            rte_oid = rte->relid;
+                    }
+                    elog(NOTICE,
+                         "CF_BIND_NULL pid=%d scanrelid=%d st_relid=%u st_relname=%s rte_oid=%u qs_ptr=%p build_seq=%llu",
+                         (int) getpid(),
+                         (int) scanrelid,
+                         (unsigned int) st->relid,
+                         st->relname[0] ? st->relname : "<unknown>",
+                         (unsigned int) rte_oid,
+                         (void *) cf_query_state,
+                         (unsigned long long) cf_query_state->build_seq);
+                }
+            }
 
             /*
              * Guardrail: if a scan state captured a stale filter pointer (e.g. due
