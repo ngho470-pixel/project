@@ -8,6 +8,17 @@
 
 SET search_path TO public, pg_catalog;
 
+-- backend PID marker (used by shell sampler for VmHWM)
+SELECT pg_backend_pid() AS pid \gset
+\echo __BACKEND_PID__ :pid
+
+-- record key knobs for comparability
+\echo __PG_SETTINGS__
+SHOW maintenance_work_mem;
+SHOW max_parallel_maintenance_workers;
+SHOW synchronous_commit;
+\echo __END_PG_SETTINGS__
+
 CREATE TABLE IF NOT EXISTS public.files (name varchar, file bytea);
 
 -- 1) Clean artifacts.

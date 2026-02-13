@@ -1,0 +1,240 @@
+{
+  "enabled_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ],
+  "index_count": 35,
+  "indexes": [
+    {
+      "column": "c_acctbal",
+      "index_name": "cf_rls_k20_customer_c_acctbal_1",
+      "pattern_ops": false,
+      "table": "customer"
+    },
+    {
+      "column": "c_custkey",
+      "index_name": "cf_rls_k20_customer_c_custkey_2",
+      "pattern_ops": false,
+      "table": "customer"
+    },
+    {
+      "column": "c_mktsegment",
+      "index_name": "cf_rls_k20_customer_c_mktsegment_3",
+      "pattern_ops": false,
+      "table": "customer"
+    },
+    {
+      "column": "c_name",
+      "index_name": "cf_rls_k20_customer_c_name_4",
+      "pattern_ops": true,
+      "table": "customer"
+    },
+    {
+      "column": "c_nationkey",
+      "index_name": "cf_rls_k20_customer_c_nationkey_5",
+      "pattern_ops": false,
+      "table": "customer"
+    },
+    {
+      "column": "c_phone",
+      "index_name": "cf_rls_k20_customer_c_phone_6",
+      "pattern_ops": true,
+      "table": "customer"
+    },
+    {
+      "column": "l_discount",
+      "index_name": "cf_rls_k20_lineitem_l_discount_7",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_extendedprice",
+      "index_name": "cf_rls_k20_lineitem_l_extendedprice_8",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_linestatus",
+      "index_name": "cf_rls_k20_lineitem_l_linestatus_9",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_orderkey",
+      "index_name": "cf_rls_k20_lineitem_l_orderkey_10",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_partkey",
+      "index_name": "cf_rls_k20_lineitem_l_partkey_11",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_quantity",
+      "index_name": "cf_rls_k20_lineitem_l_quantity_12",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_returnflag",
+      "index_name": "cf_rls_k20_lineitem_l_returnflag_13",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_shipinstruct",
+      "index_name": "cf_rls_k20_lineitem_l_shipinstruct_14",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_shipmode",
+      "index_name": "cf_rls_k20_lineitem_l_shipmode_15",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_suppkey",
+      "index_name": "cf_rls_k20_lineitem_l_suppkey_16",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_tax",
+      "index_name": "cf_rls_k20_lineitem_l_tax_17",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "n_name",
+      "index_name": "cf_rls_k20_nation_n_name_18",
+      "pattern_ops": false,
+      "table": "nation"
+    },
+    {
+      "column": "n_nationkey",
+      "index_name": "cf_rls_k20_nation_n_nationkey_19",
+      "pattern_ops": false,
+      "table": "nation"
+    },
+    {
+      "column": "n_regionkey",
+      "index_name": "cf_rls_k20_nation_n_regionkey_20",
+      "pattern_ops": false,
+      "table": "nation"
+    },
+    {
+      "column": "o_custkey",
+      "index_name": "cf_rls_k20_orders_o_custkey_21",
+      "pattern_ops": false,
+      "table": "orders"
+    },
+    {
+      "column": "o_orderkey",
+      "index_name": "cf_rls_k20_orders_o_orderkey_22",
+      "pattern_ops": false,
+      "table": "orders"
+    },
+    {
+      "column": "o_orderpriority",
+      "index_name": "cf_rls_k20_orders_o_orderpriority_23",
+      "pattern_ops": false,
+      "table": "orders"
+    },
+    {
+      "column": "o_orderstatus",
+      "index_name": "cf_rls_k20_orders_o_orderstatus_24",
+      "pattern_ops": false,
+      "table": "orders"
+    },
+    {
+      "column": "o_totalprice",
+      "index_name": "cf_rls_k20_orders_o_totalprice_25",
+      "pattern_ops": false,
+      "table": "orders"
+    },
+    {
+      "column": "p_brand",
+      "index_name": "cf_rls_k20_part_p_brand_26",
+      "pattern_ops": false,
+      "table": "part"
+    },
+    {
+      "column": "p_partkey",
+      "index_name": "cf_rls_k20_part_p_partkey_27",
+      "pattern_ops": false,
+      "table": "part"
+    },
+    {
+      "column": "p_size",
+      "index_name": "cf_rls_k20_part_p_size_28",
+      "pattern_ops": false,
+      "table": "part"
+    },
+    {
+      "column": "ps_partkey",
+      "index_name": "cf_rls_k20_partsupp_ps_partkey_29",
+      "pattern_ops": false,
+      "table": "partsupp"
+    },
+    {
+      "column": "ps_suppkey",
+      "index_name": "cf_rls_k20_partsupp_ps_suppkey_30",
+      "pattern_ops": false,
+      "table": "partsupp"
+    },
+    {
+      "column": "ps_supplycost",
+      "index_name": "cf_rls_k20_partsupp_ps_supplycost_31",
+      "pattern_ops": false,
+      "table": "partsupp"
+    },
+    {
+      "column": "r_name",
+      "index_name": "cf_rls_k20_region_r_name_32",
+      "pattern_ops": false,
+      "table": "region"
+    },
+    {
+      "column": "r_regionkey",
+      "index_name": "cf_rls_k20_region_r_regionkey_33",
+      "pattern_ops": false,
+      "table": "region"
+    },
+    {
+      "column": "s_nationkey",
+      "index_name": "cf_rls_k20_supplier_s_nationkey_34",
+      "pattern_ops": false,
+      "table": "supplier"
+    },
+    {
+      "column": "s_suppkey",
+      "index_name": "cf_rls_k20_supplier_s_suppkey_35",
+      "pattern_ops": false,
+      "table": "supplier"
+    }
+  ],
+  "k": 20,
+  "policy_file": "policy_supported.txt",
+  "policy_pool": "1-20"
+}
