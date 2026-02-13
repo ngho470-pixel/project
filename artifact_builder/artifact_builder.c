@@ -1,13 +1,21 @@
 #include "postgres.h"
 #include "fmgr.h"
 #include "executor/spi.h"
+#include "executor/tuptable.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
+#include "utils/hsearch.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/snapmgr.h"
 #include "lib/stringinfo.h"
 #include "access/htup_details.h"
+#include "access/table.h"
+#include "access/tableam.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
+#include "catalog/namespace.h"
+#include "common/hashfn.h"
 #include "miscadmin.h"
 
 #include <ctype.h>
@@ -55,6 +63,7 @@ typedef struct {
     int id;
     IntList cols;
     char tmp_name[NAMEDATALEN];
+    HTAB *tok_map;
 } JoinClass;
 
 typedef struct {
@@ -62,12 +71,26 @@ typedef struct {
     int is_join;
     int join_class_id;
     char tmp_dict_name[NAMEDATALEN];
+    HTAB *tok_map;
+    AttrNumber attnum;
+    Oid typid;
+    Oid typoutput;
+    bool typisvarlena;
 } TokenColumn;
 
 typedef struct {
     ABColumnRef col;
     char tmp_name[NAMEDATALEN];
+    HTAB *tok_map;
 } ConstColumn;
+
+typedef struct DictTokEntry DictTokEntry;
+struct DictTokEntry {
+    uint64 hkey;
+    int32 tok;
+    char *val;
+    DictTokEntry *next;
+};
 
 static void str_list_add_unique(StringList *list, const char *value) {
     for (int i = 0; i < list->count; i++) {
@@ -225,43 +248,133 @@ static size_t estimate_table_rows(const char *table) {
     return (size_t) est;
 }
 
-static const char *dict_type_for_col(const char *table, const char *col) {
-    if (!table || !col) return "text";
+static Oid column_type_oid(const char *table, const char *col) {
+    if (!table || !col) return InvalidOid;
     Oid argtypes[2] = {TEXTOID, TEXTOID};
     Datum values[2];
     char nulls[2] = {' ', ' '};
     values[0] = CStringGetTextDatum(table);
     values[1] = CStringGetTextDatum(col);
     int ret = SPI_execute_with_args(
-        "SELECT t.typname, t.typcategory "
+        "SELECT a.atttypid "
         "FROM pg_attribute a "
         "JOIN pg_class c ON c.oid = a.attrelid "
         "JOIN pg_namespace n ON n.oid = c.relnamespace "
-        "JOIN pg_type t ON t.oid = a.atttypid "
         "WHERE c.relname = $1 AND a.attname = $2 "
         "AND a.attnum > 0 AND NOT a.attisdropped "
         "AND n.nspname = 'public'",
         2, argtypes, values, nulls, true, 0);
-    if (ret != SPI_OK_SELECT || SPI_processed == 0) {
-        return "text";
+    if (ret != SPI_OK_SELECT || SPI_processed == 0)
+        return InvalidOid;
+    bool isnull = false;
+    Datum d = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
+    if (isnull)
+        return InvalidOid;
+    return DatumGetObjectId(d);
+}
+
+static bool is_safe_scalar_type(Oid typid) {
+    return typid == INT2OID || typid == INT4OID || typid == INT8OID || typid == DATEOID;
+}
+
+static const char *dict_type_label_for_oid(Oid typid) {
+    if (typid == INT2OID || typid == INT4OID || typid == INT8OID)
+        return "int";
+    if (typid == DATEOID)
+        return "date";
+    if (typid == FLOAT4OID || typid == FLOAT8OID || typid == NUMERICOID)
+        return "float";
+    return "text";
+}
+
+static uint64 dict_hash_key(const char *val) {
+    if (!val) return 0;
+    return hash_bytes_extended((const unsigned char *)val, strlen(val), 0);
+}
+
+static HTAB *dict_map_create(const char *name, long est_rows, MemoryContext mcxt) {
+    HASHCTL ctl;
+    memset(&ctl, 0, sizeof(ctl));
+    ctl.keysize = sizeof(uint64);
+    ctl.entrysize = sizeof(DictTokEntry);
+    ctl.hcxt = mcxt;
+    if (est_rows < 128) est_rows = 128;
+    return hash_create(name, est_rows, &ctl, HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+}
+
+static void dict_map_put(HTAB *map, MemoryContext mcxt, const char *val, int32 tok) {
+    bool found = false;
+    uint64 hkey = dict_hash_key(val);
+    DictTokEntry *head = (DictTokEntry *) hash_search(map, &hkey, HASH_ENTER, &found);
+    if (!head)
+        ereport(ERROR, (errmsg("artifact_builder: hash insert failed")));
+    if (!found) {
+        head->hkey = hkey;
+        head->tok = tok;
+        head->val = MemoryContextStrdup(mcxt, val);
+        head->next = NULL;
+        return;
     }
-    SPITupleTable *tuptable = SPI_tuptable;
-    TupleDesc tupdesc = tuptable->tupdesc;
-    char *typname = SPI_getvalue(tuptable->vals[0], tupdesc, 1);
-    char *typcat = SPI_getvalue(tuptable->vals[0], tupdesc, 2);
-    const char *out = "text";
-    if (typname && (strcmp(typname, "int2") == 0 ||
-                    strcmp(typname, "int4") == 0 ||
-                    strcmp(typname, "int8") == 0)) {
-        out = "int";
-    } else if (typcat && typcat[0] == 'N') {
-        out = "float";
-    } else {
-        out = "text";
+    for (DictTokEntry *cur = head; cur; cur = cur->next) {
+        if (strcmp(cur->val, val) == 0) {
+            cur->tok = tok;
+            return;
+        }
+        if (!cur->next) {
+            DictTokEntry *extra = (DictTokEntry *) MemoryContextAlloc(mcxt, sizeof(DictTokEntry));
+            extra->hkey = hkey;
+            extra->tok = tok;
+            extra->val = MemoryContextStrdup(mcxt, val);
+            extra->next = NULL;
+            cur->next = extra;
+            return;
+        }
     }
-    if (typname) pfree(typname);
-    if (typcat) pfree(typcat);
-    return out;
+}
+
+static bool dict_map_get(HTAB *map, const char *val, int32 *out_tok) {
+    if (!map || !val || !out_tok)
+        return false;
+    uint64 hkey = dict_hash_key(val);
+    DictTokEntry *head = (DictTokEntry *) hash_search(map, &hkey, HASH_FIND, NULL);
+    if (!head)
+        return false;
+    for (DictTokEntry *cur = head; cur; cur = cur->next) {
+        if (strcmp(cur->val, val) == 0) {
+            *out_tok = cur->tok;
+            return true;
+        }
+    }
+    return false;
+}
+
+static HTAB *load_dict_map_from_tmp(const char *tmp_table, const char *map_name, MemoryContext mcxt) {
+    StringInfoData sql;
+    initStringInfo(&sql);
+    appendStringInfo(&sql, "SELECT val, tok FROM %s", quote_identifier(tmp_table));
+    int ret = SPI_execute(sql.data, false, 0);
+    if (ret != SPI_OK_SELECT)
+        ereport(ERROR, (errmsg("artifact_builder: failed loading dict map from %s", tmp_table)));
+    HTAB *map = dict_map_create(map_name, (long) SPI_processed, mcxt);
+    TupleDesc tupdesc = SPI_tuptable->tupdesc;
+    for (uint64 r = 0; r < SPI_processed; r++) {
+        HeapTuple tup = SPI_tuptable->vals[r];
+        bool isnull_tok = false;
+        bool isnull_val = false;
+        Datum tok_d = SPI_getbinval(tup, tupdesc, 2, &isnull_tok);
+        if (isnull_tok)
+            continue;
+        char *val = SPI_getvalue(tup, tupdesc, 1);
+        if (!val) {
+            isnull_val = true;
+        }
+        if (!isnull_val) {
+            int32 tok = DatumGetInt32(tok_d);
+            dict_map_put(map, mcxt, val, tok);
+            pfree(val);
+        }
+    }
+    return map;
 }
 
 static void write_dict_from_tmp(const char *name, const char *tmp_table) {
@@ -316,6 +429,10 @@ Datum build_base(PG_FUNCTION_ARGS) {
     if (SPI_connect() != SPI_OK_CONNECT) {
         ereport(ERROR, (errmsg("SPI_connect failed")));
     }
+    SetConfigOption("max_parallel_workers", "0", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("max_parallel_workers_per_gather", "0", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("max_parallel_maintenance_workers", "0", PGC_USERSET, PGC_S_SESSION);
+    SetConfigOption("parallel_leader_participation", "off", PGC_USERSET, PGC_S_SESSION);
     SPI_execute("SET LOCAL search_path TO public, pg_catalog", false, 0);
     SPI_execute("CREATE TABLE IF NOT EXISTS public.files (name text, file bytea)", false, 0);
     SPI_execute(
@@ -332,6 +449,13 @@ Datum build_base(PG_FUNCTION_ARGS) {
     int *join_right = NULL;
     int join_cap = 0;
     int join_count = 0;
+    /*
+     * Keep token dictionaries in a context that survives SPI statement memory
+     * resets for the whole build.
+     */
+    MemoryContext build_mcxt = AllocSetContextCreate(TopTransactionContext,
+                                                     "artifact_builder_build_ctx",
+                                                     ALLOCSET_DEFAULT_SIZES);
 
     for (int p = 0; p < ps.policy_count; p++) {
         Policy *pol = &ps.policies[p];
@@ -542,7 +666,7 @@ Datum build_base(PG_FUNCTION_ARGS) {
 
     free_policy_set(&ps);
 
-    // Create temp tables for join classes
+    // Create temp tables for join classes, then load into C hash maps.
     for (int i = 0; i < nclasses; i++) {
         snprintf(classes[i].tmp_name, sizeof(classes[i].tmp_name), "tmp_jc_%d", i);
         StringInfoData sql;
@@ -550,35 +674,89 @@ Datum build_base(PG_FUNCTION_ARGS) {
         appendStringInfo(&sql, "DROP TABLE IF EXISTS %s", quote_identifier(classes[i].tmp_name));
         SPI_execute(sql.data, false, 0);
         CommandCounterIncrement();
-        resetStringInfo(&sql);
-        appendStringInfo(&sql,
-                         "CREATE TEMP TABLE %s (val text, tok int)",
-                         quote_identifier(classes[i].tmp_name));
-        SPI_execute(sql.data, false, 0);
-        CommandCounterIncrement();
-        resetStringInfo(&sql);
-        appendStringInfo(&sql,
-                         "INSERT INTO %s "
-                         "SELECT val, (row_number() OVER (ORDER BY sortval)-1)::int AS tok FROM (",
-                         quote_identifier(classes[i].tmp_name));
+
+        Oid class_typid = InvalidOid;
+        bool typed_mode = true;
         for (int j = 0; j < classes[i].cols.count; j++) {
             int col_idx = classes[i].cols.items[j];
-            char *table = cols.items[col_idx].table;
-            char *col = cols.items[col_idx].column;
-            if (j > 0) appendStringInfoString(&sql, " UNION ");
-            appendStringInfo(&sql,
-                             "SELECT DISTINCT %s AS sortval, %s::text AS val FROM %s WHERE %s IS NOT NULL",
-                             quote_identifier(col), quote_identifier(col),
-                             quote_identifier(table), quote_identifier(col));
+            Oid typid = column_type_oid(cols.items[col_idx].table, cols.items[col_idx].column);
+            if (!OidIsValid(typid) || !is_safe_scalar_type(typid)) {
+                typed_mode = false;
+                break;
+            }
+            if (!OidIsValid(class_typid))
+                class_typid = typid;
+            else if (class_typid != typid) {
+                typed_mode = false;
+                break;
+            }
         }
-        appendStringInfoString(&sql, ") s");
+
+        resetStringInfo(&sql);
+        if (typed_mode && OidIsValid(class_typid)) {
+            char *typename = format_type_be(class_typid);
+            appendStringInfo(&sql,
+                             "CREATE TEMP TABLE %s (val %s, tok int)",
+                             quote_identifier(classes[i].tmp_name),
+                             typename);
+            pfree(typename);
+        } else {
+            appendStringInfo(&sql,
+                             "CREATE TEMP TABLE %s (val text, tok int)",
+                             quote_identifier(classes[i].tmp_name));
+        }
+        SPI_execute(sql.data, false, 0);
+        CommandCounterIncrement();
+
+        resetStringInfo(&sql);
+        if (typed_mode && OidIsValid(class_typid)) {
+            appendStringInfo(&sql,
+                             "INSERT INTO %s "
+                             "SELECT val, (row_number() OVER (ORDER BY val)-1)::int AS tok FROM (",
+                             quote_identifier(classes[i].tmp_name));
+            for (int j = 0; j < classes[i].cols.count; j++) {
+                int col_idx = classes[i].cols.items[j];
+                char *table = cols.items[col_idx].table;
+                char *col = cols.items[col_idx].column;
+                if (j > 0) appendStringInfoString(&sql, " UNION ");
+                appendStringInfo(&sql,
+                                 "SELECT DISTINCT %s AS val FROM %s WHERE %s IS NOT NULL",
+                                 quote_identifier(col),
+                                 quote_identifier(table),
+                                 quote_identifier(col));
+            }
+            appendStringInfoString(&sql, ") s");
+        } else {
+            appendStringInfo(&sql,
+                             "INSERT INTO %s "
+                             "SELECT val, (row_number() OVER (ORDER BY sortval)-1)::int AS tok FROM (",
+                             quote_identifier(classes[i].tmp_name));
+            for (int j = 0; j < classes[i].cols.count; j++) {
+                int col_idx = classes[i].cols.items[j];
+                char *table = cols.items[col_idx].table;
+                char *col = cols.items[col_idx].column;
+                if (j > 0) appendStringInfoString(&sql, " UNION ");
+                appendStringInfo(&sql,
+                                 "SELECT DISTINCT %s AS sortval, %s::text AS val FROM %s WHERE %s IS NOT NULL",
+                                 quote_identifier(col), quote_identifier(col),
+                                 quote_identifier(table), quote_identifier(col));
+            }
+            appendStringInfoString(&sql, ") s");
+        }
+        SPI_execute(sql.data, false, 0);
+        CommandCounterIncrement();
+
+        char map_name[NAMEDATALEN * 2];
+        snprintf(map_name, sizeof(map_name), "jc_tok_map_%d", i);
+        classes[i].tok_map = load_dict_map_from_tmp(classes[i].tmp_name, map_name, build_mcxt);
+
+        resetStringInfo(&sql);
+        appendStringInfo(&sql, "DROP TABLE IF EXISTS %s", quote_identifier(classes[i].tmp_name));
         SPI_execute(sql.data, false, 0);
         CommandCounterIncrement();
     }
 
-    
-    
-    // Const columns temp dicts (for tokenization)
+    // Const columns temp dicts: create -> load C map -> write dict artifact -> drop temp.
     ConstColumn *const_cols = (ConstColumn *)palloc0(sizeof(ConstColumn) * const_cols_list.count);
     int n_const = 0;
     for (int i = 0; i < const_cols_list.count; i++) {
@@ -593,23 +771,72 @@ Datum build_base(PG_FUNCTION_ARGS) {
         appendStringInfo(&sql, "DROP TABLE IF EXISTS %s", quote_identifier(const_cols[i].tmp_name));
         SPI_execute(sql.data, false, 0);
         CommandCounterIncrement();
+
+        Oid typid = column_type_oid(const_cols[i].col.table, const_cols[i].col.column);
+        bool typed_mode = is_safe_scalar_type(typid);
+
         resetStringInfo(&sql);
-        appendStringInfo(&sql,
-                         "CREATE TEMP TABLE %s (val text, tok int)",
-                         quote_identifier(const_cols[i].tmp_name));
+        if (typed_mode) {
+            char *typename = format_type_be(typid);
+            appendStringInfo(&sql,
+                             "CREATE TEMP TABLE %s (val %s, tok int)",
+                             quote_identifier(const_cols[i].tmp_name),
+                             typename);
+            pfree(typename);
+        } else {
+            appendStringInfo(&sql,
+                             "CREATE TEMP TABLE %s (val text, tok int)",
+                             quote_identifier(const_cols[i].tmp_name));
+        }
         SPI_execute(sql.data, false, 0);
         CommandCounterIncrement();
+
         resetStringInfo(&sql);
-        appendStringInfo(&sql,
-                         "INSERT INTO %s "
-                         "SELECT val, (row_number() OVER (ORDER BY sortval)-1)::int AS tok FROM ("
-                         "SELECT DISTINCT %s AS sortval, %s::text AS val FROM %s WHERE %s IS NOT NULL"
-                         ") s",
-                         quote_identifier(const_cols[i].tmp_name),
-                         quote_identifier(const_cols[i].col.column),
-                         quote_identifier(const_cols[i].col.column),
-                         quote_identifier(const_cols[i].col.table),
-                         quote_identifier(const_cols[i].col.column));
+        if (typed_mode) {
+            appendStringInfo(&sql,
+                             "INSERT INTO %s "
+                             "SELECT val, (row_number() OVER (ORDER BY val)-1)::int AS tok FROM ("
+                             "SELECT DISTINCT %s AS val FROM %s WHERE %s IS NOT NULL"
+                             ") s",
+                             quote_identifier(const_cols[i].tmp_name),
+                             quote_identifier(const_cols[i].col.column),
+                             quote_identifier(const_cols[i].col.table),
+                             quote_identifier(const_cols[i].col.column));
+        } else {
+            appendStringInfo(&sql,
+                             "INSERT INTO %s "
+                             "SELECT val, (row_number() OVER (ORDER BY sortval)-1)::int AS tok FROM ("
+                             "SELECT DISTINCT %s AS sortval, %s::text AS val FROM %s WHERE %s IS NOT NULL"
+                             ") s",
+                             quote_identifier(const_cols[i].tmp_name),
+                             quote_identifier(const_cols[i].col.column),
+                             quote_identifier(const_cols[i].col.column),
+                             quote_identifier(const_cols[i].col.table),
+                             quote_identifier(const_cols[i].col.column));
+        }
+        SPI_execute(sql.data, false, 0);
+        CommandCounterIncrement();
+
+        char map_name[NAMEDATALEN * 2];
+        snprintf(map_name, sizeof(map_name), "const_tok_map_%d", i);
+        const_cols[i].tok_map = load_dict_map_from_tmp(const_cols[i].tmp_name, map_name, build_mcxt);
+
+        char dict_name[NAMEDATALEN * 3];
+        snprintf(dict_name, sizeof(dict_name), "dict/%s/%s", const_cols[i].col.table, const_cols[i].col.column);
+        write_dict_from_tmp(dict_name, const_cols[i].tmp_name);
+
+        char dtype_name[NAMEDATALEN * 3];
+        snprintf(dtype_name, sizeof(dtype_name), "meta/dict_type/%s/%s",
+                 const_cols[i].col.table, const_cols[i].col.column);
+        insert_file_text(dtype_name, dict_type_label_for_oid(typid));
+
+        char sorted_name[NAMEDATALEN * 3];
+        snprintf(sorted_name, sizeof(sorted_name), "meta/dict_sorted/%s/%s",
+                 const_cols[i].col.table, const_cols[i].col.column);
+        insert_file_text(sorted_name, "1");
+
+        resetStringInfo(&sql);
+        appendStringInfo(&sql, "DROP TABLE IF EXISTS %s", quote_identifier(const_cols[i].tmp_name));
         SPI_execute(sql.data, false, 0);
         CommandCounterIncrement();
     }
@@ -656,6 +883,7 @@ Datum build_base(PG_FUNCTION_ARGS) {
             tokcols[tpos].col_idx = col_idx;
             tokcols[tpos].is_join = 1;
             tokcols[tpos].join_class_id = cid;
+            tokcols[tpos].tok_map = classes[cid].tok_map;
             tpos++;
         }
         for (int i = 0; i < const_cols_idx.count; i++) {
@@ -667,39 +895,15 @@ Datum build_base(PG_FUNCTION_ARGS) {
                 if (strcmp(const_cols[j].col.table, cols.items[col_idx].table) == 0 &&
                     strcmp(const_cols[j].col.column, cols.items[col_idx].column) == 0) {
                     strncpy(tokcols[tpos].tmp_dict_name, const_cols[j].tmp_name, NAMEDATALEN);
+                    tokcols[tpos].tok_map = const_cols[j].tok_map;
                     break;
                 }
             }
+            if (!tokcols[tpos].tok_map)
+                ereport(ERROR, (errmsg("missing const token map for %s.%s",
+                                       cols.items[col_idx].table, cols.items[col_idx].column)));
             tpos++;
         }
-
-        StringInfoData sql;
-        initStringInfo(&sql);
-        appendStringInfo(&sql, "SELECT %s.ctid", quote_identifier(table));
-        for (int i = 0; i < token_count; i++) {
-            appendStringInfo(&sql, ", t%d.tok", i);
-        }
-        appendStringInfo(&sql, " FROM %s", quote_identifier(table));
-        for (int i = 0; i < token_count; i++) {
-            int col_idx = tokcols[i].col_idx;
-            char *colname = cols.items[col_idx].column;
-            if (tokcols[i].is_join) {
-                char *tmp = classes[tokcols[i].join_class_id].tmp_name;
-                appendStringInfo(&sql, " LEFT JOIN %s t%d ON t%d.val = %s.%s::text",
-                                 quote_identifier(tmp), i, i,
-                                 quote_identifier(table), quote_identifier(colname));
-            } else {
-                appendStringInfo(&sql, " LEFT JOIN %s t%d ON t%d.val = %s.%s::text",
-                                 quote_identifier(tokcols[i].tmp_dict_name), i, i,
-                                 quote_identifier(table), quote_identifier(colname));
-            }
-        }
-        appendStringInfo(&sql, " ORDER BY %s.ctid", quote_identifier(table));
-
-        SPIPlanPtr plan = SPI_prepare(sql.data, 0, NULL);
-        if (!plan) ereport(ERROR, (errmsg("SPI_prepare failed for table %s", table)));
-        Portal portal = SPI_cursor_open(NULL, plan, NULL, NULL, false);
-        if (!portal) ereport(ERROR, (errmsg("SPI_cursor_open failed for table %s", table)));
 
         ByteaBuilder *ctid_bb = bb_create();
         ByteaBuilder *code_payload_bb = bb_create();
@@ -726,37 +930,60 @@ Datum build_base(PG_FUNCTION_ARGS) {
             row_tokens = (int32 *) palloc(sizeof(int32) * token_count);
         if (token_count > (int) UINT16_MAX)
             ereport(ERROR, (errmsg("too many token columns for %s: %d", table, token_count)));
-        int64 rid = 0;
-        while (true) {
-            SPI_cursor_fetch(portal, true, FETCH_BATCH);
-            if (SPI_processed == 0) break;
-            SPITupleTable *tuptable = SPI_tuptable;
-            TupleDesc tupdesc = tuptable->tupdesc;
-            for (uint64 r = 0; r < SPI_processed; r++) {
-                HeapTuple tuple = tuptable->vals[r];
-                bool isnull;
-                Datum ctid_d = SPI_getbinval(tuple, tupdesc, 1, &isnull);
-                if (isnull) continue;
-                ItemPointerData *ip = DatumGetItemPointer(ctid_d);
-                int32 blk = (int32)ItemPointerGetBlockNumber(ip);
-                int32 off = (int32)ItemPointerGetOffsetNumber(ip);
-                bb_append_int32(ctid_bb, blk);
-                bb_append_int32(ctid_bb, off);
 
-                uint16 ntoks = (uint16) token_count;
-                bb_append_bytes(code_payload_bb, &ntoks, sizeof(uint16));
-                for (int i = 0; i < token_count; i++) {
-                    Datum tok = SPI_getbinval(tuple, tupdesc, 2 + i, &isnull);
-                    int32 tval = isnull ? -1 : DatumGetInt32(tok);
-                    row_tokens[i] = tval;
-                }
-                if (token_count > 0) {
-                    bb_append_bytes(code_payload_bb, row_tokens, (size_t) token_count * sizeof(int32));
-                }
-                rid++;
-            }
+        Oid relid = RelnameGetRelid(table);
+        if (!OidIsValid(relid))
+            ereport(ERROR, (errmsg("relation not found: %s", table)));
+        Relation rel = table_open(relid, AccessShareLock);
+        TupleDesc rel_desc = RelationGetDescr(rel);
+        for (int i = 0; i < token_count; i++) {
+            int col_idx = tokcols[i].col_idx;
+            AttrNumber attnum = get_attnum(relid, cols.items[col_idx].column);
+            if (attnum == InvalidAttrNumber)
+                ereport(ERROR, (errmsg("missing attribute %s.%s",
+                                       table, cols.items[col_idx].column)));
+            tokcols[i].attnum = attnum;
+            tokcols[i].typid = TupleDescAttr(rel_desc, attnum - 1)->atttypid;
+            getTypeOutputInfo(tokcols[i].typid, &tokcols[i].typoutput, &tokcols[i].typisvarlena);
         }
-        SPI_cursor_close(portal);
+
+        PushActiveSnapshot(GetTransactionSnapshot());
+        TableScanDesc scan = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
+        TupleTableSlot *slot = MakeSingleTupleTableSlot(rel_desc, table_slot_callbacks(rel));
+        int64 rid = 0;
+        while (table_scan_getnextslot(scan, ForwardScanDirection, slot)) {
+            if (!ItemPointerIsValid(&slot->tts_tid))
+                continue;
+            int32 blk = (int32) ItemPointerGetBlockNumber(&slot->tts_tid);
+            int32 off = (int32) ItemPointerGetOffsetNumber(&slot->tts_tid);
+            bb_append_int32(ctid_bb, blk);
+            bb_append_int32(ctid_bb, off);
+
+            uint16 ntoks = (uint16) token_count;
+            bb_append_bytes(code_payload_bb, &ntoks, sizeof(uint16));
+            for (int i = 0; i < token_count; i++) {
+                bool isnull = false;
+                Datum v = slot_getattr(slot, tokcols[i].attnum, &isnull);
+                int32 tval = -1;
+                if (!isnull) {
+                    char *txt = OidOutputFunctionCall(tokcols[i].typoutput, v);
+                    if (txt) {
+                        int32 tok = -1;
+                        if (dict_map_get(tokcols[i].tok_map, txt, &tok))
+                            tval = tok;
+                        pfree(txt);
+                    }
+                }
+                row_tokens[i] = tval;
+            }
+            if (token_count > 0)
+                bb_append_bytes(code_payload_bb, row_tokens, (size_t) token_count * sizeof(int32));
+            rid++;
+        }
+        table_endscan(scan);
+        ExecDropSingleTupleTableSlot(slot);
+        PopActiveSnapshot();
+        table_close(rel, AccessShareLock);
 
         char name_ctid[NAMEDATALEN];
         char name_code[NAMEDATALEN * 2];
@@ -785,22 +1012,7 @@ Datum build_base(PG_FUNCTION_ARGS) {
         bb_free(code_bb);
     }
 
-    // write dict/<T>/<col> only for const columns using the tmp dicts (token order)
-    for (int i = 0; i < n_const; i++) {
-        char name[NAMEDATALEN * 3];
-        const char *table = const_cols[i].col.table;
-        const char *col = const_cols[i].col.column;
-        snprintf(name, sizeof(name), "dict/%s/%s", table, col);
-        write_dict_from_tmp(name, const_cols[i].tmp_name);
-        const char *dtype = dict_type_for_col(table, col);
-        char dtype_name[NAMEDATALEN * 3];
-        snprintf(dtype_name, sizeof(dtype_name), "meta/dict_type/%s/%s", table, col);
-        insert_file_text(dtype_name, dtype);
-        char sorted_name[NAMEDATALEN * 3];
-        snprintf(sorted_name, sizeof(sorted_name), "meta/dict_sorted/%s/%s", table, col);
-        insert_file_text(sorted_name, "1");
-    }
-
+    MemoryContextDelete(build_mcxt);
     SPI_finish();
     PG_RETURN_VOID();
 }
