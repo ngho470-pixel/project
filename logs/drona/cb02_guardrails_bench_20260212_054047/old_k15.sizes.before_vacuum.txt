@@ -1,0 +1,14 @@
+nrows_ndistinct=68,68
+files_total_bytes=35898468
+code_ctid_total_bytes=33568156
+lineitem_code_base,24022880
+lineitem_ctid,4804576
+orders_code_base,3000000
+orders_ctid,1200000
+customer_code_base,420000
+customer_ctid,120000
+nation_code_base,400
+nation_ctid,200
+region_code_base,60
+region_ctid,40
+lineitem_code_base,1,24022880,24022880

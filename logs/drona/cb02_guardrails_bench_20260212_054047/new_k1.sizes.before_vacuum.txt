@@ -1,0 +1,6 @@
+nrows_ndistinct=11,11
+files_total_bytes=10810396
+code_ctid_total_bytes=10810308
+lineitem_code_base,6005732
+lineitem_ctid,4804576
+lineitem_code_base,1,6005732,6005732

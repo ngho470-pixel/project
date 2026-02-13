@@ -1,0 +1,3 @@
+table_total_bytes=35979264
+toast_total_bytes=35905536
+nrows_ndistinct=89,89

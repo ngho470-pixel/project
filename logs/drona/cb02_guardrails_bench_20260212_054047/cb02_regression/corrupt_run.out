@@ -1,0 +1,10 @@
+LOAD
+SET
+SET
+SET
+SET
+SET
+SET
+SET
+SET
+psql:/tmp/tmp75qpynve.sql:11: ERROR:  policy: invalid CB02 code_base artifact table=customer bytes=39012

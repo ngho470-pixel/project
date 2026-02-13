@@ -156,6 +156,8 @@ static bool decode_code_base_v2(const void *data,
                                 int *out_ntoks,
                                 uint32 *out_nrows)
 {
+    static constexpr size_t kCb02MaxNrowsHard = 200000000;  // hard corruption guard
+    static constexpr int kCb02MaxNtoksHard = 4096;          // far above expected TPC-H widths
     if (!data || !out_code || !out_ntoks || !out_nrows) return false;
     if (!has_code_base_v2_header(data, len)) return false;
     if (len < 12) return false;
@@ -169,8 +171,9 @@ static bool decode_code_base_v2(const void *data,
 
     size_t nrows = static_cast<size_t>(nrows_raw);
     size_t payload_len = static_cast<size_t>(payload_len_raw);
+    if (nrows > kCb02MaxNrowsHard) return false;
     size_t payload_off = 12;
-    if (payload_off + payload_len > len) return false;
+    if (payload_off + payload_len != len) return false;
     size_t off = payload_off;
     size_t end = payload_off + payload_len;
 
@@ -182,6 +185,7 @@ static bool decode_code_base_v2(const void *data,
         uint16_t nt = 0;
         std::memcpy(&nt, p + off, sizeof(uint16_t));
         off += sizeof(uint16_t);
+        if ((int) nt > kCb02MaxNtoksHard) return false;
         if (ntoks < 0) ntoks = static_cast<int>(nt);
         else if (ntoks != static_cast<int>(nt)) return false;
         size_t toks_bytes = static_cast<size_t>(nt) * sizeof(int32_t);
@@ -1180,7 +1184,9 @@ static bool load_phase(const PolicyArtifactC *arts, int art_count,
                 int ntoks = 0;
                 uint32 nrows = 0;
                 if (!decode_code_base_v2(arts[i].data, arts[i].len, &decoded, &ntoks, &nrows))
-                    return false;
+                    ereport(ERROR,
+                            (errmsg("policy: invalid CB02 code_base artifact table=%s bytes=%zu",
+                                    table.c_str(), (size_t)arts[i].len)));
                 ti.code_owned.swap(decoded);
                 ti.code = ti.code_owned.empty() ? nullptr : ti.code_owned.data();
                 ti.code_len = ti.code_owned.size();
@@ -1342,6 +1348,19 @@ static bool load_phase(const PolicyArtifactC *arts, int art_count,
                 return false;
             if (ti.cb02_nrows != ti.n_rows)
                 return false;
+            auto it_ctid = out->ctid_map.find(ti.name);
+            if (it_ctid != out->ctid_map.end()) {
+                if ((it_ctid->second.len % 2u) != 0u)
+                    return false;
+                uint32 ctid_rows = it_ctid->second.len / 2u;
+                if (ctid_rows > 0) {
+                    uint64 limit = (uint64) ctid_rows * 2u;
+                    if ((uint64) ti.cb02_nrows > limit)
+                        ereport(ERROR,
+                                (errmsg("policy: invalid CB02 nrows for table %s cb02_nrows=%u ctid_rows=%u",
+                                        ti.name.c_str(), (unsigned) ti.cb02_nrows, (unsigned) ctid_rows)));
+                }
+            }
         }
 
         for (const auto &c : join_cols) {
