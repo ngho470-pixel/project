@@ -346,6 +346,8 @@ static Tri tri_or(Tri a, Tri b) {
 static Tri eval_ast(const AstNode *node, const std::vector<int> &vals) {
     if (!node) return TRI_UNKNOWN;
     if (node->type == AstNode::VAR) {
+        // y0 is used as a sentinel for constant FALSE.
+        if (node->var_id == 0) return TRI_FALSE;
         if (node->var_id <= 0 || node->var_id >= (int)vals.size()) return TRI_UNKNOWN;
         int v = vals[node->var_id];
         if (v < 0) return TRI_UNKNOWN;
@@ -399,6 +401,7 @@ static std::string atom_to_sql(const Atom &a) {
 static std::string ast_to_sql(const AstNode *node, const std::map<int, std::string> &atom_sql) {
     if (!node) return "";
     if (node->type == AstNode::VAR) {
+        if (node->var_id == 0) return "FALSE";
         auto it = atom_sql.find(node->var_id);
         if (it != atom_sql.end()) return it->second;
         return "TRUE";

@@ -418,6 +418,20 @@ def parse_policy_entry(policy_line: str) -> Tuple[str, str]:
     return target, expr
 
 
+def parse_policy_entry_with_id(policy_line: str) -> Tuple[Optional[int], str, str]:
+    s = policy_line.strip()
+    pid: Optional[int] = None
+
+    # Accept "12. table : ...", "12 table : ...", "12: table : ...".
+    m = re.match(r"^\s*(\d+)\s*(?:[.:]\s*|\s+)(.*)$", s)
+    if m:
+        pid = int(m.group(1))
+        s = m.group(2).strip()
+
+    target, expr = parse_policy_entry(s)
+    return pid, target, expr
+
+
 def parse_policy_pool(pool_spec: str, max_policy_id: int) -> List[int]:
     ids: List[int] = []
     seen = set()
@@ -612,11 +626,17 @@ def rewrite_policy_expr_for_rls(target: str, expr: str) -> str:
 
 
 def apply_rls_policies_for_k(db: str, enabled_policy_lines: Sequence[str]) -> None:
-    by_target: Dict[str, List[str]] = {}
-    for line in enabled_policy_lines:
-        target, expr = parse_policy_entry(line)
+    by_target: Dict[str, List[Tuple[str, bool, str]]] = {}
+    for i, line in enumerate(enabled_policy_lines, start=1):
+        pid, target, expr = parse_policy_entry_with_id(line)
         pred = rewrite_policy_expr_for_rls(target, expr)
-        by_target.setdefault(target, []).append(f"({pred})")
+
+        # Mirror Postgres: permissive policies are ORed, restrictive are ANDed with the permissive OR.
+        # If only restrictive policies exist for a table, Postgres returns no rows.
+        permissive = True if pid is None else (pid % 2 == 0)
+        name = f"cf_p{pid}" if pid is not None else f"cf_pX{i}"
+
+        by_target.setdefault(target, []).append((name, permissive, f"({pred})"))
 
     conn = connect(db, "postgres")
     try:
@@ -626,15 +646,27 @@ def apply_rls_policies_for_k(db: str, enabled_policy_lines: Sequence[str]) -> No
             cur.execute("SET LOCAL search_path TO public, pg_catalog")
             for t in TABLES:
                 cur.execute(sql.SQL("ALTER TABLE {} DISABLE ROW LEVEL SECURITY;").format(sql.Identifier(t)))
-                cur.execute(sql.SQL("DROP POLICY IF EXISTS cf_all ON {};").format(sql.Identifier(t)))
-            for tgt in sorted(by_target.keys()):
-                combined = " AND ".join(by_target[tgt])
-                cur.execute(sql.SQL("ALTER TABLE {} ENABLE ROW LEVEL SECURITY;").format(sql.Identifier(tgt)))
+                # Drop any harness-managed policies.
                 cur.execute(
-                    sql.SQL("CREATE POLICY cf_all ON {} FOR SELECT TO rls_user USING ({});").format(
-                        sql.Identifier(tgt), sql.SQL(combined)
-                    )
+                    "SELECT policyname FROM pg_policies WHERE schemaname='public' AND tablename=%s AND policyname LIKE 'cf_%%';",
+                    [t],
                 )
+                for (pname,) in cur.fetchall():
+                    cur.execute(
+                        sql.SQL("DROP POLICY IF EXISTS {} ON {};").format(sql.Identifier(pname), sql.Identifier(t))
+                    )
+            for tgt in sorted(by_target.keys()):
+                cur.execute(sql.SQL("ALTER TABLE {} ENABLE ROW LEVEL SECURITY;").format(sql.Identifier(tgt)))
+                for name, permissive, pred in by_target[tgt]:
+                    mode = sql.SQL("PERMISSIVE" if permissive else "RESTRICTIVE")
+                    cur.execute(
+                        sql.SQL("CREATE POLICY {} ON {} AS {} FOR SELECT TO rls_user USING ({});").format(
+                            sql.Identifier(name),
+                            sql.Identifier(tgt),
+                            mode,
+                            sql.SQL(pred),
+                        )
+                    )
     finally:
         conn.close()
 

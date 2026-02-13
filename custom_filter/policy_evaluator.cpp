@@ -34,6 +34,7 @@ static thread_local NodeStore *g_node_store = nullptr;
 static bool g_eval_debug = false;
 
 struct Policy {
+    int policy_id = -1;
     std::string target;
     std::string expr;
     AstNode *ast = nullptr;
@@ -295,6 +296,15 @@ static AstNode *make_var_node(const std::string &key) {
     AstNode *node = new AstNode();
     node->type = AstNode::VAR;
     node->key = key;
+    if (g_node_store) g_node_store->nodes.push_back(node);
+    return node;
+}
+
+static AstNode *make_false_node() {
+    AstNode *node = new AstNode();
+    node->type = AstNode::VAR;
+    node->key = "";
+    node->var_id = 0; // y0 is treated as constant FALSE by downstream evaluator.
     if (g_node_store) g_node_store->nodes.push_back(node);
     return node;
 }
@@ -576,15 +586,31 @@ static std::vector<Policy> load_policies(const std::string &path) {
         if (colon == std::string::npos) continue;
         std::string left = trim(line.substr(0, colon));
         std::string right = trim(line.substr(colon + 1));
+        int policy_id = -1;
         size_t pos = 0;
-        while (pos < left.size() && (std::isdigit(static_cast<unsigned char>(left[pos])) || left[pos] == '.' || std::isspace(static_cast<unsigned char>(left[pos])))) {
+        while (pos < left.size() && std::isspace(static_cast<unsigned char>(left[pos])))
             pos++;
+        size_t id_start = pos;
+        while (pos < left.size() && std::isdigit(static_cast<unsigned char>(left[pos])))
+            pos++;
+        if (pos > id_start) {
+            try {
+                policy_id = std::stoi(left.substr(id_start, pos - id_start));
+            } catch (...) {
+                policy_id = -1;
+            }
+            while (pos < left.size() &&
+                   (left[pos] == '.' || std::isspace(static_cast<unsigned char>(left[pos]))))
+                pos++;
+            left = left.substr(pos);
+        } else {
+            left = left.substr(id_start);
         }
-        left = left.substr(pos);
         left = to_lower(trim(left));
         if (left.empty() || right.empty()) continue;
 
         Policy pol;
+        pol.policy_id = policy_id;
         pol.target = left;
         pol.expr = right;
         pol.line_no = line_no;
@@ -608,7 +634,8 @@ static std::vector<Policy> load_policies(const std::string &path) {
 static void collect_ast_keys(const AstNode *node, std::set<std::string> &keys) {
     if (!node) return;
     if (node->type == AstNode::VAR) {
-        keys.insert(node->key);
+        if (!node->key.empty())
+            keys.insert(node->key);
         return;
     }
     for (const auto *child : node->children)
@@ -685,18 +712,53 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         }
     }
 
-    std::map<std::string, AstNode *> target_ast;
+    std::map<std::string, AstNode *> perm_ast;
+    std::map<std::string, AstNode *> rest_ast;
     for (size_t i = 0; i < policies.size(); i++) {
         const Policy &pol = policies[i];
         if (pol.target.empty() || !pol.ast)
             continue;
         if (policy_targets.find(pol.target) == policy_targets.end())
             continue;
-        auto it = target_ast.find(pol.target);
-        if (it == target_ast.end()) {
-            target_ast[pol.target] = pol.ast;
+
+        bool permissive = true; // Backward-compatible default.
+        if (pol.policy_id > 0)
+            permissive = (pol.policy_id % 2 == 0);
+
+        if (permissive) {
+            auto it = perm_ast.find(pol.target);
+            if (it == perm_ast.end()) {
+                perm_ast[pol.target] = pol.ast;
+            } else {
+                perm_ast[pol.target] = make_node(AstNode::OR, it->second, pol.ast);
+            }
         } else {
-            target_ast[pol.target] = make_node(AstNode::AND, it->second, pol.ast);
+            auto it = rest_ast.find(pol.target);
+            if (it == rest_ast.end()) {
+                rest_ast[pol.target] = pol.ast;
+            } else {
+                rest_ast[pol.target] = make_node(AstNode::AND, it->second, pol.ast);
+            }
+        }
+    }
+
+    std::set<std::string> all_targets;
+    for (const auto &kv : perm_ast)
+        all_targets.insert(kv.first);
+    for (const auto &kv : rest_ast)
+        all_targets.insert(kv.first);
+
+    std::map<std::string, AstNode *> target_ast;
+    for (const auto &t : all_targets) {
+        auto pit = perm_ast.find(t);
+        auto rit = rest_ast.find(t);
+        if (pit == perm_ast.end()) {
+            // Postgres RLS requires at least one permissive policy; only-restrictive => deny all.
+            target_ast[t] = make_false_node();
+        } else if (rit == rest_ast.end()) {
+            target_ast[t] = pit->second;
+        } else {
+            target_ast[t] = make_node(AstNode::AND, pit->second, rit->second);
         }
     }
 
