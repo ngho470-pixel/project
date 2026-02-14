@@ -8,6 +8,7 @@ extern "C" {
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <deque>
 #include <fstream>
 #include <map>
@@ -96,6 +97,13 @@ static std::string trim(const std::string &s) {
     size_t end = s.size();
     while (end > start && std::isspace(static_cast<unsigned char>(s[end - 1]))) end--;
     return s.substr(start, end - start);
+}
+
+static bool env_flag_enabled(const char *name) {
+    const char *v = std::getenv(name);
+    if (!v) return false;
+    std::string s = to_lower(trim(v));
+    return !(s.empty() || s == "0" || s == "off" || s == "false" || s == "no");
 }
 
 static std::string unquote(const std::string &s) {
@@ -650,6 +658,7 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
                                                      bool default_all_targets) {
     std::string path = policy_path ? policy_path : "";
     g_eval_debug = eval_debug_enabled();
+    bool dump_policy_ast = env_flag_enabled("CF_DUMP_POLICY_AST") || g_eval_debug;
     NodeStore store;
     g_node_store = &store;
     auto policies = load_policies(path);
@@ -714,6 +723,10 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
 
     std::map<std::string, AstNode *> perm_ast;
     std::map<std::string, AstNode *> rest_ast;
+    std::map<std::string, int> perm_count_by_target;
+    std::map<std::string, int> rest_count_by_target;
+    int total_perm_policies = 0;
+    int total_rest_policies = 0;
     for (size_t i = 0; i < policies.size(); i++) {
         const Policy &pol = policies[i];
         if (pol.target.empty() || !pol.ast)
@@ -723,9 +736,11 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
 
         bool permissive = true; // Backward-compatible default.
         if (pol.policy_id > 0)
-            permissive = (pol.policy_id % 2 == 0);
+            permissive = (pol.policy_id % 2 == 1); // odd ids are permissive
 
         if (permissive) {
+            perm_count_by_target[pol.target]++;
+            total_perm_policies++;
             auto it = perm_ast.find(pol.target);
             if (it == perm_ast.end()) {
                 perm_ast[pol.target] = pol.ast;
@@ -733,6 +748,8 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
                 perm_ast[pol.target] = make_node(AstNode::OR, it->second, pol.ast);
             }
         } else {
+            rest_count_by_target[pol.target]++;
+            total_rest_policies++;
             auto it = rest_ast.find(pol.target);
             if (it == rest_ast.end()) {
                 rest_ast[pol.target] = pol.ast;
@@ -886,6 +903,28 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         if (kv.second) {
             assign_var_ids(kv.second, atom_map);
         }
+    }
+    if (dump_policy_ast) {
+        int targets_perm0 = 0;
+        for (const auto &kv : target_ast) {
+            int perm_n = 0;
+            auto pit = perm_count_by_target.find(kv.first);
+            if (pit != perm_count_by_target.end())
+                perm_n = pit->second;
+            int rest_n = 0;
+            auto rit = rest_count_by_target.find(kv.first);
+            if (rit != rest_count_by_target.end())
+                rest_n = rit->second;
+            bool used_y0 = (kv.second && kv.second->type == AstNode::VAR && kv.second->var_id == 0);
+            if (perm_n == 0 || used_y0)
+                targets_perm0++;
+            std::string ast_str = kv.second ? ast_to_string(kv.second) : "";
+            elog(NOTICE, "CF_POLICY_AST target=%s perm=%d rest=%d y0=%d ast=%s",
+                 kv.first.c_str(), perm_n, rest_n, used_y0 ? 1 : 0, ast_str.c_str());
+        }
+        elog(NOTICE,
+             "CF_POLICY_AST_SUMMARY permissive_total=%d restrictive_total=%d targets=%d targets_perm0=%d",
+             total_perm_policies, total_rest_policies, (int)target_ast.size(), targets_perm0);
     }
 
     std::vector<int> target_jc_counts;

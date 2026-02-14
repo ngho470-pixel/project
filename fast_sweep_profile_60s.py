@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import os
 import random
 import re
 import statistics
@@ -170,6 +171,30 @@ class HarnessError(Exception):
     pass
 
 
+class NoticeBuffer:
+    def __init__(self, maxlen: int = 5000) -> None:
+        self.maxlen = maxlen
+        self._items: List[str] = []
+
+    def append(self, item: str) -> None:
+        self._items.append(item)
+        overflow = len(self._items) - self.maxlen
+        if overflow > 0:
+            del self._items[:overflow]
+
+    def __iter__(self):
+        return iter(self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __getitem__(self, idx):
+        return self._items[idx]
+
+    def __delitem__(self, idx) -> None:
+        del self._items[idx]
+
+
 @dataclass(frozen=True)
 class IndexSpec:
     table: str
@@ -256,6 +281,10 @@ def connect(db: str, role: str):
                 connect_timeout=5,
             )
             conn.autocommit = True
+            try:
+                conn.notices = NoticeBuffer(maxlen=5000)
+            except Exception:
+                pass
             return conn
         except psycopg2.OperationalError as exc:
             msg = (getattr(exc, "pgerror", None) or str(exc)).lower()
@@ -529,6 +558,13 @@ def write_enabled_policy_file(enabled_policy_lines: Sequence[str], enabled_path:
     enabled_path.write_text("\n".join(enabled_policy_lines) + "\n", encoding="utf-8")
 
 
+def enabled_policy_path_for_k(base_path: Path, db: str, k: int) -> Path:
+    suffix = base_path.suffix if base_path.suffix else ".txt"
+    stem = base_path.stem if base_path.suffix else base_path.name
+    safe_db = re.sub(r"[^A-Za-z0-9_]+", "_", db)
+    return base_path.with_name(f"{stem}_{safe_db}_k{k}{suffix}")
+
+
 def _strip_string_literals(expr: str) -> str:
     return re.sub(r"'(?:''|[^'])*'", " ", expr)
 
@@ -625,6 +661,61 @@ def rewrite_policy_expr_for_rls(target: str, expr: str) -> str:
     return expr2
 
 
+def maybe_dump_rls_state(cur, tag: str) -> None:
+    if os.getenv("CF_DUMP_RLS", "0") != "1":
+        return
+
+    print(f"[CF_RLS_DUMP] tag={tag}")
+    cur.execute("SELECT current_user, session_user;")
+    current_user, session_user = cur.fetchone()
+    print(f"[CF_RLS_DUMP] current_user={current_user} session_user={session_user}")
+
+    cur.execute("SHOW row_security;")
+    print(f"[CF_RLS_DUMP] row_security={cur.fetchone()[0]}")
+
+    cur.execute("SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname=current_user;")
+    for rolname, rolsuper, rolbypassrls in cur.fetchall():
+        print(f"[CF_RLS_DUMP] role rolname={rolname} rolsuper={rolsuper} rolbypassrls={rolbypassrls}")
+
+    cur.execute(
+        "SELECT relname, relrowsecurity, relforcerowsecurity "
+        "FROM pg_class "
+        "WHERE relname IN ('orders','customer','lineitem') "
+        "ORDER BY relname;"
+    )
+    for relname, relrowsecurity, relforcerowsecurity in cur.fetchall():
+        print(
+            f"[CF_RLS_DUMP] rel relname={relname} relrowsecurity={relrowsecurity} "
+            f"relforcerowsecurity={relforcerowsecurity}"
+        )
+
+    cur.execute(
+        "SELECT tablename, policyname, permissive, roles, qual "
+        "FROM pg_policies "
+        "WHERE schemaname='public' AND policyname LIKE 'cf_%' "
+        "ORDER BY tablename, policyname;"
+    )
+    rows = cur.fetchall()
+    if not rows:
+        print("[CF_RLS_DUMP] policies none")
+    for tablename, policyname, permissive, roles, qual in rows:
+        print(
+            f"[CF_RLS_DUMP] policy tablename={tablename} policyname={policyname} "
+            f"permissive={permissive} roles={roles} qual={qual}"
+        )
+
+
+def maybe_dump_policy_ast_notices(conn, tag: str) -> None:
+    if os.getenv("CF_DUMP_POLICY_AST", "0") != "1":
+        return
+    lines = [n.replace("\n", " ").strip() for n in conn.notices if "CF_POLICY_AST" in n]
+    if lines:
+        print(f"[CF_POLICY_AST_DUMP] tag={tag} lines={len(lines)}")
+        for line in lines:
+            print(line)
+    del conn.notices[:]
+
+
 def apply_rls_policies_for_k(db: str, enabled_policy_lines: Sequence[str]) -> None:
     by_target: Dict[str, List[Tuple[str, bool, str]]] = {}
     for i, line in enumerate(enabled_policy_lines, start=1):
@@ -633,7 +724,7 @@ def apply_rls_policies_for_k(db: str, enabled_policy_lines: Sequence[str]) -> No
 
         # Mirror Postgres: permissive policies are ORed, restrictive are ANDed with the permissive OR.
         # If only restrictive policies exist for a table, Postgres returns no rows.
-        permissive = True if pid is None else (pid % 2 == 0)
+        permissive = True if pid is None else (pid % 2 == 1)
         name = f"cf_p{pid}" if pid is not None else f"cf_pX{i}"
 
         by_target.setdefault(target, []).append((name, permissive, f"({pred})"))
@@ -667,6 +758,7 @@ def apply_rls_policies_for_k(db: str, enabled_policy_lines: Sequence[str]) -> No
                             sql.SQL(pred),
                         )
                     )
+            maybe_dump_rls_state(cur, f"post_create db={db}")
     finally:
         conn.close()
 
@@ -771,11 +863,18 @@ def setup_ours_for_k(db: str, k: int, enabled_path: Path, statement_timeout_ms: 
     try:
         with conn.cursor() as cur:
             apply_timing_session_settings(cur, statement_timeout_ms)
+            dump_ast = os.getenv("CF_DUMP_POLICY_AST", "0") == "1"
+            if dump_ast:
+                cur.execute(f"LOAD '{CUSTOM_FILTER_SO}';")
+                cur.execute("SET custom_filter.debug_mode = trace;")
+                cur.execute("SET client_min_messages = notice;")
             cur.execute("CREATE TABLE IF NOT EXISTS public.files (name varchar, file bytea);")
             ensure_build_base_function(cur)
             cur.execute("TRUNCATE public.files;")
             t0 = time.perf_counter()
             cur.execute("SELECT public.build_base(%s);", [str(enabled_path)])
+            if dump_ast:
+                maybe_dump_policy_ast_notices(conn, f"setup_ours db={db} k={k}")
             setup_ms = (time.perf_counter() - t0) * 1000.0
             # Artifact payload bytes for current build (table is truncated right before build).
             cur.execute("SELECT COALESCE(SUM(octet_length(file)), 0) FROM public.files;")
@@ -798,7 +897,14 @@ def set_session_for_baseline(
         cur.execute(f"LOAD '{CUSTOM_FILTER_SO}';")
         cur.execute("SET custom_filter.enabled = on;")
         cur.execute("SET custom_filter.contract_mode = off;")
-        cur.execute("SET custom_filter.debug_mode = %s;", [ours_debug_mode])
+        effective_debug_mode = ours_debug_mode
+        if os.getenv("CF_DUMP_POLICY_AST", "0") == "1" and effective_debug_mode == "off":
+            # Backend processes usually don't inherit this harness env var, so
+            # use debug_mode as a backend-visible signal to emit AST dumps.
+            effective_debug_mode = "trace"
+        cur.execute("SET custom_filter.debug_mode = %s;", [effective_debug_mode])
+        if os.getenv("CF_DUMP_POLICY_AST", "0") == "1":
+            cur.execute("SET client_min_messages = notice;")
         cur.execute("SET enable_tidscan = off;")
         cur.execute("SET enable_indexonlyscan = off;")
         cur.execute(sql.SQL("SET custom_filter.policy_path = %s;"), [str(enabled_path)])
@@ -816,6 +922,7 @@ def run_query_series(
     hot_runs: int,
     enabled_path: Path,
     statement_timeout_ms: int,
+    query_id: str = "",
 ) -> Tuple[RunMetrics, List[RunMetrics]]:
     role = "postgres" if baseline == "ours" else "rls_user"
     conn = None
@@ -823,15 +930,24 @@ def run_query_series(
         conn = connect(db, role)
         with conn.cursor() as cur:
             set_session_for_baseline(cur, baseline, enabled_path, statement_timeout_ms)
+            if baseline == "rls_with_index":
+                maybe_dump_rls_state(cur, f"pre_query db={db} baseline={baseline} q={query_id or 'unknown'}")
             cold = execute_with_rss(cur, query_sql)
+            if baseline == "ours":
+                maybe_dump_policy_ast_notices(conn, f"db={db} baseline={baseline} q={query_id or 'unknown'} phase=cold")
             hots: List[RunMetrics] = []
-            for _ in range(hot_runs):
+            for run_idx in range(1, hot_runs + 1):
                 try:
                     hots.append(execute_with_rss(cur, query_sql))
                 except Exception as exc:  # noqa: BLE001
                     msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
                     etype, emsg = classify_error(exc, msg)
                     hots.append(make_error_metrics(etype, emsg))
+                if baseline == "ours":
+                    maybe_dump_policy_ast_notices(
+                        conn,
+                        f"db={db} baseline={baseline} q={query_id or 'unknown'} phase=hot{run_idx}",
+                    )
             return cold, hots
     except Exception as exc:  # noqa: BLE001
         msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
@@ -891,6 +1007,7 @@ def run_ours_profile_capture(
     statement_timeout_ms: int,
     ours_profile_rescan: bool = False,
     ours_debug_mode: str = "trace",
+    query_id: str = "",
 ) -> Tuple[RunMetrics, str, Dict[str, str], int, List[str]]:
     conn = None
     try:
@@ -901,6 +1018,15 @@ def run_ours_profile_capture(
                 cur.execute("SET custom_filter.profile_rescan = on;")
             cur.execute("SET client_min_messages = notice;")
             metrics, notices = execute_with_rss_and_notices(cur, query_sql)
+            if os.getenv("CF_DUMP_POLICY_AST", "0") == "1":
+                ast_lines = [n.replace("\n", " ").strip() for n in notices if "CF_POLICY_AST" in n]
+                if ast_lines:
+                    print(
+                        f"[CF_POLICY_AST_DUMP] tag=profile_capture db={db} q={query_id or 'unknown'} "
+                        f"lines={len(ast_lines)}"
+                    )
+                    for line in ast_lines:
+                        print(line)
             payload, kv, cnt = extract_policy_profile(notices)
             return metrics, payload, kv, cnt, notices
     except Exception as exc:  # noqa: BLE001
@@ -1124,7 +1250,11 @@ def count_query_sql(db: str, baseline: str, sql_text: str, enabled_path: Path, s
     try:
         with conn.cursor() as cur:
             set_session_for_baseline(cur, baseline, enabled_path, statement_timeout_ms)
+            if baseline == "rls_with_index":
+                maybe_dump_rls_state(cur, f"pre_count_sql db={db} baseline={baseline}")
             cur.execute(sql_text)
+            if baseline == "ours":
+                maybe_dump_policy_ast_notices(conn, f"pre_count_sql db={db} baseline={baseline}")
             return int(cur.fetchone()[0])
     finally:
         conn.close()
@@ -1139,7 +1269,11 @@ def count_query(db: str, baseline: str, query_sql: str, enabled_path: Path, stat
     try:
         with conn.cursor() as cur:
             set_session_for_baseline(cur, baseline, enabled_path, statement_timeout_ms)
+            if baseline == "rls_with_index":
+                maybe_dump_rls_state(cur, f"pre_count_query db={db} baseline={baseline}")
             cur.execute(wrapped)
+            if baseline == "ours":
+                maybe_dump_policy_ast_notices(conn, f"pre_count_query db={db} baseline={baseline}")
             return int(cur.fetchone()[0])
     finally:
         conn.close()
@@ -1420,11 +1554,12 @@ def run_smoke_check(
 ) -> None:
     k = len(policy_pool)
     enabled_ids, enabled = select_enabled_policies(policy_lines, policy_pool, k)
+    enabled_path_k = enabled_policy_path_for_k(enabled_path, db, k)
     policy_ids = ",".join(str(x) for x in enabled_ids)
     print(f"[smoke] Running K={k} (pool-full), queries {{3,13}}, hot-runs=2")
     print(f"[smoke] enabled_ids={enabled_ids}")
-    write_enabled_policy_file(enabled, enabled_path)
-    setup_ours_for_k(db, k, enabled_path, statement_timeout_ms)
+    write_enabled_policy_file(enabled, enabled_path_k)
+    setup_ours_for_k(db, k, enabled_path_k, statement_timeout_ms)
     apply_rls_policies_for_k(db, enabled)
     create_rls_indexes_for_k(db, k, enabled, statement_timeout_ms)
 
@@ -1433,8 +1568,8 @@ def run_smoke_check(
         if qid not in qmap:
             raise HarnessError(f"smoke query id {qid} missing from query file")
         q = qmap[qid]
-        cold_o, hot_o = run_query_series(db, "ours", q, 2, enabled_path, statement_timeout_ms)
-        cold_r, hot_r = run_query_series(db, "rls_with_index", q, 2, enabled_path, statement_timeout_ms)
+        cold_o, hot_o = run_query_series(db, "ours", q, 2, enabled_path_k, statement_timeout_ms, query_id=qid)
+        cold_r, hot_r = run_query_series(db, "rls_with_index", q, 2, enabled_path_k, statement_timeout_ms, query_id=qid)
         if cold_o.status != "ok" or cold_r.status != "ok":
             raise HarnessError(f"smoke failed: cold run error for q={qid}")
         if len(hot_o) != 2 or len(hot_r) != 2:
@@ -1450,14 +1585,14 @@ def run_smoke_check(
             f"hot_rls={[round(x,3) for x in rls_hot]}"
         )
 
-        ours_count = count_query(db, "ours", q, enabled_path, statement_timeout_ms)
-        rls_count = count_query(db, "rls_with_index", q, enabled_path, statement_timeout_ms)
+        ours_count = count_query(db, "ours", q, enabled_path_k, statement_timeout_ms)
+        rls_count = count_query(db, "rls_with_index", q, enabled_path_k, statement_timeout_ms)
         print(f"[smoke] K={k} q={qid} policy_ids={policy_ids} ours_count={ours_count} rls_count={rls_count}")
         if ours_count != rls_count:
             raise HarnessError(f"smoke failed: count mismatch for q={qid} ours={ours_count} rls={rls_count}")
 
     prof_metrics, prof_payload, prof_kv, prof_cnt, _notices = run_ours_profile_capture(
-        db, qmap["3"], enabled_path, statement_timeout_ms
+        db, qmap["3"], enabled_path_k, statement_timeout_ms, query_id="3"
     )
     has_profile = bool(prof_payload) and "bytes_artifacts_loaded=" in prof_payload
     misses = int(prof_kv.get("ctid_misses", "-1"))
@@ -1504,12 +1639,13 @@ def run_experiment(args: argparse.Namespace) -> None:
         print(f"[db] start db={db}")
         for k in args.ks:
             enabled_ids, enabled = select_enabled_policies(policy_lines, policy_pool, k)
+            enabled_path_k = enabled_policy_path_for_k(enabled_path, db, k)
             policy_ids = ",".join(str(x) for x in enabled_ids)
             print(f"[policy_set] db={db} K={k} enabled_ids={enabled_ids}")
-            write_enabled_policy_file(enabled, enabled_path)
+            write_enabled_policy_file(enabled, enabled_path_k)
 
             # setup ours
-            ours_setup_ms, ours_disk = setup_ours_for_k(db, k, enabled_path, statement_timeout_ms)
+            ours_setup_ms, ours_disk = setup_ours_for_k(db, k, enabled_path_k, statement_timeout_ms)
             append_csv_row(
                 times_csv,
                 TIMES_COLUMNS,
@@ -1584,17 +1720,20 @@ def run_experiment(args: argparse.Namespace) -> None:
             for qid, qsql in queries:
                 for baseline in ["ours", "rls_with_index"]:
                     print(f"[progress] db={db} K={k} baseline={baseline} query={qid}")
-                    cold, hots = run_query_series(db, baseline, qsql, hot_runs, enabled_path, statement_timeout_ms)
+                    cold, hots = run_query_series(
+                        db, baseline, qsql, hot_runs, enabled_path_k, statement_timeout_ms, query_id=qid
+                    )
                     row = build_time_row(db, k, policy_ids, baseline, qid, cold, hots, expected_hot=hot_runs)
                     append_csv_row(times_csv, TIMES_COLUMNS, row)
                     if baseline == "ours":
                         prof_metrics, prof_payload, prof_kv, prof_cnt, notices = run_ours_profile_capture(
                             db,
                             qsql,
-                            enabled_path,
+                            enabled_path_k,
                             statement_timeout_ms,
                             ours_profile_rescan=bool(args.ours_profile_rescan),
                             ours_debug_mode=str(args.profile_debug_mode),
+                            query_id=qid,
                         )
                         prow = build_profile_row(
                             db, k, policy_ids, qid, prof_metrics, prof_payload, prof_kv, prof_cnt
@@ -1606,7 +1745,7 @@ def run_experiment(args: argparse.Namespace) -> None:
 
             # correctness for sampled queries
             for qid, qsql in correctness_queries:
-                cr = compare_counts(db, k, qid, qsql, enabled_path, statement_timeout_ms)
+                cr = compare_counts(db, k, qid, qsql, enabled_path_k, statement_timeout_ms)
                 append_csv_row(correctness_csv, CORRECTNESS_COLUMNS, cr)
 
         print(f"[db] done db={db}")
