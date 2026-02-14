@@ -37,6 +37,9 @@ DEFAULT_MATRIX_KS = [1, 5, 10, 15, 20]
 DEFAULT_MATRIX_DBS = ["tpch0_1", "tpch1", "tpch10"]
 CROSS_TABLE_QUERY_IDS = {"3", "5", "7", "8", "10", "12", "13", "18", "22"}
 
+DEFAULT_LAYER_PROBE_KS = [5, 15]
+DEFAULT_LAYER_PROBE_QUERY_IDS = ["1", "3", "6", "13", "22"]
+
 ROLE_CONFIG = {
     "postgres": {"user": "postgres", "password": "12345"},
     "rls_user": {"user": "rls_user", "password": "secret"},
@@ -206,6 +209,43 @@ DASH_BUILD_COLUMNS = [
     "rls_index_bytes",
 ]
 
+LAYER_PROBE_COLUMNS = [
+    "run_id",
+    "ts",
+    "db",
+    "K",
+    "query_id",
+    "policy_total_ms",
+    "artifact_load_ms",
+    "artifact_parse_ms",
+    "ctid_map_ms",
+    "filter_ms",
+    "child_exec_ms",
+    "ctid_extract_ms",
+    "ctid_to_rid_ms",
+    "allow_check_ms",
+    "projection_ms",
+    "rss_mb",
+    "rows_filtered",
+    "rows_returned",
+    "pe_total_ms",
+    "pe_load_ms",
+    "pe_local_ms",
+    "pe_prop_ms",
+    "pe_decode_ms",
+    "local_stamp_ms",
+    "local_bin_ms",
+    "local_eval_ms",
+    "local_fill_ms",
+    "prop_ms_bundle",
+    "status",
+    "error_type",
+    "error_msg",
+    "policy_profile_lines",
+    "policy_profile_query_lines",
+    "policy_profile_bundle_lines",
+]
+
 
 class HarnessError(Exception):
     pass
@@ -282,6 +322,13 @@ def parse_args() -> argparse.Namespace:
         dest="matrix_tpch_scale",
         action="store_true",
         help="Run the 4-metric dashboard matrix (dbs=tpch0_1,tpch1,tpch10; K=1,5,10,15,20; pool=1-20; skip q20)",
+    )
+    p.add_argument(
+        "--layer-probe",
+        "--layer_probe",
+        dest="layer_probe",
+        action="store_true",
+        help="Run OURS-only per-layer timing probe (dbs=tpch0_1,tpch1,tpch10; K=5,15; queries=1,3,6,13,22)",
     )
     p.add_argument("--smoke-check", action="store_true", help="Run smoke check (K=11 pool-full, q3/q13, hot=2)")
     p.add_argument("--smoke-only", action="store_true", help="Run smoke check only, then exit")
@@ -1137,6 +1184,76 @@ def extract_policy_profile(notices: Sequence[str]) -> Tuple[str, Dict[str, str],
     return payload, kv, count
 
 
+def extract_policy_profile_query(notices: Sequence[str]) -> Tuple[str, Dict[str, str], int]:
+    payload = ""
+    kv: Dict[str, str] = {}
+    count = 0
+    for line in notices:
+        if "policy_profile_query:" not in line:
+            continue
+        count += 1
+        payload = line.split("policy_profile_query:", 1)[1].strip()
+        kv_one: Dict[str, str] = {}
+        for key, val in re.findall(r"([A-Za-z0-9_]+)=([^\s]+)", payload):
+            kv_one[key] = val.rstrip(",")
+        kv = kv_one
+    return payload, kv, count
+
+
+def extract_policy_load_ms_sum(notices: Sequence[str]) -> Tuple[float, int]:
+    total = 0.0
+    count = 0
+    for line in notices:
+        if "policy: load_ms=" not in line:
+            continue
+        m = re.search(r"\bpolicy:\s*load_ms=([0-9]+(?:\.[0-9]+)?)", line)
+        if not m:
+            continue
+        try:
+            total += float(m.group(1))
+            count += 1
+        except Exception:
+            continue
+    return total, count
+
+
+def extract_policy_profile_bundle_agg(notices: Sequence[str]) -> Tuple[int, Dict[str, float]]:
+    stamp_ms = 0.0
+    bin_ms = 0.0
+    eval_ms = 0.0
+    fill_ms = 0.0
+    prop_ms = 0.0
+    count = 0
+    for line in notices:
+        if "policy_profile_bundle:" not in line:
+            continue
+        count += 1
+        for a, b, c, d in re.findall(
+            r"ms=([0-9]+(?:\.[0-9]+)?)/([0-9]+(?:\.[0-9]+)?)/([0-9]+(?:\.[0-9]+)?)/([0-9]+(?:\.[0-9]+)?)",
+            line,
+        ):
+            try:
+                stamp_ms += float(a)
+                bin_ms += float(b)
+                eval_ms += float(c)
+                fill_ms += float(d)
+            except Exception:
+                pass
+        m = re.search(r"prop=\{iter=\d+,ms=([0-9]+(?:\.[0-9]+)?)", line)
+        if m:
+            try:
+                prop_ms += float(m.group(1))
+            except Exception:
+                pass
+    return count, {
+        "local_stamp_ms": stamp_ms,
+        "local_bin_ms": bin_ms,
+        "local_eval_ms": eval_ms,
+        "local_fill_ms": fill_ms,
+        "prop_ms_bundle": prop_ms,
+    }
+
+
 def run_ours_profile_capture(
     db: str,
     query_sql: str,
@@ -1145,6 +1262,8 @@ def run_ours_profile_capture(
     ours_profile_rescan: bool = False,
     ours_debug_mode: str = "trace",
     query_id: str = "",
+    profile_k: Optional[int] = None,
+    profile_query: str = "",
 ) -> Tuple[RunMetrics, str, Dict[str, str], int, List[str]]:
     conn = None
     try:
@@ -1153,6 +1272,10 @@ def run_ours_profile_capture(
             set_session_for_baseline(cur, "ours", enabled_path, statement_timeout_ms, ours_debug_mode=ours_debug_mode)
             if ours_profile_rescan:
                 cur.execute("SET custom_filter.profile_rescan = on;")
+            if profile_k is not None:
+                cur.execute("SET custom_filter.profile_k = %s;", [int(profile_k)])
+            if profile_query:
+                cur.execute("SET custom_filter.profile_query = %s;", [str(profile_query)])
             cur.execute("SET client_min_messages = notice;")
             metrics, notices = execute_with_rss_and_notices(cur, query_sql)
             if os.getenv("CF_DUMP_POLICY_AST", "0") == "1":
@@ -1890,6 +2013,249 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
     print(f"[done] build_csv={build_csv}")
 
 
+def write_layer_probe_summary(rows: Sequence[Dict[str, str]], out_path: Path) -> None:
+    def fnum(x: str) -> float:
+        try:
+            return float(x)
+        except Exception:
+            return 0.0
+
+    def ikey(x: str) -> int:
+        try:
+            return int(x)
+        except Exception:
+            return 0
+
+    lines: List[str] = []
+    lines.append("# Layer-Probe Summary")
+    lines.append("")
+    lines.append(f"rows={len(rows)}")
+    lines.append("")
+
+    def sort_key(r: Dict[str, str]):
+        scale_txt = db_scale_from_name(r.get("db", ""))
+        try:
+            scale = float(scale_txt) if scale_txt else float("inf")
+        except Exception:
+            scale = float("inf")
+        return (scale, r.get("db", ""), ikey(r.get("K", "0")), ikey(r.get("query_id", "0")))
+
+    for r in sorted(rows, key=sort_key):
+        db = r.get("db", "")
+        k = r.get("K", "")
+        q = r.get("query_id", "")
+        status = r.get("status", "")
+        lines.append(f"## db={db} K={k} q={q} status={status}")
+        if status != "ok":
+            et = r.get("error_type", "")
+            em = r.get("error_msg", "")
+            lines.append(f"error_type={et} error_msg={em}")
+            lines.append("")
+            continue
+
+        layer_vals = {
+            "child_exec_ms": fnum(r.get("child_exec_ms", "")),
+            "ctid_map_ms": fnum(r.get("ctid_map_ms", "")),
+            "filter_ms": fnum(r.get("filter_ms", "")),
+            "policy_total_ms": fnum(r.get("policy_total_ms", "")),
+        }
+        sorted_layers = sorted(layer_vals.items(), key=lambda kv: kv[1], reverse=True)
+        lines.append(
+            "policy_layers_ms "
+            + " ".join(f"{k}={v:.3f}" for k, v in sorted_layers)
+        )
+
+        pe_vals = {
+            "pe_load_ms": fnum(r.get("pe_load_ms", "")),
+            "pe_local_ms": fnum(r.get("pe_local_ms", "")),
+            "pe_prop_ms": fnum(r.get("pe_prop_ms", "")),
+            "pe_decode_ms": fnum(r.get("pe_decode_ms", "")),
+            "pe_total_ms": fnum(r.get("pe_total_ms", "")),
+        }
+        sorted_pe = sorted(pe_vals.items(), key=lambda kv: kv[1], reverse=True)
+        lines.append(
+            "policy_engine_ms "
+            + " ".join(f"{k}={v:.3f}" for k, v in sorted_pe)
+        )
+
+        local_vals = {
+            "local_stamp_ms": fnum(r.get("local_stamp_ms", "")),
+            "local_bin_ms": fnum(r.get("local_bin_ms", "")),
+            "local_eval_ms": fnum(r.get("local_eval_ms", "")),
+            "local_fill_ms": fnum(r.get("local_fill_ms", "")),
+        }
+        sorted_local = sorted(local_vals.items(), key=lambda kv: kv[1], reverse=True)
+        lines.append(
+            "local_bundle_ms "
+            + " ".join(f"{k}={v:.3f}" for k, v in sorted_local)
+        )
+        lines.append(
+            f"prop_ms_bundle={fnum(r.get('prop_ms_bundle', '')):.3f} rss_mb={fnum(r.get('rss_mb', '')):.3f} "
+            f"rows_returned={r.get('rows_returned', '')} rows_filtered={r.get('rows_filtered', '')}"
+        )
+        lines.append("")
+
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def run_layer_probe(args: argparse.Namespace) -> None:
+    statement_timeout_ms = parse_timeout_ms(args.statement_timeout)
+
+    policy_lines = load_policy_lines(Path(args.policy))
+    pool_spec = args.policy_pool
+    if pool_spec == DEFAULT_POLICY_POOL:
+        pool_spec = "1-20"
+    policy_pool = parse_policy_pool(pool_spec, len(policy_lines))
+
+    ks = list(args.ks)
+    if ks == DEFAULT_KS:
+        ks = list(DEFAULT_LAYER_PROBE_KS)
+    if not ks:
+        raise HarnessError("no K values provided")
+
+    dbs = [str(d).strip() for d in (args.dbs or []) if str(d).strip()]
+    if not dbs:
+        dbs = [str(args.db).strip()]
+
+    queries = load_queries(Path(args.queries))
+    query_ids = args.query_ids if args.query_ids is not None else list(DEFAULT_LAYER_PROBE_QUERY_IDS)
+    skip_ids = set(str(x).strip() for x in (args.skip_query_ids or []))
+    skip_ids.add("20")
+    queries = filter_queries_by_args(queries, query_ids, list(skip_ids))
+
+    if str(args.run_dir).strip():
+        run_dir = Path(args.run_dir)
+        if not run_dir.is_absolute():
+            run_dir = ROOT / run_dir
+    else:
+        run_dir = ROOT / "logs" / f"layer_probe_{time.strftime('%Y%m%d_%H%M%S')}"
+    run_dir = run_dir.resolve()
+    run_dir.mkdir(parents=True, exist_ok=True)
+    run_id = run_dir.name
+
+    layer_csv = run_dir / "layer_probe.csv"
+    enabled_base = run_dir / "policies_enabled.txt"
+    summary_md = run_dir / "layer_probe_summary.md"
+
+    write_csv_header(layer_csv, LAYER_PROBE_COLUMNS)
+
+    print(f"[layer_probe] run_id={run_id} run_dir={run_dir}")
+    print(f"[layer_probe] dbs={dbs} Ks={ks} pool={pool_spec} statement_timeout_ms={statement_timeout_ms}")
+    print(f"[layer_probe] queries={[qid for qid, _ in queries]}")
+
+    out_rows: List[Dict[str, str]] = []
+
+    for db in dbs:
+        print(f"[db] start db={db}")
+        clear_artifacts(db)
+        clear_rls_indexes_and_policies(db)
+        print_clean_state(db, tag="clean_start")
+
+        for k in ks:
+            enabled_ids, enabled = select_enabled_policies(policy_lines, policy_pool, k)
+            policy_ids = ",".join(str(x) for x in enabled_ids)
+            enabled_path_k = enabled_policy_path_for_k(enabled_base, db, k)
+            print(f"[policy_set] db={db} K={k} enabled_ids={enabled_ids}")
+
+            write_enabled_policy_file(enabled, enabled_path_k)
+
+            clear_artifacts(db)
+            clear_rls_indexes_and_policies(db)
+            print_clean_state(db, tag=f"clean_before_k K={k}")
+
+            setup_ours_for_k_with_sizes(db, k, enabled_path_k, statement_timeout_ms)
+
+            for qid, qsql in queries:
+                print(f"[progress] db={db} K={k} baseline=ours query={qid}")
+                metrics, payload, kv, cnt_pp, notices = run_ours_profile_capture(
+                    db,
+                    qsql,
+                    enabled_path_k,
+                    statement_timeout_ms,
+                    ours_profile_rescan=False,
+                    ours_debug_mode="trace",
+                    query_id=qid,
+                    profile_k=k,
+                    profile_query=qid,
+                )
+
+                _ppq_payload, kv_pe, cnt_pe = extract_policy_profile_query(notices)
+                cnt_bundle, bundle_agg = extract_policy_profile_bundle_agg(notices)
+                load_ms_sum, _load_cnt = extract_policy_load_ms_sum(notices)
+
+                # policy_profile keys
+                def g(key: str) -> str:
+                    return kv.get(key, "")
+
+                rows_seen = 0
+                rows_passed = 0
+                try:
+                    rows_seen = int(float(g("rows_seen") or 0))
+                    rows_passed = int(float(g("rows_passed") or 0))
+                except Exception:
+                    pass
+                rows_filtered = max(0, rows_seen - rows_passed)
+
+                rss_kb = 0
+                try:
+                    rss_kb = int(float(g("peak_rss_kb_end") or 0))
+                except Exception:
+                    rss_kb = 0
+                if rss_kb <= 0:
+                    rss_kb = int(metrics.peak_rss_kb or 0)
+                rss_mb = float(rss_kb) / 1024.0 if rss_kb else 0.0
+
+                row = {
+                    "run_id": run_id,
+                    "ts": now_ts(),
+                    "db": db,
+                    "K": str(k),
+                    "query_id": str(qid),
+                    "policy_total_ms": g("policy_total_ms"),
+                    "artifact_load_ms": g("artifact_load_ms"),
+                    "artifact_parse_ms": g("artifact_parse_ms"),
+                    "ctid_map_ms": g("ctid_map_ms"),
+                    "filter_ms": g("filter_ms"),
+                    "child_exec_ms": g("child_exec_ms"),
+                    "ctid_extract_ms": g("ctid_extract_ms"),
+                    "ctid_to_rid_ms": g("ctid_to_rid_ms"),
+                    "allow_check_ms": g("allow_check_ms"),
+                    "projection_ms": g("projection_ms"),
+                    "rss_mb": f"{rss_mb:.3f}",
+                    "rows_filtered": str(rows_filtered),
+                    "rows_returned": str(rows_passed),
+                    "pe_total_ms": kv_pe.get("total_ms", ""),
+                    "pe_load_ms": f"{load_ms_sum:.3f}" if load_ms_sum > 0 else "",
+                    "pe_local_ms": kv_pe.get("local_ms", ""),
+                    "pe_prop_ms": kv_pe.get("prop_ms", ""),
+                    "pe_decode_ms": kv_pe.get("decode_ms", ""),
+                    "local_stamp_ms": f"{bundle_agg['local_stamp_ms']:.3f}",
+                    "local_bin_ms": f"{bundle_agg['local_bin_ms']:.3f}",
+                    "local_eval_ms": f"{bundle_agg['local_eval_ms']:.3f}",
+                    "local_fill_ms": f"{bundle_agg['local_fill_ms']:.3f}",
+                    "prop_ms_bundle": f"{bundle_agg['prop_ms_bundle']:.3f}",
+                    "status": metrics.status,
+                    "error_type": metrics.error_type,
+                    "error_msg": metrics.error_msg,
+                    "policy_profile_lines": str(cnt_pp),
+                    "policy_profile_query_lines": str(cnt_pe),
+                    "policy_profile_bundle_lines": str(cnt_bundle),
+                }
+
+                append_csv_row(layer_csv, LAYER_PROBE_COLUMNS, row)
+                out_rows.append(row)
+
+            clear_artifacts(db)
+            print_clean_state(db, tag=f"after_ours_drop K={k}")
+
+        print(f"[db] done db={db}")
+
+    write_layer_probe_summary(out_rows, summary_md)
+    print(f"[done] run_dir={run_dir}")
+    print(f"[done] layer_probe_csv={layer_csv}")
+    print(f"[done] layer_probe_summary={summary_md}")
+
+
 def write_csv_header(path: Path, columns: Sequence[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as f:
@@ -2405,8 +2771,6 @@ def run_experiment(args: argparse.Namespace) -> None:
 
 def main() -> None:
     args = parse_args()
-    if not args.run:
-        raise HarnessError("Use --run")
     if args.smoke_only and not args.smoke_check:
         raise HarnessError("--smoke-only requires --smoke-check")
 
@@ -2414,6 +2778,14 @@ def main() -> None:
     global CUSTOM_FILTER_SO, ARTIFACT_BUILDER_SO
     CUSTOM_FILTER_SO = str(args.custom_filter_so)
     ARTIFACT_BUILDER_SO = str(args.artifact_builder_so)
+
+    if args.layer_probe:
+        run_layer_probe(args)
+        return
+
+    if args.matrix_tpch_scale:
+        run_matrix_tpch_scale(args)
+        return
 
     policy_lines = load_policy_lines(Path(args.policy))
     policy_pool = parse_policy_pool(args.policy_pool, len(policy_lines))
@@ -2430,12 +2802,11 @@ def main() -> None:
             Path(args.policies_enabled),
             timeout_ms,
         )
-        if args.smoke_only:
+        if args.smoke_only or not args.run:
             return
 
-    if args.matrix_tpch_scale:
-        run_matrix_tpch_scale(args)
-        return
+    if not args.run:
+        raise HarnessError("Use --run")
 
     run_experiment(args)
 
