@@ -734,18 +734,7 @@ def apply_rls_policies_for_k(db: str, enabled_policy_lines: Sequence[str]) -> No
         with conn.cursor() as cur:
             cur.execute("GRANT USAGE, CREATE ON SCHEMA public TO rls_user;")
             cur.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO rls_user;")
-            cur.execute("SET LOCAL search_path TO public, pg_catalog")
-            for t in TABLES:
-                cur.execute(sql.SQL("ALTER TABLE {} DISABLE ROW LEVEL SECURITY;").format(sql.Identifier(t)))
-                # Drop any harness-managed policies.
-                cur.execute(
-                    "SELECT policyname FROM pg_policies WHERE schemaname='public' AND tablename=%s AND policyname LIKE 'cf_%%';",
-                    [t],
-                )
-                for (pname,) in cur.fetchall():
-                    cur.execute(
-                        sql.SQL("DROP POLICY IF EXISTS {} ON {};").format(sql.Identifier(pname), sql.Identifier(t))
-                    )
+            drop_harness_policies_and_disable_rls(cur)
             for tgt in sorted(by_target.keys()):
                 cur.execute(sql.SQL("ALTER TABLE {} ENABLE ROW LEVEL SECURITY;").format(sql.Identifier(tgt)))
                 for name, permissive, pred in by_target[tgt]:
@@ -770,6 +759,40 @@ def drop_harness_indexes(cur) -> None:
         cur.execute(sql.SQL("DROP INDEX IF EXISTS public.{};").format(sql.Identifier(n)))
     for n in KNOWN_OLD_INDEXES:
         cur.execute(sql.SQL("DROP INDEX IF EXISTS public.{};").format(sql.Identifier(n)))
+
+
+def drop_harness_policies_and_disable_rls(cur) -> None:
+    cur.execute("SET LOCAL search_path TO public, pg_catalog")
+    for t in TABLES:
+        cur.execute(sql.SQL("ALTER TABLE {} DISABLE ROW LEVEL SECURITY;").format(sql.Identifier(t)))
+        cur.execute(
+            "SELECT policyname FROM pg_policies WHERE schemaname='public' AND tablename=%s AND policyname LIKE 'cf_%%';",
+            [t],
+        )
+        for (pname,) in cur.fetchall():
+            cur.execute(
+                sql.SQL("DROP POLICY IF EXISTS {} ON {};").format(sql.Identifier(pname), sql.Identifier(t))
+            )
+
+
+def clear_artifacts(db: str) -> None:
+    conn = connect(db, "postgres")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS public.files (name varchar, file bytea);")
+            cur.execute("TRUNCATE public.files;")
+    finally:
+        conn.close()
+
+
+def clear_rls_indexes_and_policies(db: str) -> None:
+    conn = connect(db, "postgres")
+    try:
+        with conn.cursor() as cur:
+            drop_harness_indexes(cur)
+            drop_harness_policies_and_disable_rls(cur)
+    finally:
+        conn.close()
 
 
 def create_rls_indexes_for_k(
@@ -1637,14 +1660,28 @@ def run_experiment(args: argparse.Namespace) -> None:
 
     for db in dbs:
         print(f"[db] start db={db}")
+        clear_artifacts(db)
+        clear_rls_indexes_and_policies(db)
+        print(f"[phase] db={db} clean_start artifacts=0 indexes=0")
         for k in args.ks:
             enabled_ids, enabled = select_enabled_policies(policy_lines, policy_pool, k)
             enabled_path_k = enabled_policy_path_for_k(enabled_path, db, k)
             policy_ids = ",".join(str(x) for x in enabled_ids)
             print(f"[policy_set] db={db} K={k} enabled_ids={enabled_ids}")
             write_enabled_policy_file(enabled, enabled_path_k)
+            clear_artifacts(db)
+            clear_rls_indexes_and_policies(db)
+            print(f"[phase] db={db} K={k} clean_before_k artifacts=0 indexes=0")
 
-            # setup ours
+            correctness_queries = choose_correctness_queries(queries, args.correctness_sample, rng)
+            correctness_qids = {qid for qid, _ in correctness_queries}
+            ours_counts: Dict[str, Optional[int]] = {}
+            rls_counts: Dict[str, Optional[int]] = {}
+            ours_count_err: Dict[str, str] = {}
+            rls_count_err: Dict[str, str] = {}
+            print(f"[correctness_sample] db={db} K={k} queries={[qid for qid, _ in correctness_queries]}")
+
+            # OURS phase: build artifacts -> run all queries.
             ours_setup_ms, ours_disk = setup_ours_for_k(db, k, enabled_path_k, statement_timeout_ms)
             append_csv_row(
                 times_csv,
@@ -1678,7 +1715,47 @@ def run_experiment(args: argparse.Namespace) -> None:
                 },
             )
 
-            # setup rls + index
+            for qid, qsql in queries:
+                print(f"[progress] db={db} K={k} baseline=ours query={qid}")
+                cold, hots = run_query_series(
+                    db, "ours", qsql, hot_runs, enabled_path_k, statement_timeout_ms, query_id=qid
+                )
+                row = build_time_row(db, k, policy_ids, "ours", qid, cold, hots, expected_hot=hot_runs)
+                append_csv_row(times_csv, TIMES_COLUMNS, row)
+
+                prof_metrics, prof_payload, prof_kv, prof_cnt, notices = run_ours_profile_capture(
+                    db,
+                    qsql,
+                    enabled_path_k,
+                    statement_timeout_ms,
+                    ours_profile_rescan=bool(args.ours_profile_rescan),
+                    ours_debug_mode=str(args.profile_debug_mode),
+                    query_id=qid,
+                )
+                prow = build_profile_row(
+                    db, k, policy_ids, qid, prof_metrics, prof_payload, prof_kv, prof_cnt
+                )
+                append_csv_row(profile_csv, PROFILE_COLUMNS, prow)
+                if args.dump_ours_notices and notices:
+                    out_path = profile_csv.parent / f"ours_notices_db={db}_K={k}_q={qid}.txt"
+                    out_path.write_text("\n".join(notices) + "\n", encoding="utf-8")
+
+                if qid in correctness_qids:
+                    fb = count_fallback_sql(qid)
+                    try:
+                        if fb is not None:
+                            oc = count_query_sql(db, "ours", fb, enabled_path_k, statement_timeout_ms)
+                        else:
+                            oc = count_query(db, "ours", qsql, enabled_path_k, statement_timeout_ms)
+                        ours_counts[qid] = oc
+                    except Exception as exc:  # noqa: BLE001
+                        ours_counts[qid] = None
+                        ours_count_err[qid] = str(exc).replace("\n", " ")[:160]
+
+            clear_artifacts(db)
+            print(f"[phase] db={db} K={k} artifacts_dropped=1")
+
+            # RLS phase: build indexes -> run all queries.
             apply_rls_policies_for_k(db, enabled)
             rls_setup_ms, rls_disk, _ = create_rls_indexes_for_k(db, k, enabled, statement_timeout_ms)
             append_csv_row(
@@ -1713,39 +1790,62 @@ def run_experiment(args: argparse.Namespace) -> None:
                 },
             )
 
-            correctness_queries = choose_correctness_queries(queries, args.correctness_sample, rng)
-            print(f"[correctness_sample] db={db} K={k} queries={[qid for qid, _ in correctness_queries]}")
-
-            # timing + correctness per query
             for qid, qsql in queries:
-                for baseline in ["ours", "rls_with_index"]:
-                    print(f"[progress] db={db} K={k} baseline={baseline} query={qid}")
-                    cold, hots = run_query_series(
-                        db, baseline, qsql, hot_runs, enabled_path_k, statement_timeout_ms, query_id=qid
-                    )
-                    row = build_time_row(db, k, policy_ids, baseline, qid, cold, hots, expected_hot=hot_runs)
-                    append_csv_row(times_csv, TIMES_COLUMNS, row)
-                    if baseline == "ours":
-                        prof_metrics, prof_payload, prof_kv, prof_cnt, notices = run_ours_profile_capture(
-                            db,
-                            qsql,
-                            enabled_path_k,
-                            statement_timeout_ms,
-                            ours_profile_rescan=bool(args.ours_profile_rescan),
-                            ours_debug_mode=str(args.profile_debug_mode),
-                            query_id=qid,
-                        )
-                        prow = build_profile_row(
-                            db, k, policy_ids, qid, prof_metrics, prof_payload, prof_kv, prof_cnt
-                        )
-                        append_csv_row(profile_csv, PROFILE_COLUMNS, prow)
-                        if args.dump_ours_notices and notices:
-                            out_path = profile_csv.parent / f"ours_notices_db={db}_K={k}_q={qid}.txt"
-                            out_path.write_text("\n".join(notices) + "\n", encoding="utf-8")
+                print(f"[progress] db={db} K={k} baseline=rls_with_index query={qid}")
+                cold, hots = run_query_series(
+                    db, "rls_with_index", qsql, hot_runs, enabled_path_k, statement_timeout_ms, query_id=qid
+                )
+                row = build_time_row(db, k, policy_ids, "rls_with_index", qid, cold, hots, expected_hot=hot_runs)
+                append_csv_row(times_csv, TIMES_COLUMNS, row)
 
-            # correctness for sampled queries
+                if qid in correctness_qids:
+                    fb = count_fallback_sql(qid)
+                    try:
+                        if fb is not None:
+                            rc = count_query_sql(db, "rls_with_index", fb, enabled_path_k, statement_timeout_ms)
+                        else:
+                            rc = count_query(db, "rls_with_index", qsql, enabled_path_k, statement_timeout_ms)
+                        rls_counts[qid] = rc
+                    except Exception as exc:  # noqa: BLE001
+                        rls_counts[qid] = None
+                        rls_count_err[qid] = str(exc).replace("\n", " ")[:160]
+
+            clear_rls_indexes_and_policies(db)
+            print(f"[phase] db={db} K={k} indexes_dropped=1")
+
             for qid, qsql in correctness_queries:
-                cr = compare_counts(db, k, qid, qsql, enabled_path_k, statement_timeout_ms)
+                if qid not in ours_counts or ours_counts[qid] is None:
+                    cr = {
+                        "db": db,
+                        "K": str(k),
+                        "query_id": qid,
+                        "correctness": "skip",
+                        "ours_count": "",
+                        "rls_count": "",
+                        "reason": f"ours_count_failed: {ours_count_err.get(qid, 'missing ours count')}",
+                    }
+                elif qid not in rls_counts or rls_counts[qid] is None:
+                    cr = {
+                        "db": db,
+                        "K": str(k),
+                        "query_id": qid,
+                        "correctness": "skip",
+                        "ours_count": str(ours_counts[qid]),
+                        "rls_count": "",
+                        "reason": f"rls_count_failed: {rls_count_err.get(qid, 'missing rls count')}",
+                    }
+                else:
+                    oc = int(ours_counts[qid])
+                    rc = int(rls_counts[qid])
+                    cr = {
+                        "db": db,
+                        "K": str(k),
+                        "query_id": qid,
+                        "correctness": "1" if oc == rc else "0",
+                        "ours_count": str(oc),
+                        "rls_count": str(rc),
+                        "reason": "" if oc == rc else "count_mismatch",
+                    }
                 append_csv_row(correctness_csv, CORRECTNESS_COLUMNS, cr)
 
         print(f"[db] done db={db}")

@@ -1,0 +1,24 @@
+[db] start db=tpch0_1
+[phase] db=tpch0_1 clean_start artifacts=0 indexes=0
+[policy_set] db=tpch0_1 K=1 enabled_ids=[1]
+[phase] db=tpch0_1 K=1 clean_before_k artifacts=0 indexes=0
+[correctness_sample] db=tpch0_1 K=1 queries=['4', '15', '18']
+[setup_ours] K=1 setup_ms=783.860 disk=10810400
+[progress] db=tpch0_1 K=1 baseline=ours query=4
+[progress] db=tpch0_1 K=1 baseline=ours query=15
+[progress] db=tpch0_1 K=1 baseline=ours query=18
+[phase] db=tpch0_1 K=1 artifacts_dropped=1
+[index_infer] K=1 specs=['lineitem.l_linestatus', 'lineitem.l_returnflag']
+[setup_rls] K=1 setup_ms=471.217 disk=8372224 indexes=['cf_rls_k1_lineitem_l_linestatus_1', 'cf_rls_k1_lineitem_l_returnflag_2']
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=4
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=15
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=18
+[phase] db=tpch0_1 K=1 indexes_dropped=1
+[db] done db=tpch0_1
+[summary] db=tpch0_1 scale=0.1 K=1 median_hot ours=271.649ms rls=150.900ms ratio=1.800 cross_ratio=1.749 disk ours=10810400 rls=8372224 median_rss ours=173524KB rls=121652KB
+[plot] matplotlib unavailable: No module named 'matplotlib'
+[done] times_csv=logs/zero_fallback_tpch0_1_20260214_072247_K1/times.csv
+[done] profile_csv=logs/zero_fallback_tpch0_1_20260214_072247_K1/profile.csv
+[done] correctness_csv=logs/zero_fallback_tpch0_1_20260214_072247_K1/correctness.csv
+[done] summary_csv=logs/zero_fallback_tpch0_1_20260214_072247_K1/summary.csv
+[done] plots_dir=logs/zero_fallback_tpch0_1_20260214_072247_K1/plots
