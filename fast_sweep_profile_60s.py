@@ -1703,7 +1703,13 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
     skip_ids.add("20")
     queries = filter_queries_by_args(queries, args.query_ids, list(skip_ids))
 
-    run_dir = Path(args.run_dir) if str(args.run_dir).strip() else (ROOT / "logs" / f"matrix_{time.strftime('%Y%m%d_%H%M%S')}")
+    if str(args.run_dir).strip():
+        run_dir = Path(args.run_dir)
+        if not run_dir.is_absolute():
+            run_dir = ROOT / run_dir
+    else:
+        run_dir = ROOT / "logs" / f"matrix_{time.strftime('%Y%m%d_%H%M%S')}"
+    run_dir = run_dir.resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
     run_id = run_dir.name
     runs_csv = run_dir / "runs.csv"
