@@ -1,0 +1,2 @@
+run_id,ts,db,K,policy_ids,ours_artifact_build_ms_total,ours_artifact_bytes_db,ours_artifact_bytes_disk,rls_index_build_ms_total,rls_index_bytes
+dashboard_probe_tpch10_20260213_235841,2026-02-14T00:03:11+05:30,tpch10,1,1,70750.157,301232095,312623104,49223.236,831438848
