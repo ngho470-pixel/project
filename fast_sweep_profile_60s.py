@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import json
 import os
 import random
 import re
@@ -8,6 +9,7 @@ import statistics
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -31,6 +33,8 @@ ARTIFACT_BUILDER_SO = str(ROOT / "artifact_builder" / "artifact_builder.so")
 
 DEFAULT_KS = [1, 5, 10, 11]
 DEFAULT_POLICY_POOL = "1-5,10-15"
+DEFAULT_MATRIX_KS = [1, 5, 10, 15, 20]
+DEFAULT_MATRIX_DBS = ["tpch0_1", "tpch1", "tpch10"]
 CROSS_TABLE_QUERY_IDS = {"3", "5", "7", "8", "10", "12", "13", "18", "22"}
 
 ROLE_CONFIG = {
@@ -166,6 +170,42 @@ PROFILE_COLUMNS = [
     "profile_line",
 ]
 
+DASH_RUNS_COLUMNS = [
+    "run_id",
+    "ts",
+    "db",
+    "K",
+    "policy_ids",
+    "baseline",
+    "query_id",
+    "warmup_runs",
+    "timed_runs",
+    "planning_ms",
+    "execution_ms",
+    "total_ms",
+    "peak_rss_mb",
+    "status",
+    "error_type",
+    "error_msg",
+    "result_count",
+    "ours_count",
+    "rls_count",
+    "correctness",
+]
+
+DASH_BUILD_COLUMNS = [
+    "run_id",
+    "ts",
+    "db",
+    "K",
+    "policy_ids",
+    "ours_artifact_build_ms_total",
+    "ours_artifact_bytes_db",
+    "ours_artifact_bytes_disk",
+    "rls_index_build_ms_total",
+    "rls_index_bytes",
+]
+
 
 class HarnessError(Exception):
     pass
@@ -211,6 +251,18 @@ class RunMetrics:
     error_msg: str
 
 
+@dataclass
+class ExplainMetrics:
+    planning_ms: float
+    execution_ms: float
+    total_ms: float
+    wall_ms: float
+    peak_rss_kb: int
+    status: str
+    error_type: str
+    error_msg: str
+
+
 def make_error_metrics(error_type: str, error_msg: str, elapsed_ms: float = 0.0) -> RunMetrics:
     return RunMetrics(
         elapsed_ms=float(elapsed_ms),
@@ -224,6 +276,13 @@ def make_error_metrics(error_type: str, error_msg: str, elapsed_ms: float = 0.0)
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Stage S2.5 policy-scaling stress harness")
     p.add_argument("--run", action="store_true", help="Run experiment")
+    p.add_argument(
+        "--matrix-tpch-scale",
+        "--matrix_tpch_scale",
+        dest="matrix_tpch_scale",
+        action="store_true",
+        help="Run the 4-metric dashboard matrix (dbs=tpch0_1,tpch1,tpch10; K=1,5,10,15,20; pool=1-20; skip q20)",
+    )
     p.add_argument("--smoke-check", action="store_true", help="Run smoke check (K=11 pool-full, q3/q13, hot=2)")
     p.add_argument("--smoke-only", action="store_true", help="Run smoke check only, then exit")
     p.add_argument("--db", default=DEFAULT_DB)
@@ -231,6 +290,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ks", nargs="*", type=int, default=DEFAULT_KS)
     p.add_argument("--policy-pool", default=DEFAULT_POLICY_POOL, help="Policy ID pool, e.g. 1-5,10-15")
     p.add_argument("--hot-runs", type=int, default=5)
+    p.add_argument("--warmup-runs", type=int, default=1, help="Warm-up runs (not recorded) per query in matrix mode")
+    p.add_argument("--timed-runs", type=int, default=3, help="Timed runs per query in matrix mode (median recorded)")
+    p.add_argument("--run-dir", default="", help="Output run directory (default: logs/matrix_<ts>)")
     p.add_argument("--statement-timeout", default="0", help="statement_timeout (e.g. 0, 300000, 30min, 1800s)")
     p.add_argument("--custom-filter-so", default=CUSTOM_FILTER_SO, help="Path to custom_filter.so (backend must be able to read)")
     p.add_argument(
@@ -376,6 +438,58 @@ def execute_with_rss(cur, sql_text: str) -> RunMetrics:
         status=status,
         error_type=error_type,
         error_msg=error_msg,
+    )
+
+
+def execute_with_rss_fetchall(cur, sql_text: str) -> Tuple[RunMetrics, List[Tuple]]:
+    t0 = time.perf_counter()
+    try:
+        cur.execute("SELECT pg_backend_pid()")
+        pid = int(cur.fetchone()[0])
+    except Exception as exc:  # noqa: BLE001
+        msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
+        etype, emsg = classify_error(exc, msg)
+        return make_error_metrics(etype, emsg, elapsed_ms=(time.perf_counter() - t0) * 1000.0), []
+
+    stop_evt = threading.Event()
+    peak_rss_kb = 0
+
+    def sampler() -> None:
+        nonlocal peak_rss_kb
+        while not stop_evt.is_set():
+            rss = read_rss_kb(pid)
+            if rss > peak_rss_kb:
+                peak_rss_kb = rss
+            time.sleep(0.03)
+
+    t = threading.Thread(target=sampler, daemon=True)
+    t.start()
+
+    status = "ok"
+    error_type = ""
+    error_msg = ""
+    rows: List[Tuple] = []
+    try:
+        cur.execute(sql_text)
+        if cur.description is not None:
+            rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001
+        status = "error"
+        msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
+        error_type, error_msg = classify_error(exc, msg)
+    finally:
+        stop_evt.set()
+        t.join(timeout=1)
+
+    return (
+        RunMetrics(
+            elapsed_ms=(time.perf_counter() - t0) * 1000.0,
+            peak_rss_kb=int(peak_rss_kb),
+            status=status,
+            error_type=error_type,
+            error_msg=error_msg,
+        ),
+        rows,
     )
 
 
@@ -1267,6 +1381,28 @@ def count_fallback_sql(query_id: str) -> Optional[str]:
     return None
 
 
+def timing_fallback_sql(query_id: str) -> Optional[str]:
+    # For matrix runs we need single-statement EXPLAIN-able SQL.
+    if str(query_id) == "15":
+        return (
+            "WITH revenue0 AS ("
+            "  SELECT l_suppkey AS supplier_no, SUM(l_extendedprice * (1 - l_discount)) AS total_revenue "
+            "  FROM lineitem "
+            "  WHERE l_shipdate >= DATE '1996-10-01' "
+            "    AND l_shipdate < DATE '1996-10-01' + INTERVAL '3' month "
+            "  GROUP BY l_suppkey"
+            "), maxrev AS ("
+            "  SELECT MAX(total_revenue) AS max_total_revenue FROM revenue0"
+            ") "
+            "SELECT s_suppkey, s_name, s_address, s_phone, total_revenue "
+            "FROM supplier, revenue0, maxrev "
+            "WHERE s_suppkey = supplier_no "
+            "  AND total_revenue = max_total_revenue "
+            "ORDER BY s_suppkey;"
+        )
+    return None
+
+
 def count_query_sql(db: str, baseline: str, sql_text: str, enabled_path: Path, statement_timeout_ms: int) -> int:
     role = "postgres" if baseline == "ours" else "rls_user"
     conn = connect(db, role)
@@ -1345,6 +1481,407 @@ def compare_counts(db: str, k: int, qid: str, qsql: str, enabled_path: Path, sta
         "rls_count": str(rc),
         "reason": "" if oc == rc else "count_mismatch",
     }
+
+
+def now_ts() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def get_clean_state(cur) -> Dict[str, int]:
+    # Return invariants to ensure phased runs don't leak state across K/baselines.
+    cur.execute("CREATE TABLE IF NOT EXISTS public.files (name varchar, file bytea);")
+    cur.execute("SELECT COUNT(*), COALESCE(SUM(pg_column_size(file)), 0) FROM public.files;")
+    artifact_rows, artifact_bytes_db = cur.fetchone()
+    cur.execute("SELECT COALESCE(pg_total_relation_size('public.files'::regclass), 0);")
+    artifact_bytes_disk = int(cur.fetchone()[0] or 0)
+    cur.execute("SELECT COUNT(*) FROM pg_indexes WHERE schemaname='public' AND indexname LIKE 'cf_rls_k%';")
+    idx_cnt = int(cur.fetchone()[0] or 0)
+    cur.execute("SELECT COUNT(*) FROM pg_policies WHERE schemaname='public' AND policyname LIKE 'cf_%';")
+    pol_cnt = int(cur.fetchone()[0] or 0)
+    return {
+        "artifact_rows": int(artifact_rows or 0),
+        "artifact_bytes_db": int(artifact_bytes_db or 0),
+        "artifact_bytes_disk": int(artifact_bytes_disk or 0),
+        "harness_index_count": idx_cnt,
+        "harness_policy_count": pol_cnt,
+    }
+
+
+def print_clean_state(db: str, tag: str) -> None:
+    conn = connect(db, "postgres")
+    try:
+        with conn.cursor() as cur:
+            st = get_clean_state(cur)
+            print(
+                f"[clean_state] tag={tag} db={db} "
+                f"artifacts_rows={st['artifact_rows']} artifacts_bytes_db={st['artifact_bytes_db']} "
+                f"artifacts_bytes_disk={st['artifact_bytes_disk']} "
+                f"indexes={st['harness_index_count']} policies={st['harness_policy_count']}"
+            )
+    finally:
+        conn.close()
+
+
+def explain_analyze_json(cur, query_sql: str) -> ExplainMetrics:
+    q = query_sql.strip()
+    if q.endswith(";"):
+        q = q[:-1].rstrip()
+    explain_sql = f"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {q};"
+    run, rows = execute_with_rss_fetchall(cur, explain_sql)
+    if run.status != "ok":
+        return ExplainMetrics(
+            planning_ms=0.0,
+            execution_ms=0.0,
+            total_ms=0.0,
+            wall_ms=float(run.elapsed_ms),
+            peak_rss_kb=int(run.peak_rss_kb),
+            status=run.status,
+            error_type=run.error_type,
+            error_msg=run.error_msg,
+        )
+    if not rows or not rows[0]:
+        return ExplainMetrics(
+            planning_ms=0.0,
+            execution_ms=0.0,
+            total_ms=0.0,
+            wall_ms=float(run.elapsed_ms),
+            peak_rss_kb=int(run.peak_rss_kb),
+            status="error",
+            error_type="explain_parse",
+            error_msg="EXPLAIN returned no rows",
+        )
+    cell = rows[0][0]
+    try:
+        doc = cell if isinstance(cell, (list, dict)) else json.loads(str(cell))
+        top = doc[0] if isinstance(doc, list) and doc else doc
+        planning_ms = float(top.get("Planning Time", 0.0))
+        execution_ms = float(top.get("Execution Time", 0.0))
+        total_ms = planning_ms + execution_ms
+        return ExplainMetrics(
+            planning_ms=planning_ms,
+            execution_ms=execution_ms,
+            total_ms=total_ms,
+            wall_ms=float(run.elapsed_ms),
+            peak_rss_kb=int(run.peak_rss_kb),
+            status="ok",
+            error_type="",
+            error_msg="",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return ExplainMetrics(
+            planning_ms=0.0,
+            execution_ms=0.0,
+            total_ms=0.0,
+            wall_ms=float(run.elapsed_ms),
+            peak_rss_kb=int(run.peak_rss_kb),
+            status="error",
+            error_type="explain_parse",
+            error_msg=str(exc).replace("\n", " ")[:240],
+        )
+
+
+def measure_explain_median_in_session(
+    cur,
+    query_sql: str,
+    warmup_runs: int,
+    timed_runs: int,
+) -> ExplainMetrics:
+    if warmup_runs < 0 or timed_runs < 1:
+        raise HarnessError("warmup_runs must be >= 0 and timed_runs must be >= 1")
+
+    # Warm-ups are still EXPLAIN ANALYZE executions; discard metrics.
+    for _ in range(warmup_runs):
+        m = explain_analyze_json(cur, query_sql)
+        if m.status != "ok":
+            return m
+
+    trials: List[ExplainMetrics] = []
+    for _ in range(timed_runs):
+        m = explain_analyze_json(cur, query_sql)
+        if m.status != "ok":
+            return m
+        trials.append(m)
+
+    planning = statistics.median([t.planning_ms for t in trials]) if trials else 0.0
+    execution = statistics.median([t.execution_ms for t in trials]) if trials else 0.0
+    total = statistics.median([t.total_ms for t in trials]) if trials else 0.0
+    wall = statistics.median([t.wall_ms for t in trials]) if trials else 0.0
+    peak = int(statistics.median([t.peak_rss_kb for t in trials])) if trials else 0
+    return ExplainMetrics(
+        planning_ms=float(planning),
+        execution_ms=float(execution),
+        total_ms=float(total),
+        wall_ms=float(wall),
+        peak_rss_kb=int(peak),
+        status="ok",
+        error_type="",
+        error_msg="",
+    )
+
+
+def result_count_in_session(cur, query_id: str, query_sql: str) -> int:
+    fb = count_fallback_sql(query_id)
+    if fb is not None:
+        cur.execute(fb)
+        return int(cur.fetchone()[0])
+
+    wrapped = count_wrapper(query_sql)
+    if wrapped is None:
+        raise HarnessError(f"cannot count-wrap query_id={query_id} (and no fallback exists)")
+    cur.execute(wrapped)
+    return int(cur.fetchone()[0])
+
+
+def timing_sql_for_query(query_id: str, query_sql: str) -> str:
+    fb = timing_fallback_sql(query_id)
+    if fb is not None:
+        return fb
+    if is_single_select(query_sql):
+        return query_sql
+    raise HarnessError(f"query_id={query_id} is not EXPLAIN-able (multi-statement and no timing fallback)")
+
+
+def setup_ours_for_k_with_sizes(db: str, k: int, enabled_path: Path, statement_timeout_ms: int) -> Tuple[float, int, int]:
+    conn = connect(db, "postgres")
+    try:
+        with conn.cursor() as cur:
+            apply_timing_session_settings(cur, statement_timeout_ms)
+            dump_ast = os.getenv("CF_DUMP_POLICY_AST", "0") == "1"
+            if dump_ast:
+                cur.execute(f"LOAD '{CUSTOM_FILTER_SO}';")
+                cur.execute("SET custom_filter.debug_mode = trace;")
+                cur.execute("SET client_min_messages = notice;")
+            cur.execute("CREATE TABLE IF NOT EXISTS public.files (name varchar, file bytea);")
+            ensure_build_base_function(cur)
+            cur.execute("TRUNCATE public.files;")
+            t0 = time.perf_counter()
+            cur.execute("SELECT public.build_base(%s);", [str(enabled_path)])
+            if dump_ast:
+                maybe_dump_policy_ast_notices(conn, f"setup_ours db={db} k={k}")
+            setup_ms = (time.perf_counter() - t0) * 1000.0
+            cur.execute("SELECT COALESCE(SUM(pg_column_size(file)), 0) FROM public.files;")
+            bytes_db = int(cur.fetchone()[0] or 0)
+            cur.execute("SELECT COALESCE(pg_total_relation_size('public.files'::regclass), 0);")
+            bytes_disk = int(cur.fetchone()[0] or 0)
+    finally:
+        conn.close()
+    print(
+        f"[setup_ours] K={k} setup_ms={setup_ms:.3f} "
+        f"artifact_bytes_db={bytes_db} artifact_bytes_disk={bytes_disk}"
+    )
+    return setup_ms, bytes_db, bytes_disk
+
+
+def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
+    statement_timeout_ms = parse_timeout_ms(args.statement_timeout)
+    warmup_runs = int(args.warmup_runs)
+    timed_runs = int(args.timed_runs)
+    if warmup_runs < 0:
+        raise HarnessError("--warmup-runs must be >= 0")
+    if timed_runs < 1:
+        raise HarnessError("--timed-runs must be >= 1")
+
+    policy_lines = load_policy_lines(Path(args.policy))
+    pool_spec = args.policy_pool
+    if pool_spec == DEFAULT_POLICY_POOL:
+        pool_spec = "1-20"
+    policy_pool = parse_policy_pool(pool_spec, len(policy_lines))
+
+    ks = list(args.ks)
+    if ks == DEFAULT_KS:
+        ks = list(DEFAULT_MATRIX_KS)
+    if not ks:
+        raise HarnessError("no K values provided")
+
+    dbs = [str(d).strip() for d in (args.dbs or []) if str(d).strip()]
+    if not dbs:
+        dbs = list(DEFAULT_MATRIX_DBS)
+
+    queries = load_queries(Path(args.queries))
+    # Always skip q20 for this mode (can still further filter via args).
+    skip_ids = set(str(x).strip() for x in (args.skip_query_ids or []))
+    skip_ids.add("20")
+    queries = filter_queries_by_args(queries, args.query_ids, list(skip_ids))
+
+    run_dir = Path(args.run_dir) if str(args.run_dir).strip() else (ROOT / "logs" / f"matrix_{time.strftime('%Y%m%d_%H%M%S')}")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    run_id = run_dir.name
+    runs_csv = run_dir / "runs.csv"
+    build_csv = run_dir / "build.csv"
+    enabled_base = run_dir / "policies_enabled.txt"
+
+    write_csv_header(runs_csv, DASH_RUNS_COLUMNS)
+    write_csv_header(build_csv, DASH_BUILD_COLUMNS)
+
+    print(f"[matrix] run_id={run_id} run_dir={run_dir}")
+    print(f"[matrix] dbs={dbs} Ks={ks} pool={pool_spec} warmup_runs={warmup_runs} timed_runs={timed_runs}")
+    print(f"[matrix] queries={[qid for qid, _ in queries]}")
+
+    for db in dbs:
+        print(f"[db] start db={db}")
+        clear_artifacts(db)
+        clear_rls_indexes_and_policies(db)
+        print_clean_state(db, tag="clean_start")
+
+        for k in ks:
+            enabled_ids, enabled = select_enabled_policies(policy_lines, policy_pool, k)
+            policy_ids = ",".join(str(x) for x in enabled_ids)
+            enabled_path_k = enabled_policy_path_for_k(enabled_base, db, k)
+            print(f"[policy_set] db={db} K={k} enabled_ids={enabled_ids}")
+
+            write_enabled_policy_file(enabled, enabled_path_k)
+            clear_artifacts(db)
+            clear_rls_indexes_and_policies(db)
+            print_clean_state(db, tag=f"clean_before_k K={k}")
+
+            # OURS phase.
+            ours_setup_ms, ours_bytes_db, ours_bytes_disk = setup_ours_for_k_with_sizes(
+                db, k, enabled_path_k, statement_timeout_ms
+            )
+
+            ours_metrics: Dict[str, ExplainMetrics] = {}
+            ours_counts: Dict[str, Optional[int]] = {}
+            conn_o = connect(db, "postgres")
+            try:
+                with conn_o.cursor() as cur:
+                    set_session_for_baseline(cur, "ours", enabled_path_k, statement_timeout_ms, ours_debug_mode="off")
+                    for qid, qsql in queries:
+                        print(f"[progress] db={db} K={k} baseline=ours query={qid}")
+                        timing_sql = timing_sql_for_query(qid, qsql)
+                        m = measure_explain_median_in_session(cur, timing_sql, warmup_runs, timed_runs)
+                        ours_metrics[qid] = m
+                        if m.status == "ok":
+                            try:
+                                ours_counts[qid] = result_count_in_session(cur, qid, qsql)
+                            except Exception as exc:  # noqa: BLE001
+                                ours_counts[qid] = None
+                                ours_metrics[qid] = ExplainMetrics(
+                                    planning_ms=m.planning_ms,
+                                    execution_ms=m.execution_ms,
+                                    total_ms=m.total_ms,
+                                    wall_ms=m.wall_ms,
+                                    peak_rss_kb=m.peak_rss_kb,
+                                    status="error",
+                                    error_type="count_error",
+                                    error_msg=str(exc).replace("\n", " ")[:240],
+                                )
+                        else:
+                            ours_counts[qid] = None
+            finally:
+                conn_o.close()
+
+            clear_artifacts(db)
+            print_clean_state(db, tag=f"after_ours_drop K={k}")
+
+            # RLS phase.
+            apply_rls_policies_for_k(db, enabled)
+            rls_setup_ms, rls_index_bytes, _idxs = create_rls_indexes_for_k(db, k, enabled, statement_timeout_ms)
+
+            rls_metrics: Dict[str, ExplainMetrics] = {}
+            rls_counts: Dict[str, Optional[int]] = {}
+            conn_r = connect(db, "rls_user")
+            try:
+                with conn_r.cursor() as cur:
+                    set_session_for_baseline(cur, "rls_with_index", enabled_path_k, statement_timeout_ms)
+                    cur.execute("SET row_security = on;")
+                    for qid, qsql in queries:
+                        print(f"[progress] db={db} K={k} baseline=rls_with_index query={qid}")
+                        timing_sql = timing_sql_for_query(qid, qsql)
+                        m = measure_explain_median_in_session(cur, timing_sql, warmup_runs, timed_runs)
+                        rls_metrics[qid] = m
+                        if m.status == "ok":
+                            try:
+                                rls_counts[qid] = result_count_in_session(cur, qid, qsql)
+                            except Exception as exc:  # noqa: BLE001
+                                rls_counts[qid] = None
+                                rls_metrics[qid] = ExplainMetrics(
+                                    planning_ms=m.planning_ms,
+                                    execution_ms=m.execution_ms,
+                                    total_ms=m.total_ms,
+                                    wall_ms=m.wall_ms,
+                                    peak_rss_kb=m.peak_rss_kb,
+                                    status="error",
+                                    error_type="count_error",
+                                    error_msg=str(exc).replace("\n", " ")[:240],
+                                )
+                        else:
+                            rls_counts[qid] = None
+            finally:
+                conn_r.close()
+
+            clear_rls_indexes_and_policies(db)
+            print_clean_state(db, tag=f"after_rls_drop K={k}")
+
+            # Build row (one per db,K).
+            b_row = {
+                "run_id": run_id,
+                "ts": now_ts(),
+                "db": db,
+                "K": str(k),
+                "policy_ids": policy_ids,
+                "ours_artifact_build_ms_total": f"{ours_setup_ms:.3f}",
+                "ours_artifact_bytes_db": str(ours_bytes_db),
+                "ours_artifact_bytes_disk": str(ours_bytes_disk),
+                "rls_index_build_ms_total": f"{rls_setup_ms:.3f}",
+                "rls_index_bytes": str(rls_index_bytes),
+            }
+            append_csv_row(build_csv, DASH_BUILD_COLUMNS, b_row)
+
+            # Runs rows (two per db,K,query).
+            for qid, _qsql in queries:
+                oc = ours_counts.get(qid)
+                rc = rls_counts.get(qid)
+                correctness = ""
+                if oc is None or rc is None:
+                    correctness = "skip"
+                else:
+                    correctness = "1" if int(oc) == int(rc) else "0"
+
+                for baseline, m, cnt in [
+                    ("ours", ours_metrics.get(qid), oc),
+                    ("rls_with_index", rls_metrics.get(qid), rc),
+                ]:
+                    if m is None:
+                        m = ExplainMetrics(
+                            planning_ms=0.0,
+                            execution_ms=0.0,
+                            total_ms=0.0,
+                            wall_ms=0.0,
+                            peak_rss_kb=0,
+                            status="error",
+                            error_type="missing",
+                            error_msg="missing metrics",
+                        )
+                    peak_rss_mb = float(m.peak_rss_kb) / 1024.0
+                    r_row = {
+                        "run_id": run_id,
+                        "ts": now_ts(),
+                        "db": db,
+                        "K": str(k),
+                        "policy_ids": policy_ids,
+                        "baseline": baseline,
+                        "query_id": qid,
+                        "warmup_runs": str(warmup_runs),
+                        "timed_runs": str(timed_runs),
+                        "planning_ms": f"{m.planning_ms:.3f}" if m.status == "ok" else "",
+                        "execution_ms": f"{m.execution_ms:.3f}" if m.status == "ok" else "",
+                        "total_ms": f"{m.total_ms:.3f}" if m.status == "ok" else "",
+                        "peak_rss_mb": f"{peak_rss_mb:.3f}" if m.status == "ok" else "",
+                        "status": m.status,
+                        "error_type": m.error_type,
+                        "error_msg": m.error_msg,
+                        "result_count": "" if cnt is None else str(int(cnt)),
+                        "ours_count": "" if oc is None else str(int(oc)),
+                        "rls_count": "" if rc is None else str(int(rc)),
+                        "correctness": correctness,
+                    }
+                    append_csv_row(runs_csv, DASH_RUNS_COLUMNS, r_row)
+
+        print(f"[db] done db={db}")
+
+    print(f"[done] run_dir={run_dir}")
+    print(f"[done] runs_csv={runs_csv}")
+    print(f"[done] build_csv={build_csv}")
 
 
 def write_csv_header(path: Path, columns: Sequence[str]) -> None:
@@ -1889,6 +2426,10 @@ def main() -> None:
         )
         if args.smoke_only:
             return
+
+    if args.matrix_tpch_scale:
+        run_matrix_tpch_scale(args)
+        return
 
     run_experiment(args)
 
