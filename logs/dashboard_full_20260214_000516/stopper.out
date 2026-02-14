@@ -1,1 +1,1 @@
-[stopper] waiting for tpch1 K=20 in logs/dashboard_full_20260214_000516/build.csv (pid=697509)
+[stopper] started Sat Feb 14 01:48:05 IST 2026 harness_pid=697509 target_runs=421 target_build=11 interval_s=10
