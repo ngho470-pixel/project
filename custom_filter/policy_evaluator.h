@@ -36,6 +36,8 @@ typedef struct PolicyEngineInputC {
     int target_count;
     char **target_tables;
     char **target_asts;
+    char **target_perm_asts;
+    char **target_rest_asts;
     int atom_count;
     PolicyAtomC *atoms;
 } PolicyEngineInputC;
@@ -53,6 +55,8 @@ typedef struct PolicyEvalResultC {
     int target_count;
     char **target_tables;
     char **target_asts;
+    char **target_perm_asts;
+    char **target_rest_asts;
     int *target_joinclass_counts;
     int *target_joinclass_offsets;
     int *target_joinclass_ids;

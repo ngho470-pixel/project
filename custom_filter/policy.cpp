@@ -285,6 +285,13 @@ static std::string to_lower_str(const std::string &s) {
     return out;
 }
 
+static bool env_flag_enabled(const char *name) {
+    const char *v = getenv(name);
+    if (!v) return false;
+    std::string s = to_lower_str(trim_ws(v));
+    return s == "1" || s == "true" || s == "on" || s == "yes";
+}
+
 static bool debug_trace_enabled() {
     return cf_trace_enabled();
 }
@@ -914,6 +921,8 @@ struct Loaded {
     std::map<std::string, DictType> dict_types;
     std::set<std::string> target_set;
     std::map<std::string, AstNode*> target_ast;
+    std::map<std::string, AstNode*> target_perm_ast;
+    std::map<std::string, AstNode*> target_rest_ast;
     std::map<std::string, std::set<int>> target_vars;
     std::map<std::string, std::set<int>> target_join_classes;
     bool has_multi_join = false;
@@ -1041,12 +1050,24 @@ static bool load_phase(const PolicyArtifactC *arts, int art_count,
         std::string t = in->target_tables[i];
         out->target_set.insert(t);
         const char *astr = (in->target_asts && in->target_asts[i]) ? in->target_asts[i] : "";
+        const char *pstr = (in->target_perm_asts && in->target_perm_asts[i]) ? in->target_perm_asts[i] : "";
+        const char *rstr = (in->target_rest_asts && in->target_rest_asts[i]) ? in->target_rest_asts[i] : "";
         if (astr && astr[0] != '\0') {
             AstNode *node = parse_ast_string(astr);
             out->target_ast[t] = node;
             collect_ast_vars(node, out->target_vars[t]);
         } else {
             out->target_ast[t] = nullptr;
+        }
+        if (pstr && pstr[0] != '\0') {
+            out->target_perm_ast[t] = parse_ast_string(pstr);
+        } else {
+            out->target_perm_ast[t] = nullptr;
+        }
+        if (rstr && rstr[0] != '\0') {
+            out->target_rest_ast[t] = parse_ast_string(rstr);
+        } else {
+            out->target_rest_ast[t] = nullptr;
         }
     }
 
@@ -1867,7 +1888,7 @@ static void run_multi_join_contract(const Loaded &loaded)
                     vals[aid] = allow ? 1 : 0;
                 }
                 Tri res = ast ? eval_ast(ast, vals) : TRI_TRUE;
-                bool row_ok = (res != TRI_FALSE);
+                bool row_ok = (res == TRI_TRUE);
                 if (row_ok) cnt++;
                 ok[r] = row_ok ? 1 : 0;
                 for (int aid : const_ids)
@@ -2507,7 +2528,8 @@ static bool eval_bins_sat_flat(const AstNode *ast,
             const uint8_t *sig = bin_sig_flat.data() + b * nbytes;
             bool ok = true;
             for (int aid : and_vars) {
-                if (aid <= 0) continue;
+                if (aid == 0) { ok = false; break; }
+                if (aid < 0) continue;
                 if (!get_sig_bit_bytes(sig, nbytes, (size_t)(aid - 1))) { ok = false; break; }
             }
             (*allow_bin)[b] = ok ? 1 : 0;
@@ -2539,7 +2561,9 @@ static bool eval_bins_sat_flat(const AstNode *ast,
         if (!node) return ctx.slv->mkBoolean(true);
         if (node->type == AstNode::VAR) {
             int id = node->var_id;
-            if (id <= 0 || id >= (int)ctx.yvars->size())
+            if (id == 0)
+                return ctx.slv->mkBoolean(false);
+            if (id < 0 || id >= (int)ctx.yvars->size())
                 return ctx.slv->mkBoolean(true);
             return (*ctx.yvars)[id];
         }
@@ -2613,7 +2637,8 @@ static bool eval_bins_sat(const AstNode *ast, int atom_count,
     bool pure_and = ast_collect_and_vars(ast, and_vars);
 
     auto sig_bit = [&](const std::string &s, int aid) -> bool {
-        if (aid <= 0) return true;
+        if (aid == 0) return false;
+        if (aid < 0) return true;
         size_t bit = (size_t)(aid - 1);
         size_t byte = bit >> 3;
         size_t off = bit & 7;
@@ -2666,7 +2691,9 @@ static bool eval_bins_sat(const AstNode *ast, int atom_count,
         if (!node) return ctx.slv->mkBoolean(true);
         if (node->type == AstNode::VAR) {
             int id = node->var_id;
-            if (id <= 0 || id >= (int)ctx.yvars->size())
+            if (id == 0)
+                return ctx.slv->mkBoolean(false);
+            if (id < 0 || id >= (int)ctx.yvars->size())
                 return ctx.slv->mkBoolean(true);
             return (*ctx.yvars)[id];
         }
@@ -2771,10 +2798,14 @@ static bool eval_bins_sat_partial(const AstNode *ast,
                 }
             }
             bool ok = true;
-            for (size_t i = 0; i < atom_ids.size(); i++) {
-                int aid = atom_ids[i];
-                if (and_set.count(aid) == 0) continue;
-                if (!sig_bit(s, i)) { ok = false; break; }
+            if (and_set.count(0) > 0) {
+                ok = false;
+            } else {
+                for (size_t i = 0; i < atom_ids.size(); i++) {
+                    int aid = atom_ids[i];
+                    if (and_set.count(aid) == 0) continue;
+                    if (!sig_bit(s, i)) { ok = false; break; }
+                }
             }
             (*allow_bin)[b] = ok ? 1 : 0;
             if (decision_cache) (*decision_cache)[s] = (*allow_bin)[b];
@@ -2806,7 +2837,9 @@ static bool eval_bins_sat_partial(const AstNode *ast,
         if (!node) return ctx.slv->mkBoolean(true);
         if (node->type == AstNode::VAR) {
             int id = node->var_id;
-            if (id <= 0 || id >= (int)ctx.yvars->size())
+            if (id == 0)
+                return ctx.slv->mkBoolean(false);
+            if (id < 0 || id >= (int)ctx.yvars->size())
                 return ctx.slv->mkBoolean(true);
             return (*ctx.yvars)[id];
         }
@@ -3033,6 +3066,7 @@ static bool compute_local_ok_bins(const Loaded &loaded,
         return false;
     const TableInfo &ti = it_t->second;
     TableCache &tc = g_local_cache.tables[table];
+    const bool dump_atom_counts = env_flag_enabled("CF_ATOM_COUNTS") || debug_trace_enabled();
     std::vector<int> const_ids;
     std::vector<const Atom*> const_atoms;
     for (size_t i = 0; i < ti.const_atom_ids.size(); i++) {
@@ -3048,8 +3082,37 @@ static bool compute_local_ok_bins(const Loaded &loaded,
         const_atoms.push_back(ap);
     }
     if (const_ids.empty()) {
-        out_ok->clear();
-        *out_count = ti.n_rows;
+        const bool deny_all = (ast && ast->type == AstNode::VAR && ast->var_id == 0);
+        if (deny_all) {
+            out_ok->assign(ti.n_rows, 0);
+            *out_count = 0;
+        } else {
+            out_ok->clear();
+            *out_count = ti.n_rows;
+        }
+        if (dump_atom_counts) {
+            const AstNode *perm_ast = nullptr;
+            auto it_perm = loaded.target_perm_ast.find(table);
+            if (it_perm != loaded.target_perm_ast.end())
+                perm_ast = it_perm->second;
+            const AstNode *rest_ast = nullptr;
+            auto it_rest = loaded.target_rest_ast.find(table);
+            if (it_rest != loaded.target_rest_ast.end())
+                rest_ast = it_rest->second;
+            std::string ast_combined = ast ? ast_to_string_simple(ast) : "";
+            std::string ast_perm = perm_ast ? ast_to_string_simple(perm_ast) : "";
+            std::string ast_rest = rest_ast ? ast_to_string_simple(rest_ast) : "";
+            uint32 perm_cnt = perm_ast ? *out_count : 0;
+            uint32 rest_cnt = rest_ast ? *out_count : ti.n_rows;
+            elog(NOTICE,
+                 "CF_POLICY_SIDE table=%s rows=%u combined_ok=%u perm_ok=%u rest_ok=%u has_perm=%d has_rest=%d",
+                 table.c_str(), ti.n_rows, *out_count, perm_cnt, rest_cnt,
+                 perm_ast ? 1 : 0, rest_ast ? 1 : 0);
+            elog(NOTICE, "CF_POLICY_SIDE_AST table=%s combined=%s perm=%s rest=%s",
+                 table.c_str(), ast_combined.c_str(), ast_perm.c_str(), ast_rest.c_str());
+            elog(NOTICE, "CF_ATOM_COUNTS table=%s rows=%u ok=%u used_vars=%d local_const_vars=0",
+                 table.c_str(), ti.n_rows, *out_count, (int)target_vars.size());
+        }
         if (stat) {
             stat->table = table;
             stat->atoms = 0;
@@ -3147,6 +3210,15 @@ static bool compute_local_ok_bins(const Loaded &loaded,
         bin_sig_bundle.push_back(std::move(s));
     }
 
+    const AstNode *perm_ast = nullptr;
+    auto it_perm = loaded.target_perm_ast.find(table);
+    if (it_perm != loaded.target_perm_ast.end())
+        perm_ast = it_perm->second;
+    const AstNode *rest_ast = nullptr;
+    auto it_rest = loaded.target_rest_ast.find(table);
+    if (it_rest != loaded.target_rest_ast.end())
+        rest_ast = it_rest->second;
+
     std::vector<uint8_t> allow_bin;
     double sat_ms = 0.0;
     int sat_calls = 0;
@@ -3160,12 +3232,69 @@ static bool compute_local_ok_bins(const Loaded &loaded,
 
     out_ok->assign(ti.n_rows, 0);
     uint32 cnt = 0;
+    auto count_rows_for_allow_bin = [&](const std::vector<uint8_t> &bins) -> uint32 {
+        uint32 out_cnt = 0;
+        for (uint32 rr = 0; rr < ti.n_rows; rr++) {
+            int bb = tc.global.row_to_bin[rr];
+            if (bb >= 0 && bb < (int)bins.size() && bins[(size_t)bb])
+                out_cnt++;
+        }
+        return out_cnt;
+    };
     for (uint32 r = 0; r < ti.n_rows; r++) {
         int b = tc.global.row_to_bin[r];
         bool ok = (b >= 0 && b < (int)allow_bin.size() && allow_bin[(size_t)b]);
         if (ok) {
             (*out_ok)[r] = 1;
             cnt++;
+        }
+    }
+
+    uint32 perm_cnt = 0;
+    uint32 rest_cnt = ti.n_rows;
+    bool perm_present = (perm_ast != nullptr);
+    bool rest_present = (rest_ast != nullptr);
+    if (perm_present) {
+        std::vector<uint8_t> allow_perm;
+        double perm_sat_ms = 0.0;
+        int perm_sat_calls = 0;
+        int perm_cache_hits = 0;
+        std::string perm_cache_key = std::string("perm|") + build_cache_key(perm_ast, loaded, const_ids);
+        auto &perm_cache = tc.decision_cache[perm_cache_key];
+        if (!eval_bins_sat(perm_ast, atom_count, bin_sig_bundle, &perm_cache, &allow_perm,
+                           &perm_sat_ms, &perm_sat_calls, &perm_cache_hits))
+            return false;
+        perm_cnt = count_rows_for_allow_bin(allow_perm);
+    }
+    if (rest_present) {
+        std::vector<uint8_t> allow_rest;
+        double rest_sat_ms = 0.0;
+        int rest_sat_calls = 0;
+        int rest_cache_hits = 0;
+        std::string rest_cache_key = std::string("rest|") + build_cache_key(rest_ast, loaded, const_ids);
+        auto &rest_cache = tc.decision_cache[rest_cache_key];
+        if (!eval_bins_sat(rest_ast, atom_count, bin_sig_bundle, &rest_cache, &allow_rest,
+                           &rest_sat_ms, &rest_sat_calls, &rest_cache_hits))
+            return false;
+        rest_cnt = count_rows_for_allow_bin(allow_rest);
+    }
+
+    std::map<int, uint64_t> atom_true_counts;
+    if (dump_atom_counts) {
+        for (int aid : const_ids)
+            atom_true_counts[aid] = 0;
+        for (size_t b = 0; b < n_bins; b++) {
+            const uint8_t *gsig = tc.global.bin_sig_flat.data() + b * tc.global.nbytes;
+            uint64_t rows_in_bin = (b < tc.global.hist.size()) ? (uint64_t) tc.global.hist[b] : 0;
+            if (rows_in_bin == 0)
+                continue;
+            for (int aid : const_ids) {
+                int gidx = (aid >= 0 && aid < (int)atom_to_global.size()) ? atom_to_global[aid] : -1;
+                if (gidx < 0)
+                    continue;
+                if (get_sig_bit_bytes(gsig, tc.global.nbytes, (size_t)gidx))
+                    atom_true_counts[aid] += rows_in_bin;
+            }
         }
     }
     auto t5 = Clock::now();
@@ -3180,6 +3309,30 @@ static bool compute_local_ok_bins(const Loaded &loaded,
          Ms(t5 - t4).count());
     CF_TRACE_LOG( "policy: local_eval table=%s sat_calls=%d cache_hits=%d",
          table.c_str(), sat_calls, cache_hits);
+
+    if (dump_atom_counts) {
+        std::string ast_combined = ast ? ast_to_string_simple(ast) : "";
+        std::string ast_perm = perm_ast ? ast_to_string_simple(perm_ast) : "";
+        std::string ast_rest = rest_ast ? ast_to_string_simple(rest_ast) : "";
+        elog(NOTICE,
+             "CF_POLICY_SIDE table=%s rows=%u combined_ok=%u perm_ok=%u rest_ok=%u has_perm=%d has_rest=%d",
+             table.c_str(), ti.n_rows, cnt, perm_cnt, rest_cnt, perm_present ? 1 : 0, rest_present ? 1 : 0);
+        elog(NOTICE, "CF_POLICY_SIDE_AST table=%s combined=%s perm=%s rest=%s",
+             table.c_str(), ast_combined.c_str(), ast_perm.c_str(), ast_rest.c_str());
+        elog(NOTICE, "CF_ATOM_COUNTS table=%s rows=%u ok=%u used_vars=%d local_const_vars=%d",
+             table.c_str(), ti.n_rows, cnt, (int)target_vars.size(), (int)const_ids.size());
+
+        for (const Atom *ap : const_atoms) {
+            if (!ap) continue;
+            uint64_t true_rows = 0;
+            auto it_cnt = atom_true_counts.find(ap->id);
+            if (it_cnt != atom_true_counts.end())
+                true_rows = it_cnt->second;
+            std::string desc = atom_to_sql(*ap);
+            elog(NOTICE, "CF_ATOM table=%s aid=y%d true_rows=%llu desc=%s",
+                 table.c_str(), ap->id, (unsigned long long)true_rows, desc.c_str());
+        }
+    }
 
     if (stat) {
         stat->table = table;
@@ -4631,7 +4784,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
         decision_cache.reserve(4096);
 
         auto sig_bit = [&](const std::string &s, int aid) -> bool {
-            if (aid <= 0) return true;
+            if (aid == 0) return false;
+            if (aid < 0) return true;
             size_t bit = (size_t)(aid - 1);
             size_t byte = bit >> 3;
             if (byte >= s.size()) return true;

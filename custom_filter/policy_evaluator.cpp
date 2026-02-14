@@ -904,6 +904,16 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
             assign_var_ids(kv.second, atom_map);
         }
     }
+    for (auto &kv : perm_ast) {
+        if (kv.second) {
+            assign_var_ids(kv.second, atom_map);
+        }
+    }
+    for (auto &kv : rest_ast) {
+        if (kv.second) {
+            assign_var_ids(kv.second, atom_map);
+        }
+    }
     if (dump_policy_ast) {
         int targets_perm0 = 0;
         for (const auto &kv : target_ast) {
@@ -1150,6 +1160,8 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
     res->target_count = static_cast<int>(target_ast.size());
     res->target_tables = res->target_count ? (char **)palloc0(sizeof(char *) * res->target_count) : nullptr;
     res->target_asts = res->target_count ? (char **)palloc0(sizeof(char *) * res->target_count) : nullptr;
+    res->target_perm_asts = res->target_count ? (char **)palloc0(sizeof(char *) * res->target_count) : nullptr;
+    res->target_rest_asts = res->target_count ? (char **)palloc0(sizeof(char *) * res->target_count) : nullptr;
     res->target_joinclass_counts = res->target_count ? (int *)palloc0(sizeof(int) * res->target_count) : nullptr;
     res->target_joinclass_offsets = res->target_count ? (int *)palloc0(sizeof(int) * res->target_count) : nullptr;
     res->target_joinclass_ids_len = static_cast<int>(target_jc_ids.size());
@@ -1163,13 +1175,25 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         res->target_tables[t] = pstrdup(kv.first.c_str());
         std::string ast_str = kv.second ? ast_to_string(kv.second) : "";
         res->target_asts[t] = ast_str.empty() ? pstrdup("") : pstrdup(ast_str.c_str());
+        AstNode *perm_node = nullptr;
+        auto pit = perm_ast.find(kv.first);
+        if (pit != perm_ast.end())
+            perm_node = pit->second;
+        AstNode *rest_node = nullptr;
+        auto rit = rest_ast.find(kv.first);
+        if (rit != rest_ast.end())
+            rest_node = rit->second;
+        std::string perm_str = perm_node ? ast_to_string(perm_node) : "";
+        std::string rest_str = rest_node ? ast_to_string(rest_node) : "";
+        res->target_perm_asts[t] = perm_str.empty() ? pstrdup("") : pstrdup(perm_str.c_str());
+        res->target_rest_asts[t] = rest_str.empty() ? pstrdup("") : pstrdup(rest_str.c_str());
         if (res->target_joinclass_counts && t < (int)target_jc_counts.size()) {
             res->target_joinclass_counts[t] = target_jc_counts[t];
             res->target_joinclass_offsets[t] = target_jc_offsets[t];
         }
         if (g_eval_debug) {
-            elog(NOTICE, "policy_eval: combined_ast target=%s ast=%s",
-                 kv.first.c_str(), ast_str.c_str());
+            elog(NOTICE, "policy_eval: combined_ast target=%s ast=%s perm_ast=%s rest_ast=%s",
+                 kv.first.c_str(), ast_str.c_str(), perm_str.c_str(), rest_str.c_str());
         }
         t++;
     }
@@ -1265,6 +1289,18 @@ void free_policy_eval_result(PolicyEvalResultC *res) {
             if (res->target_asts[i]) pfree(res->target_asts[i]);
         }
         pfree(res->target_asts);
+    }
+    if (res->target_perm_asts) {
+        for (int i = 0; i < res->target_count; i++) {
+            if (res->target_perm_asts[i]) pfree(res->target_perm_asts[i]);
+        }
+        pfree(res->target_perm_asts);
+    }
+    if (res->target_rest_asts) {
+        for (int i = 0; i < res->target_count; i++) {
+            if (res->target_rest_asts[i]) pfree(res->target_rest_asts[i]);
+        }
+        pfree(res->target_rest_asts);
     }
     if (res->target_joinclass_counts)
         pfree(res->target_joinclass_counts);

@@ -2297,6 +2297,8 @@ cf_build_query_state(EState *estate, const char *query_str)
         in.target_count = eval_res->target_count;
         in.target_tables = eval_res->target_tables;
         in.target_asts = eval_res->target_asts;
+        in.target_perm_asts = eval_res->target_perm_asts;
+        in.target_rest_asts = eval_res->target_rest_asts;
         in.atom_count = eval_res->atom_count;
         in.atoms = eval_res->atoms;
         CF_TRACE_LOG( "custom_filter: calling policy_run once target_count=%d atom_count=%d",
