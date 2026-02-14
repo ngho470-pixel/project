@@ -1,0 +1,101 @@
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:l_linestatus OP:= STRING:'F' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( LPAREN:( IDENT:l_discount OP:>= NUMBER:0.02 AND:and IDENT:l_discount OP:<= NUMBER:0.05 AND:and IDENT:l_quantity OP:<= NUMBER:25 RPAREN:) OR:or LPAREN:( IDENT:l_discount OP:>= NUMBER:0.06 AND:and IDENT:l_discount OP:<= NUMBER:0.08 AND:and IDENT:l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=0 restrictive_total=0 targets=0 targets_perm0=0
+NOTICE:  policy_eval: closure_count=0
+NOTICE:  custom_filter: query_targets = [d]
+NOTICE:  policy_profile: eval_ms=0.210 artifact_load_ms=0.000 artifact_parse_ms=0.000 stamp_ms=0.000 bin_ms=0.000 local_sat_ms=0.000 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=0.000 ctid_map_ms=0.000 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=0 n_policy_targets=0 n_filters=0 bytes_artifacts_loaded=0 bytes_allow=0 bytes_ctid=0 bytes_blk_index=0 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=24928 rss_kb_after_eval=24928 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=24928 peak_rss_kb_end=24928
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:l_linestatus OP:= STRING:'F' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( LPAREN:( IDENT:l_discount OP:>= NUMBER:0.02 AND:and IDENT:l_discount OP:<= NUMBER:0.05 AND:and IDENT:l_quantity OP:<= NUMBER:25 RPAREN:) OR:or LPAREN:( IDENT:l_discount OP:>= NUMBER:0.06 AND:and IDENT:l_discount OP:<= NUMBER:0.08 AND:and IDENT:l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  CF_POLICY_AST target=lineitem perm=2 rest=1 y0=0 ast=(y8 or y5 or y3 and y1 and y7 or y4 and y2 and y6) and y9 and (y10 or y11)
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=2 restrictive_total=1 targets=1 targets_perm0=0
+NOTICE:  policy_eval: target=lineitem join_classes=[]
+NOTICE:  policy_eval: policy[1] target=lineitem expr=(l_returnflag = 'R') OR (l_linestatus = 'F') ast=y8 or y5
+NOTICE:  policy_eval: policy[2] target=lineitem expr=(l_shipinstruct = 'DELIVER IN PERSON') AND ((l_shipmode IN ('MAIL','SHIP')) OR (l_shipmode IN ('TRUCK','RAIL'))) ast=y9 and (y10 or y11)
+NOTICE:  policy_eval: policy[3] target=lineitem expr=((l_discount >= 0.02 AND l_discount <= 0.05 AND l_quantity <= 25) OR (l_discount >= 0.06 AND l_discount <= 0.08 AND l_quantity <= 10)) ast=y3 and y1 and y7 or y4 and y2 and y6
+NOTICE:  policy_eval: atom y1 = const:lineitem.l_discount|<=|0.05
+NOTICE:  policy_eval: atom y2 = const:lineitem.l_discount|<=|0.08
+NOTICE:  policy_eval: atom y3 = const:lineitem.l_discount|>=|0.02
+NOTICE:  policy_eval: atom y4 = const:lineitem.l_discount|>=|0.06
+NOTICE:  policy_eval: atom y5 = const:lineitem.l_linestatus|=|F
+NOTICE:  policy_eval: atom y6 = const:lineitem.l_quantity|<=|10
+NOTICE:  policy_eval: atom y7 = const:lineitem.l_quantity|<=|25
+NOTICE:  policy_eval: atom y8 = const:lineitem.l_returnflag|=|R
+NOTICE:  policy_eval: atom y9 = const:lineitem.l_shipinstruct|=|DELIVER IN PERSON
+NOTICE:  policy_eval: atom y10 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y11 = const:lineitem.l_shipmode|in|RAIL,TRUCK
+NOTICE:  policy_eval: combined_ast target=lineitem ast=(y8 or y5 or y3 and y1 and y7 or y4 and y2 and y6) and y9 and (y10 or y11) perm_ast=y8 or y5 or y3 and y1 and y7 or y4 and y2 and y6 rest_ast=y9 and (y10 or y11)
+NOTICE:  policy_eval: closure_count=1
+NOTICE:  custom_filter: wrap rel=lineitem oid=16413 paths=2
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:l_linestatus OP:= STRING:'F' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( LPAREN:( IDENT:l_discount OP:>= NUMBER:0.02 AND:and IDENT:l_discount OP:<= NUMBER:0.05 AND:and IDENT:l_quantity OP:<= NUMBER:25 RPAREN:) OR:or LPAREN:( IDENT:l_discount OP:>= NUMBER:0.06 AND:and IDENT:l_discount OP:<= NUMBER:0.08 AND:and IDENT:l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  CF_POLICY_AST target=lineitem perm=2 rest=1 y0=0 ast=(y8 or y5 or y3 and y1 and y7 or y4 and y2 and y6) and y9 and (y10 or y11)
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=2 restrictive_total=1 targets=1 targets_perm0=0
+NOTICE:  policy_eval: target=lineitem join_classes=[]
+NOTICE:  policy_eval: policy[1] target=lineitem expr=(l_returnflag = 'R') OR (l_linestatus = 'F') ast=y8 or y5
+NOTICE:  policy_eval: policy[2] target=lineitem expr=(l_shipinstruct = 'DELIVER IN PERSON') AND ((l_shipmode IN ('MAIL','SHIP')) OR (l_shipmode IN ('TRUCK','RAIL'))) ast=y9 and (y10 or y11)
+NOTICE:  policy_eval: policy[3] target=lineitem expr=((l_discount >= 0.02 AND l_discount <= 0.05 AND l_quantity <= 25) OR (l_discount >= 0.06 AND l_discount <= 0.08 AND l_quantity <= 10)) ast=y3 and y1 and y7 or y4 and y2 and y6
+NOTICE:  policy_eval: atom y1 = const:lineitem.l_discount|<=|0.05
+NOTICE:  policy_eval: atom y2 = const:lineitem.l_discount|<=|0.08
+NOTICE:  policy_eval: atom y3 = const:lineitem.l_discount|>=|0.02
+NOTICE:  policy_eval: atom y4 = const:lineitem.l_discount|>=|0.06
+NOTICE:  policy_eval: atom y5 = const:lineitem.l_linestatus|=|F
+NOTICE:  policy_eval: atom y6 = const:lineitem.l_quantity|<=|10
+NOTICE:  policy_eval: atom y7 = const:lineitem.l_quantity|<=|25
+NOTICE:  policy_eval: atom y8 = const:lineitem.l_returnflag|=|R
+NOTICE:  policy_eval: atom y9 = const:lineitem.l_shipinstruct|=|DELIVER IN PERSON
+NOTICE:  policy_eval: atom y10 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y11 = const:lineitem.l_shipmode|in|RAIL,TRUCK
+NOTICE:  policy_eval: combined_ast target=lineitem ast=(y8 or y5 or y3 and y1 and y7 or y4 and y2 and y6) and y9 and (y10 or y11) perm_ast=y8 or y5 or y3 and y1 and y7 or y4 and y2 and y6 rest_ast=y9 and (y10 or y11)
+NOTICE:  policy_eval: closure_count=1
+NOTICE:  custom_filter: needed_files = [dict/lineitem/l_discount, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, lineitem_code_base, lineitem_ctid, meta/cols/lineitem, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode]
+NOTICE:  custom_filter: policy_targets = [lineitem]
+NOTICE:  policy_eval: target_tables=[lineitem]
+NOTICE:  policy_eval: combined_ast target=lineitem ast=(y8 or y5 or y3 and y1 and y7 or y4 and y2 and y6) and y9 and (y10 or y11)
+NOTICE:  custom_filter: query_targets = [lineitem]
+NOTICE:  custom_filter: scanned_tables = [lineitem]
+NOTICE:  custom_filter: table=lineitem filter=on
+NOTICE:  custom_filter: artifact_load_ms=35.045
+NOTICE:  custom_filter: calling policy_run once target_count=1 atom_count=11
+NOTICE:  policy: load_ms=16.672
+NOTICE:  policy: global_atoms table=lineitem count=11
+NOTICE:  policy: global_bins table=lineitem bins=216 rows=600572
+NOTICE:  policy: bundle_eval target=lineitem bundle_id=1 uses_atoms=11
+NOTICE:  policy: local_bins table=lineitem atoms=11 bins=216
+NOTICE:  policy: local_ms table=lineitem stamp=99.751 bin=5.251 eval=11.375 fill=31.308
+NOTICE:  policy: local_eval table=lineitem sat_calls=216 cache_hits=0
+NOTICE:  CF_POLICY_SIDE table=lineitem rows=600572 combined_ok=53027 perm_ok=371042 rest_ok=85613 has_perm=1 has_rest=1
+NOTICE:  CF_POLICY_SIDE_AST table=lineitem combined=(((((y8 or y5) or ((y3 and y1) and y7)) or ((y4 and y2) and y6)) and y9) and (y10 or y11)) perm=(((y8 or y5) or ((y3 and y1) and y7)) or ((y4 and y2) and y6)) rest=(y9 and (y10 or y11))
+NOTICE:  CF_ATOM_COUNTS table=lineitem rows=600572 ok=53027 used_vars=11 local_const_vars=11
+NOTICE:  CF_ATOM table=lineitem aid=y1 true_rows=327284 desc=lineitem.l_discount <= 0.05
+NOTICE:  CF_ATOM table=lineitem aid=y2 true_rows=491095 desc=lineitem.l_discount <= 0.08
+NOTICE:  CF_ATOM table=lineitem aid=y3 true_rows=491957 desc=lineitem.l_discount >= 0.02
+NOTICE:  CF_ATOM table=lineitem aid=y4 true_rows=273288 desc=lineitem.l_discount >= 0.06
+NOTICE:  CF_ATOM table=lineitem aid=y5 true_rows=299856 desc=lineitem.l_linestatus = 'F'
+NOTICE:  CF_ATOM table=lineitem aid=y6 true_rows=119658 desc=lineitem.l_quantity <= 10
+NOTICE:  CF_ATOM table=lineitem aid=y7 true_rows=299798 desc=lineitem.l_quantity <= 25
+NOTICE:  CF_ATOM table=lineitem aid=y8 true_rows=148301 desc=lineitem.l_returnflag = 'R'
+NOTICE:  CF_ATOM table=lineitem aid=y9 true_rows=149441 desc=lineitem.l_shipinstruct = 'DELIVER IN PERSON'
+NOTICE:  CF_ATOM table=lineitem aid=y10 true_rows=171942 desc=lineitem.l_shipmode IN ('MAIL','SHIP')
+NOTICE:  CF_ATOM table=lineitem aid=y11 true_rows=171666 desc=lineitem.l_shipmode IN ('RAIL','TRUCK')
+NOTICE:  policy: allow_lineitem count = 53027 / 600572
+NOTICE:  policy: total_ms=170.908
+NOTICE:  policy_profile_bundle: bundle=1 target=lineitem K=0 query= local={lineitem:atoms=11,bins=216,sat=216,hits=0,ms=99.751/5.251/11.375/31.308,total_ms=147.685} prop={iter=0,ms=0.000,classes=[]} decode={lineitem:53027/600572,ms=0.000,total_ms=0.000} total_ms=170.908
+NOTICE:  custom_filter: allow_lineitem count=53027/600572
+NOTICE:  custom_filter: allow_lineitem popcount=53027/600572
+NOTICE:  custom_filter: ctid_map[0]=(64,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(64,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(64,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(64,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(64,5)->4
+NOTICE:  custom_filter: ctid_index_ms=2.601 rel=lineitem
+NOTICE:  custom_filter: lineitem_ctid head [64,1 64,2 64,3 64,4 64,5]
+NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=1584188B
+NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=1584188B
+NOTICE:  custom_filter exec: rel=lineitem oid=16413 seen=600569 passed=53026 misses=0 mode=trace
+NOTICE:  custom_filter: row validation time = 278.134 ms
+NOTICE:  policy_profile: eval_ms=0.353 artifact_load_ms=35.045 artifact_parse_ms=16.672 stamp_ms=99.751 bin_ms=5.251 local_sat_ms=11.375 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=170.908 ctid_map_ms=2.601 filter_ms=278.134 child_exec_ms=85.333 ctid_extract_ms=83.040 ctid_to_rid_ms=13.915 allow_check_ms=13.108 projection_ms=6.803 n_scanned_tables=1 n_policy_targets=1 n_filters=1 bytes_artifacts_loaded=20420304 bytes_allow=75072 bytes_ctid=4804576 bytes_blk_index=1584188 rows_seen=600569 rows_passed=53026 ctid_misses=0 rss_kb_before_eval=30072 rss_kb_after_eval=30072 rss_kb_after_load=58136 rss_kb_after_engine=75168 rss_kb_after_ctid=75680 rss_kb_end=152664 peak_rss_kb_end=152664
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=170.908 local_ms=147.685 prop_ms=0.000 decode_ms=0.000 sat_calls=216 cache_hits=0 closure_tables=1 filtered_targets=1
+NOTICE:  policy: scan_count table=lineitem count=1

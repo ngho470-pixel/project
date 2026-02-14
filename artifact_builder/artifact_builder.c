@@ -14,6 +14,7 @@
 #include "access/tableam.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_type_d.h"
 #include "catalog/namespace.h"
 #include "common/hashfn.h"
 #include "miscadmin.h"
@@ -284,6 +285,8 @@ static const char *dict_type_label_for_oid(Oid typid) {
         return "date";
     if (typid == FLOAT4OID || typid == FLOAT8OID || typid == NUMERICOID)
         return "float";
+    if (typid == BPCHAROID)
+        return "bpchar";
     return "text";
 }
 
@@ -968,6 +971,13 @@ Datum build_base(PG_FUNCTION_ARGS) {
                 if (!isnull) {
                     char *txt = OidOutputFunctionCall(tokcols[i].typoutput, v);
                     if (txt) {
+                        if (tokcols[i].typid == BPCHAROID) {
+                            size_t n = strlen(txt);
+                            while (n > 0 && txt[n - 1] == ' ') {
+                                txt[n - 1] = '\0';
+                                n--;
+                            }
+                        }
                         int32 tok = -1;
                         if (dict_map_get(tokcols[i].tok_map, txt, &tok))
                             tval = tok;

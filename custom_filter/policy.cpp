@@ -595,18 +595,25 @@ static bool parse_number(const std::string &s, double *out) {
     return true;
 }
 
-enum class DictType { INT, FLOAT, TEXT, UNKNOWN };
+enum class DictType { INT, FLOAT, TEXT, BPCHAR, UNKNOWN };
 
 static DictType parse_dict_type_str(const std::string &s) {
     std::string v = to_lower_str(trim_ws(s));
     if (v == "int") return DictType::INT;
     if (v == "float") return DictType::FLOAT;
+    if (v == "bpchar") return DictType::BPCHAR;
     if (v == "text") return DictType::TEXT;
     return DictType::UNKNOWN;
 }
 
 static bool dict_type_numeric(DictType t) {
     return t == DictType::INT || t == DictType::FLOAT;
+}
+
+static std::string rtrim_spaces(std::string s) {
+    while (!s.empty() && s.back() == ' ')
+        s.pop_back();
+    return s;
 }
 
 static bool is_like_prefix_pattern(const std::string &pat, std::string *prefix_out) {
@@ -727,10 +734,13 @@ static std::vector<uint8_t> build_allowed_tokens(const std::vector<std::string> 
                 }
             }
         } else {
+            const bool bpchar_type = (dict_type == DictType::BPCHAR);
             for (size_t i = 0; i < dict_vals.size(); i++) {
+                const std::string dict_cmp = bpchar_type ? rtrim_spaces(dict_vals[i]) : dict_vals[i];
                 bool hit = false;
                 for (const auto &q : atom.values) {
-                    if (dict_vals[i] == q) { hit = true; break; }
+                    const std::string query_cmp = bpchar_type ? rtrim_spaces(q) : q;
+                    if (dict_cmp == query_cmp) { hit = true; break; }
                 }
                 if (atom.op == ConstOp::NE) {
                     allowed[i] = hit ? 0 : 1;
