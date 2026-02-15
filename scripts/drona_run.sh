@@ -81,6 +81,7 @@ BASE_EXCLUDES=(
   --exclude=__pycache__/
   --exclude=.pytest_cache/
   --exclude=.mypy_cache/
+  --exclude=.venv/
 )
 if [[ "$FULL_TREE" -eq 0 ]]; then
   BASE_EXCLUDES+=(--exclude=cvc/ --exclude=cvc5/)
