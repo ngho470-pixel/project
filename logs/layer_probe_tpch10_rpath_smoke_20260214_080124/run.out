@@ -1,0 +1,14 @@
+[layer_probe] run_id=layer_probe_tpch10_rpath_smoke_20260214_080124 run_dir=/tmp/z3_lab/project/logs/layer_probe_tpch10_rpath_smoke_20260214_080124
+[layer_probe] dbs=['tpch10'] Ks=[5] pool=1-20 statement_timeout_ms=1800000
+[layer_probe] queries=['1']
+[db] start db=tpch10
+[clean_state] tag=clean_start db=tpch10 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[policy_set] db=tpch10 K=5 enabled_ids=[1, 2, 3, 4, 5]
+[clean_state] tag=clean_before_k K=5 db=tpch10 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[setup_ours] K=5 setup_ms=428227.148 artifact_bytes_db=891244842 artifact_bytes_disk=924835840
+[progress] db=tpch10 K=5 baseline=ours query=1
+[clean_state] tag=after_ours_drop K=5 db=tpch10 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[db] done db=tpch10
+[done] run_dir=/tmp/z3_lab/project/logs/layer_probe_tpch10_rpath_smoke_20260214_080124
+[done] layer_probe_csv=/tmp/z3_lab/project/logs/layer_probe_tpch10_rpath_smoke_20260214_080124/layer_probe.csv
+[done] layer_probe_summary=/tmp/z3_lab/project/logs/layer_probe_tpch10_rpath_smoke_20260214_080124/layer_probe_summary.md
