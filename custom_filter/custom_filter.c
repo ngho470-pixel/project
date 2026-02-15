@@ -75,6 +75,8 @@ typedef struct PolicyAllowListC {
 typedef struct PolicyRunProfileC {
     double artifact_parse_ms;
     double atoms_ms;
+    double presence_ms;
+    double project_ms;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
@@ -1091,6 +1093,8 @@ typedef struct PolicyQueryState
     double artifact_load_ms;
     double artifact_parse_ms;
     double atoms_ms;
+    double presence_ms;
+    double project_ms;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
@@ -1503,7 +1507,7 @@ cf_log_query_metrics(PolicyQueryState *qs)
     if (!qs)
         return;
     elog(NOTICE,
-         "policy_profile: eval_ms=%.3f artifact_load_ms=%.3f artifact_parse_ms=%.3f atoms_ms=%.3f "
+         "policy_profile: eval_ms=%.3f artifact_load_ms=%.3f artifact_parse_ms=%.3f atoms_ms=%.3f presence_ms=%.3f project_ms=%.3f "
          "stamp_ms=%.3f bin_ms=%.3f local_sat_ms=%.3f fill_ms=%.3f prop_ms=%.3f prop_iters=%d "
          "decode_ms=%.3f policy_total_ms=%.3f ctid_map_ms=%.3f filter_ms=%.3f "
          "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f "
@@ -1516,6 +1520,8 @@ cf_log_query_metrics(PolicyQueryState *qs)
          qs->artifact_load_ms,
          qs->artifact_parse_ms,
          qs->atoms_ms,
+         qs->presence_ms,
+         qs->project_ms,
          qs->stamp_ms,
          qs->bin_ms,
          qs->local_sat_ms,
@@ -2321,6 +2327,8 @@ cf_build_query_state(EState *estate, const char *query_str)
         if (pp) {
             qs->artifact_parse_ms += pp->artifact_parse_ms;
             qs->atoms_ms += pp->atoms_ms;
+            qs->presence_ms += pp->presence_ms;
+            qs->project_ms += pp->project_ms;
             qs->stamp_ms += pp->stamp_ms;
             qs->bin_ms += pp->bin_ms;
             qs->local_sat_ms += pp->local_sat_ms;

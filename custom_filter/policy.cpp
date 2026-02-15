@@ -283,6 +283,8 @@ static void append_top_counts(const std::vector<uint64_t> &counts,
 typedef struct PolicyRunProfileC {
     double artifact_parse_ms;
     double atoms_ms;
+    double presence_ms;
+    double project_ms;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
@@ -2229,6 +2231,10 @@ struct BundleProfile {
     std::vector<DecodeStat> decode;
     // Time spent in atom preparation / allowed-token building outside the stamp/bin/eval/fill loop.
     double atoms_ms_total = 0.0;
+    // Time spent in join-domain presence/signature work (e.g., domain sizing, message precomputation).
+    double presence_ms_total = 0.0;
+    // Time spent materializing final allow-bits (e.g., row-level chase / decode stage for multi-join).
+    double project_ms_total = 0.0;
     double local_ms_total = 0.0;
     double prop_ms_total = 0.0;
     int prop_iterations = 0;
@@ -3770,6 +3776,7 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
     }
 
     std::map<int, size_t> domain_size;
+    auto t_domain_start = Clock::now();
     for (const auto &e : edges) {
         int cid = e.cid;
         int max_tok = -1;
@@ -3788,8 +3795,11 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         if (it_ds == domain_size.end() || ds > it_ds->second)
             domain_size[cid] = ds;
     }
+    auto t_domain_end = Clock::now();
+    if (profile) profile->presence_ms_total += Ms(t_domain_end - t_domain_start).count();
 
     std::map<int, std::vector<uint8_t>> const_allowed;
+    auto t_atoms_start = Clock::now();
     for (int aid : vars) {
         if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
             continue;
@@ -3805,6 +3815,8 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         DictType dtype = dict_type_for_key(loaded, ap->left.key());
         const_allowed[aid] = build_allowed_tokens(it_dict->second, *ap, dtype);
     }
+    auto t_atoms_end = Clock::now();
+    if (profile) profile->atoms_ms_total += Ms(t_atoms_end - t_atoms_start).count();
 
     std::map<std::string, std::vector<uint8_t>> local_ok;
     std::map<std::string, uint32> local_ok_count;
@@ -3905,6 +3917,7 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         }
 
         // Build unique tok->row maps for non-target tables on incident join classes.
+        auto t_row_by_tok_start = Clock::now();
         std::vector<std::unordered_map<int, std::vector<int32_t>>> row_by_tok(N);
         for (size_t i = 0; i < N; i++) {
             if ((int)i == target_id) continue;
@@ -3942,6 +3955,8 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
                 }
             }
         }
+        auto t_row_by_tok_end = Clock::now();
+        if (profile) profile->presence_ms_total += Ms(t_row_by_tok_end - t_row_by_tok_start).count();
 
         const TableInfo &ti_t = *ti_by_id[(size_t)target_id];
         size_t bytes = (ti_t.n_rows + 7) / 8;
@@ -3952,6 +3967,7 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         std::vector<int> q;
         q.reserve(N);
 
+        auto t_chase_start = Clock::now();
         for (uint32 r = 0; r < ti_t.n_rows; r++) {
             if (ok_by_id[(size_t)target_id] && !(*ok_by_id[(size_t)target_id])[r])
                 continue;
@@ -4030,6 +4046,8 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
             bits[r >> 3] |= (uint8)(1u << (r & 7));
             passed++;
         }
+        auto t_chase_end = Clock::now();
+        double chase_ms = Ms(t_chase_end - t_chase_start).count();
 
         out->count = 0;
         out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
@@ -4045,9 +4063,10 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
             ds.table = target;
             ds.rows_total = ti_t.n_rows;
             ds.rows_allowed = passed;
-            ds.ms_decode = 0.0;
+            ds.ms_decode = chase_ms;
             profile->decode.push_back(ds);
             profile->decode_ms_total += ds.ms_decode;
+            profile->project_ms_total += ds.ms_decode;
         }
         return true;
     }
@@ -4202,6 +4221,7 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         ds.ms_decode = Ms(t_decode_end - t_decode_start).count();
         profile->decode.push_back(ds);
         profile->decode_ms_total += ds.ms_decode;
+        profile->project_ms_total += ds.ms_decode;
     }
 
     if (out_allowed)
@@ -4684,6 +4704,7 @@ static bool multi_join_token_domain_or(const Loaded &loaded,
         ds.ms_decode = Ms(t_decode_end - t_decode_start).count();
         profile->decode.push_back(ds);
         profile->decode_ms_total += ds.ms_decode;
+        profile->project_ms_total += ds.ms_decode;
     }
     return true;
 }
@@ -4864,6 +4885,7 @@ static bool multi_join_enforce_general(const Loaded &loaded,
 
         // domain size per class (max token id + 1)
         std::map<int, size_t> domain_size;
+        auto t_domain_start = Clock::now();
         for (const auto &e : edges) {
             int cid = e.cid;
             int max_tok = -1;
@@ -4885,6 +4907,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
             if (it_ds == domain_size.end() || ds > it_ds->second)
                 domain_size[cid] = ds;
         }
+        auto t_domain_end = Clock::now();
+        if (profile) profile->presence_ms_total += Ms(t_domain_end - t_domain_start).count();
 
         // Build adjacency with token indices for quick per-row lookups.
         std::vector<std::vector<AdjE>> adj_id(N);
@@ -4898,6 +4922,7 @@ static bool multi_join_enforce_general(const Loaded &loaded,
         }
 
         // Build unique tok->row maps for non-target tables on incident join classes.
+        auto t_row_by_tok_start = Clock::now();
         std::vector<std::unordered_map<int, std::vector<int32_t>>> row_by_tok(N);
         for (size_t i = 0; i < N; i++) {
             if ((int)i == target_id) continue;
@@ -4933,6 +4958,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                 }
             }
         }
+        auto t_row_by_tok_end = Clock::now();
+        if (profile) profile->presence_ms_total += Ms(t_row_by_tok_end - t_row_by_tok_start).count();
 
         // Precompute const atom evaluation info.
         struct ConstInfo {
@@ -5016,6 +5043,7 @@ static bool multi_join_enforce_general(const Loaded &loaded,
 
         const uint8 *target_restrict = restrict_by_id[(size_t)target_id];
 
+        auto t_decode_start = Clock::now();
         for (uint32 r = 0; r < ti_t.n_rows; r++) {
             if (!allow_bit(target_restrict, r))
                 continue;
@@ -5122,6 +5150,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                 passed++;
             }
         }
+        auto t_decode_end = Clock::now();
+        double decode_ms = Ms(t_decode_end - t_decode_start).count();
 
         out->count = 0;
         out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
@@ -5136,9 +5166,10 @@ static bool multi_join_enforce_general(const Loaded &loaded,
             ds.table = target;
             ds.rows_total = ti_t.n_rows;
             ds.rows_allowed = passed;
-            ds.ms_decode = 0.0;
+            ds.ms_decode = decode_ms;
             profile->decode.push_back(ds);
             profile->decode_ms_total += ds.ms_decode;
+            profile->project_ms_total += ds.ms_decode;
         }
         return true;
     }
@@ -5557,6 +5588,7 @@ static bool multi_join_enforce_general(const Loaded &loaded,
     size_t bytes = (ti_t.n_rows + 7) / 8;
     uint8 *bits = (uint8 *)palloc0(bytes);
     uint32 passed = 0;
+    auto t_decode_start = Clock::now();
     for (uint32 r = 0; r < ti_t.n_rows; r++) {
         if (restrict_bits) {
             auto it_rb = restrict_bits->find(target);
@@ -5569,6 +5601,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
             passed++;
         }
     }
+    auto t_decode_end = Clock::now();
+    double decode_ms = Ms(t_decode_end - t_decode_start).count();
 
     out->count = 0;
     out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
@@ -5583,9 +5617,10 @@ static bool multi_join_enforce_general(const Loaded &loaded,
         ds.table = target;
         ds.rows_total = ti_t.n_rows;
         ds.rows_allowed = passed;
-        ds.ms_decode = 0.0;
+        ds.ms_decode = decode_ms;
         profile->decode.push_back(ds);
         profile->decode_ms_total += ds.ms_decode;
+        profile->project_ms_total += ds.ms_decode;
     }
     return true;
 }
@@ -6376,6 +6411,8 @@ static void fill_run_profile(const BundleProfile &profile,
     if (!out) return;
     out->artifact_parse_ms = parse_ms;
     out->atoms_ms = profile.atoms_ms_total;
+    out->presence_ms = profile.presence_ms_total;
+    out->project_ms = profile.project_ms_total;
     out->stamp_ms = 0.0;
     out->bin_ms = 0.0;
     out->local_sat_ms = 0.0;
