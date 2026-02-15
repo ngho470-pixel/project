@@ -150,6 +150,64 @@ static bool has_code_base_v2_header(const void *data, size_t len)
     return p[0] == 'C' && p[1] == 'B' && p[2] == '0' && p[3] == '2';
 }
 
+static bool has_code_base_v3_manifest(const void *data, size_t len)
+{
+    if (!data || len < 20) return false;
+    const unsigned char *p = static_cast<const unsigned char *>(data);
+    return p[0] == 'C' && p[1] == 'B' && p[2] == '0' && p[3] == '3';
+}
+
+static bool parse_code_base_v3_manifest(const void *data,
+                                       size_t len,
+                                       uint32 *out_total_rows,
+                                       uint32 *out_chunk_rows,
+                                       int *out_ntoks,
+                                       int *out_chunk_count)
+{
+    if (!data || !out_total_rows || !out_chunk_rows || !out_ntoks || !out_chunk_count)
+        return false;
+    if (!has_code_base_v3_manifest(data, len))
+        return false;
+    if (len < 20) return false;
+
+    const unsigned char *p = static_cast<const unsigned char *>(data);
+    int32_t total_raw = 0;
+    int32_t chunk_rows_raw = 0;
+    int32_t ntoks_raw = 0;
+    int32_t chunks_raw = 0;
+    std::memcpy(&total_raw, p + 4, sizeof(int32_t));
+    std::memcpy(&chunk_rows_raw, p + 8, sizeof(int32_t));
+    std::memcpy(&ntoks_raw, p + 12, sizeof(int32_t));
+    std::memcpy(&chunks_raw, p + 16, sizeof(int32_t));
+    if (total_raw < 0 || chunk_rows_raw < 0 || ntoks_raw < 0 || chunks_raw < 0)
+        return false;
+
+    uint32 total = (uint32) total_raw;
+    uint32 chunk_rows = (uint32) chunk_rows_raw;
+    int ntoks = (int) ntoks_raw;
+    int chunks = (int) chunks_raw;
+    if (total == 0) {
+        /* Empty table: allow chunk_rows/chunks to be 0. */
+        *out_total_rows = 0;
+        *out_chunk_rows = chunk_rows;
+        *out_ntoks = ntoks;
+        *out_chunk_count = chunks;
+        return true;
+    }
+    if (chunk_rows == 0)
+        return false;
+    int expect = (int)((total + chunk_rows - 1) / chunk_rows);
+    if (chunks != expect)
+        return false;
+    if (ntoks > 4096)
+        return false;
+    *out_total_rows = total;
+    *out_chunk_rows = chunk_rows;
+    *out_ntoks = ntoks;
+    *out_chunk_count = chunks;
+    return true;
+}
+
 static bool decode_code_base_v2(const void *data,
                                 size_t len,
                                 std::vector<int32_t> *out_code,
@@ -908,6 +966,16 @@ struct TableInfo {
     std::vector<int32_t> code_owned;
     int cb02_ntoks = -1;
     uint32 cb02_nrows = 0;
+    /* Chunked CB03 code_base manifest (code chunks fetched lazily from public.files). */
+    bool cb03_chunked = false;
+    uint32 cb03_total_rows = 0;
+    uint32 cb03_chunk_rows = 0;
+    int cb03_chunk_count = 0;
+    int cb03_ntoks = -1;
+    mutable int cb03_cache_chunk = -1;
+    mutable uint32 cb03_cache_base_rid = 0;
+    mutable uint32 cb03_cache_nrows = 0;
+    mutable std::vector<int32_t> cb03_cache_code;
     uint32 n_rows = 0;
     std::map<std::string, int> schema_offset;
     int stride = 0;
@@ -922,6 +990,56 @@ struct TableInfo {
     std::vector<JoinAtomInfo> join_atoms;
     std::vector<int> const_atom_ids;
     std::vector<int> const_token_idx;
+
+    const int32_t *row_ptr(uint32 rid) const {
+        if (rid >= n_rows)
+            return nullptr;
+        if (!cb03_chunked) {
+            if (!code || stride <= 0)
+                return nullptr;
+            return code + (size_t)rid * (size_t)stride;
+        }
+        if (stride <= 0 || cb03_chunk_rows == 0 || cb03_chunk_count <= 0)
+            return nullptr;
+        int chunk = (int)(rid / cb03_chunk_rows);
+        if (chunk < 0 || chunk >= cb03_chunk_count)
+            return nullptr;
+        if (chunk != cb03_cache_chunk) {
+            std::string fname = name + "_code_chunk_" + std::to_string(chunk);
+            bytea *b = cf_fetch_file_bytea(fname.c_str());
+            if (!b)
+                ereport(ERROR, (errmsg("policy: missing code chunk file %s", fname.c_str())));
+            const void *data = (const void *) VARDATA(b);
+            size_t len = (size_t) VARSIZE(b) - VARHDRSZ;
+            std::vector<int32_t> decoded;
+            int ntoks = 0;
+            uint32 nrows = 0;
+            if (!decode_code_base_v2(data, len, &decoded, &ntoks, &nrows))
+                ereport(ERROR,
+                        (errmsg("policy: invalid CB02 chunk %s bytes=%zu", fname.c_str(), len)));
+            if (ntoks != (stride - 1))
+                ereport(ERROR,
+                        (errmsg("policy: chunk ntoks mismatch file=%s ntoks=%d stride=%d", fname.c_str(), ntoks, stride)));
+            uint32 base = (uint32)chunk * cb03_chunk_rows;
+            for (uint32 r = 0; r < nrows; r++) {
+                size_t off = (size_t)r * (size_t)stride;
+                if (off < decoded.size())
+                    decoded[off] = decoded[off] + (int32_t)base;
+            }
+            cb03_cache_code.swap(decoded);
+            cb03_cache_chunk = chunk;
+            cb03_cache_base_rid = base;
+            cb03_cache_nrows = nrows;
+            pfree(b);
+        }
+        uint32 local = rid - cb03_cache_base_rid;
+        if (local >= cb03_cache_nrows)
+            return nullptr;
+        size_t off = (size_t)local * (size_t)stride;
+        if (off + (size_t)stride > cb03_cache_code.size())
+            return nullptr;
+        return cb03_cache_code.data() + off;
+    }
 };
 
 struct Loaded {
@@ -1226,6 +1344,23 @@ static bool load_phase(const PolicyArtifactC *arts, int art_count,
                 ti.code_len = ti.code_owned.size();
                 ti.cb02_ntoks = ntoks;
                 ti.cb02_nrows = nrows;
+            } else if (has_code_base_v3_manifest(arts[i].data, arts[i].len)) {
+                uint32 total = 0;
+                uint32 chunk_rows = 0;
+                int ntoks = 0;
+                int chunks = 0;
+                if (!parse_code_base_v3_manifest(arts[i].data, arts[i].len, &total, &chunk_rows, &ntoks, &chunks))
+                    ereport(ERROR,
+                            (errmsg("policy: invalid CB03 code_base manifest table=%s bytes=%zu",
+                                    table.c_str(), (size_t)arts[i].len)));
+                ti.cb03_chunked = true;
+                ti.cb03_total_rows = total;
+                ti.cb03_chunk_rows = chunk_rows;
+                ti.cb03_chunk_count = chunks;
+                ti.cb03_ntoks = ntoks;
+                /* Reuse cb02_* fields for downstream consistency checks (ntoks/rows invariants). */
+                ti.cb02_ntoks = ntoks;
+                ti.cb02_nrows = total;
             } else {
                 ti.code = (const int32_t *)arts[i].data;
                 ti.code_len = arts[i].len / sizeof(int32_t);
@@ -1373,9 +1508,16 @@ static bool load_phase(const PolicyArtifactC *arts, int art_count,
                 ti.schema_offset[lines[i]] = (int)i;
         }
 
-        if (ti.code_len % (size_t)ti.stride != 0)
-            return false;
-        ti.n_rows = (uint32)(ti.code_len / (size_t)ti.stride);
+        if (ti.cb03_chunked) {
+            ti.n_rows = ti.cb03_total_rows;
+            ti.code_len = (size_t)ti.n_rows * (size_t)ti.stride;
+            if (ti.cb03_ntoks >= 0 && ti.cb03_ntoks != (ti.stride - 1))
+                return false;
+        } else {
+            if (ti.code_len % (size_t)ti.stride != 0)
+                return false;
+            ti.n_rows = (uint32)(ti.code_len / (size_t)ti.stride);
+        }
         if (ti.cb02_ntoks >= 0) {
             if (ti.stride < 1) return false;
             if (ti.cb02_ntoks != (ti.stride - 1))
@@ -1664,7 +1806,8 @@ static bool hub_phase(const Loaded &loaded, Hubs *hubs)
         if (stride <= 1 || ti.n_rows == 0) continue;
 
         for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.code + (size_t)r * (size_t)stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
                 int idx = ti.join_token_idx[j];
                 int32 tok = row[idx];
@@ -1811,7 +1954,8 @@ static void run_multi_join_contract(const Loaded &loaded)
                     idx = it_idx->second;
                 if (idx < 0) continue;
                 for (uint32 r = 0; r < ti.n_rows; r++) {
-                    const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                    const int32_t *row = ti.row_ptr(r);
+                    if (!row) continue;
                     int32 tok = row[idx];
                     if (tok > max_tok) max_tok = tok;
                 }
@@ -1883,7 +2027,8 @@ static void run_multi_join_contract(const Loaded &loaded)
             std::vector<int> vals(loaded.atom_by_id.size(), 1);
             uint32 cnt = 0;
             for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                const int32_t *row = ti.row_ptr(r);
+                if (!row) continue;
                 for (size_t k = 0; k < const_ids.size(); k++) {
                     int aid = const_ids[k];
                     int idx = const_idx[k];
@@ -1948,7 +2093,8 @@ static void run_multi_join_contract(const Loaded &loaded)
                     for (uint32 r = 0; r < ti.n_rows; r++) {
                         if (ok_rows && !(*ok_rows)[r])
                             continue;
-                        const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                        const int32_t *row = ti.row_ptr(r);
+                        if (!row) continue;
                         bool row_ok = true;
                         for (int ocid : table_class_list[tname]) {
                             if (ocid == cid)
@@ -2954,7 +3100,8 @@ static bool ensure_atom_truths(const TableInfo &ti,
         tc.atom_row_truth[ai.key].assign(ti.n_rows, 0);
     }
     for (uint32 r = 0; r < ti.n_rows; r++) {
-        const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+        const int32_t *row = ti.row_ptr(r);
+        if (!row) continue;
         for (const auto &ai : atoms) {
             int32 tok = row[ai.token_idx];
             bool allow = false;
@@ -3015,7 +3162,8 @@ static void rebuild_global_bins(const TableInfo &ti,
             uint8_t *sig = sig_chunk.data() + (size_t)i * gs.nbytes;
             memcpy(sig, base_bytes.data(), gs.nbytes);
 
-            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             for (size_t a = 0; a < G; a++) {
                 int idx = (a < gs.token_idx.size()) ? gs.token_idx[a] : -1;
                 bool allow = false;
@@ -3610,7 +3758,8 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
             const TableInfo &ti = loaded.tables.find(t)->second;
             int idx = table_class_idx[t][cid];
             for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                const int32_t *row = ti.row_ptr(r);
+                if (!row) continue;
                 int32 tok = row[idx];
                 if (tok > max_tok) max_tok = tok;
             }
@@ -3756,7 +3905,8 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
                         continue;
                     if (!allow_bit(restrict_by_id[i], r))
                         continue;
-                    const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                    const int32_t *row = ti.row_ptr(r);
+                    if (!row) continue;
                     int32 tok = row[idx];
                     if (tok < 0 || (size_t)tok >= D)
                         continue;
@@ -3798,7 +3948,8 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
                 int cur = q[qi];
                 const TableInfo &ti_cur = *ti_by_id[(size_t)cur];
                 int32 rid_cur = assigned[(size_t)cur];
-                const int32_t *row_cur = ti_cur.code + (size_t)rid_cur * (size_t)ti_cur.stride;
+                const int32_t *row_cur = (rid_cur >= 0) ? ti_cur.row_ptr((uint32)rid_cur) : nullptr;
+                if (!row_cur) { ok = false; break; }
                 for (const auto &ae : adj_id[(size_t)cur]) {
                     int to = ae.to;
                     int32 tok = row_cur[ae.idx_self];
@@ -3807,7 +3958,8 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
                     int32 rid_to = assigned[(size_t)to];
                     if (rid_to >= 0) {
                         const TableInfo &ti_to = *ti_by_id[(size_t)to];
-                        const int32_t *row_to = ti_to.code + (size_t)rid_to * (size_t)ti_to.stride;
+                        const int32_t *row_to = ti_to.row_ptr((uint32)rid_to);
+                        if (!row_to) { ok = false; break; }
                         int32 tok2 = row_to[ae.idx_to];
                         if (tok2 != tok) { ok = false; break; }
                         continue;
@@ -3843,8 +3995,11 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
                 const TableInfo &tb = *ti_by_id[(size_t)ib];
                 int idx_a = table_class_idx[e.a][e.cid];
                 int idx_b = table_class_idx[e.b][e.cid];
-                const int32_t *ra = ta.code + (size_t)assigned[(size_t)ia] * (size_t)ta.stride;
-                const int32_t *rb = tb.code + (size_t)assigned[(size_t)ib] * (size_t)tb.stride;
+                int32 rida = assigned[(size_t)ia];
+                int32 ridb = assigned[(size_t)ib];
+                const int32_t *ra = (rida >= 0) ? ta.row_ptr((uint32)rida) : nullptr;
+                const int32_t *rb = (ridb >= 0) ? tb.row_ptr((uint32)ridb) : nullptr;
+                if (!ra || !rb) { ok = false; break; }
                 int32 toka = ra[idx_a];
                 int32 tokb = rb[idx_b];
                 if (toka < 0 || tokb < 0 || toka != tokb) { ok = false; break; }
@@ -3901,7 +4056,8 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
                 continue;
             if (!allow_bit(from_restrict, r))
                 continue;
-            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             bool row_ok = true;
             for (const auto &n : adj[from]) {
                 if (n == to)
@@ -3991,7 +4147,8 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
             continue;
         if (!allow_bit(target_restrict, r))
             continue;
-        const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+        const int32_t *row = ti.row_ptr(r);
+        if (!row) continue;
         bool row_ok = true;
         for (const auto &n : adj[target]) {
             int cid = edge_class[target][n];
@@ -4149,7 +4306,8 @@ static bool multi_join_token_domain_or(const Loaded &loaded,
                                 t.c_str(), cid)));
             int idx = it_idx->second;
             for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                const int32_t *row = ti.row_ptr(r);
+                if (!row) continue;
                 int32 tok = row[idx];
                 if (tok > max_tok) max_tok = tok;
             }
@@ -4296,7 +4454,8 @@ static bool multi_join_token_domain_or(const Loaded &loaded,
                 }
             }
             for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                const int32_t *row = ti.row_ptr(r);
+                if (!row) continue;
                 for (int cid : ti.join_class_ids) {
                     int idx = table_class_idx[t][cid];
                     int32 tok = row[idx];
@@ -4458,7 +4617,8 @@ static bool multi_join_token_domain_or(const Loaded &loaded,
     for (uint32 r = 0; r < ti.n_rows; r++) {
         if (ok_rows && !(*ok_rows)[r])
             continue;
-        const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+        const int32_t *row = ti.row_ptr(r);
+        if (!row) continue;
         auto it_idx = table_class_idx[target].find(primary_cid);
         if (it_idx == table_class_idx[target].end())
             continue;
@@ -4688,7 +4848,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                 for (uint32 r = 0; r < ti.n_rows; r++) {
                     if (!allow_bit(restrict_by_id[(size_t)nid], r))
                         continue;
-                    const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                    const int32_t *row = ti.row_ptr(r);
+                    if (!row) continue;
                     int32 tok = row[idx];
                     if (tok > max_tok) max_tok = tok;
                 }
@@ -4729,7 +4890,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                 for (uint32 r = 0; r < ti.n_rows; r++) {
                     if (!allow_bit(restrict_by_id[i], r))
                         continue;
-                    const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                    const int32_t *row = ti.row_ptr(r);
+                    if (!row) continue;
                     int32 tok = row[idx];
                     if (tok < 0 || (size_t)tok >= D)
                         continue;
@@ -4842,7 +5004,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                 int cur = q[qi];
                 const TableInfo &ti_cur = *ti_by_id[(size_t)cur];
                 int32 rid_cur = assigned[(size_t)cur];
-                const int32_t *row_cur = ti_cur.code + (size_t)rid_cur * (size_t)ti_cur.stride;
+                const int32_t *row_cur = (rid_cur >= 0) ? ti_cur.row_ptr((uint32)rid_cur) : nullptr;
+                if (!row_cur) { ok = false; break; }
                 for (const auto &ae : adj_id[(size_t)cur]) {
                     int to = ae.to;
                     int32 tok = row_cur[ae.idx_self];
@@ -4851,7 +5014,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                     int32 rid_to = assigned[(size_t)to];
                     if (rid_to >= 0) {
                         const TableInfo &ti_to = *ti_by_id[(size_t)to];
-                        const int32_t *row_to = ti_to.code + (size_t)rid_to * (size_t)ti_to.stride;
+                        const int32_t *row_to = ti_to.row_ptr((uint32)rid_to);
+                        if (!row_to) { ok = false; break; }
                         int32 tok2 = row_to[ae.idx_to];
                         if (tok2 != tok) { ok = false; break; }
                         continue;
@@ -4886,8 +5050,11 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                 const TableInfo &tb = *ti_by_id[(size_t)ib];
                 int idx_a = get_join_token_idx(e.a, e.cid);
                 int idx_b = get_join_token_idx(e.b, e.cid);
-                const int32_t *ra = ta.code + (size_t)assigned[(size_t)ia] * (size_t)ta.stride;
-                const int32_t *rb = tb.code + (size_t)assigned[(size_t)ib] * (size_t)tb.stride;
+                int32 rida = assigned[(size_t)ia];
+                int32 ridb = assigned[(size_t)ib];
+                const int32_t *ra = (rida >= 0) ? ta.row_ptr((uint32)rida) : nullptr;
+                const int32_t *rb = (ridb >= 0) ? tb.row_ptr((uint32)ridb) : nullptr;
+                if (!ra || !rb) { ok = false; break; }
                 int32 toka = ra[idx_a];
                 int32 tokb = rb[idx_b];
                 if (toka < 0 || tokb < 0 || toka != tokb) { ok = false; break; }
@@ -4904,7 +5071,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                     ok = false;
                     break;
                 }
-                const int32_t *row = ti.code + (size_t)rid * (size_t)ti.stride;
+                const int32_t *row = ti.row_ptr((uint32)rid);
+                if (!row) { ok = false; break; }
                 int32 tokc = row[ci.token_idx];
                 bool v = (tokc >= 0 &&
                           (size_t)tokc < ci.allowed->size() &&
@@ -4999,7 +5167,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                 if (it_rb != restrict_bits->end() && !allow_bit(it_rb->second, r))
                     continue;
             }
-            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             for (int cid : ti.join_class_ids) {
                 int idx = table_class_idx[t][cid];
                 int32 tok = row[idx];
@@ -5074,7 +5243,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                     if (it_rb != restrict_bits->end() && !allow_bit(it_rb->second, r))
                         continue;
                 }
-                const int32_t *row = tp.code + (size_t)r * (size_t)tp.stride;
+                const int32_t *row = tp.row_ptr(r);
+                if (!row) continue;
                 int32 tok_in = row[it_in->second];
                 if (tok_in < 0 || !cur_bits.test((size_t)tok_in))
                     continue;
@@ -5148,7 +5318,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
             }
             if (!ok_rows.empty() && !ok_rows[r])
                 continue;
-            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             int32 tok = row[idx];
             if (tok >= 0)
                 bits.set((size_t)tok);
@@ -5228,7 +5399,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                 if (it_rb != restrict_bits->end() && !allow_bit(it_rb->second, r))
                     continue;
             }
-            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             int32 tokc = row[token_idx];
             bool ok = (tokc >= 0 && (size_t)tokc < it_allowed->second.size() &&
                        it_allowed->second[(size_t)tokc]);
@@ -5308,7 +5480,8 @@ static bool multi_join_enforce_general(const Loaded &loaded,
             uint8_t *sig = sig_chunk.data() + (size_t)i * nbytes;
             memcpy(sig, base_bytes.data(), nbytes);
 
-            const int32_t *row = ti_t.code + (size_t)r * (size_t)ti_t.stride;
+            const int32_t *row = ti_t.row_ptr(r);
+            if (!row) continue;
             // target const atoms
             for (size_t j = 0; j < target_const_ids.size(); j++) {
                 int aid = target_const_ids[j];
@@ -5721,7 +5894,8 @@ static bool token_domain_run(const Loaded &loaded, PolicyAllowListC *out)
         if (idx < 0 || ti.n_rows == 0) return -1;
         int max_tok = -1;
         for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             int32 tok = row[idx];
             if (tok > max_tok) max_tok = tok;
         }
@@ -5765,7 +5939,8 @@ static bool token_domain_run(const Loaded &loaded, PolicyAllowListC *out)
         const TableInfo &ti = kv.second;
         if (ti.n_rows == 0 || ti.stride <= 1) continue;
         for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
                 int cid = ti.join_class_ids[j];
                 int idx = ti.join_token_idx[j];
@@ -5793,7 +5968,8 @@ static bool token_domain_run(const Loaded &loaded, PolicyAllowListC *out)
         if (a.join_class_id >= 0) {
             int cid = a.join_class_id;
             for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                const int32_t *row = ti.row_ptr(r);
+                if (!row) continue;
                 int32 tok = row[off_const];
                 if (tok >= 0 && (size_t)tok < allowed.size() && allowed[(size_t)tok]) {
                     pred[cid][a.id].set((size_t)tok);
@@ -5805,7 +5981,8 @@ static bool token_domain_run(const Loaded &loaded, PolicyAllowListC *out)
                 int cid = ti.join_class_ids[j];
                 int off_join = ti.join_token_idx[j];
                 for (uint32 r = 0; r < ti.n_rows; r++) {
-                    const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+                    const int32_t *row = ti.row_ptr(r);
+                    if (!row) continue;
                     int32 tok = row[off_const];
                     if (tok >= 0 && (size_t)tok < allowed.size() && allowed[(size_t)tok]) {
                         int32 jtok = row[off_join];
@@ -5883,7 +6060,8 @@ static bool token_domain_run(const Loaded &loaded, PolicyAllowListC *out)
         std::map<int, std::vector<uint8_t>> allow_tok;
         uint32 rid_mismatch = 0;
         for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             if (row[0] != (int32_t)r) {
                 rid_mismatch++;
                 if (rid_mismatch <= 3) {
@@ -6079,7 +6257,8 @@ static bool token_domain_run(const Loaded &loaded, PolicyAllowListC *out)
             ast_vals.assign(loaded.atom_by_id.size(), 1);
         }
         for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.code + (size_t)r * (size_t)ti.stride;
+            const int32_t *row = ti.row_ptr(r);
+            if (!row) continue;
             int32 rid = row[0];
             if (rid < 0 || (uint32)rid >= ti.n_rows)
                 continue;

@@ -226,6 +226,49 @@ static void insert_file_text(const char *name, const char *text) {
     insert_file(name, ba);
 }
 
+static void flush_code_chunk(const char *table,
+                             int *chunk_idx,
+                             uint32 *chunk_rows,
+                             ByteaBuilder **code_payload_bb_ptr)
+{
+    if (!table || !chunk_idx || !chunk_rows || !code_payload_bb_ptr)
+        return;
+    if (*chunk_rows == 0 || !*code_payload_bb_ptr)
+        return;
+
+    ByteaBuilder *code_payload_bb = *code_payload_bb_ptr;
+    ByteaBuilder *code_bb = bb_create();
+    size_t payload_len = bb_size(code_payload_bb);
+    if (payload_len > (size_t) INT32_MAX)
+        ereport(ERROR, (errmsg("code payload chunk too large for %s chunk=%d: %zu bytes",
+                               table, *chunk_idx, payload_len)));
+    if (*chunk_rows > (uint32) INT32_MAX)
+        ereport(ERROR, (errmsg("code chunk row count too large for %s chunk=%d: %u",
+                               table, *chunk_idx, *chunk_rows)));
+
+    bb_reserve(code_bb, sizeof(uint32) + sizeof(int32) + sizeof(int32) + payload_len);
+    const char magic[4] = {'C', 'B', '0', '2'};
+    bb_append_bytes(code_bb, magic, sizeof(magic));
+    bb_append_int32(code_bb, (int32) *chunk_rows);
+    bb_append_int32(code_bb, (int32) payload_len);
+    bytea *payload_ba = bb_to_bytea(code_payload_bb);
+    bb_append_bytes(code_bb, VARDATA(payload_ba), (size_t) VARSIZE_ANY_EXHDR(payload_ba));
+
+    char chunk_name[NAMEDATALEN * 2];
+    snprintf(chunk_name, sizeof(chunk_name), "%s_code_chunk_%d", table, *chunk_idx);
+    bytea *chunk_ba = bb_to_bytea(code_bb);
+    insert_file(chunk_name, chunk_ba);
+
+    /* Free large temporaries aggressively to cap per-build peak RSS. */
+    if (payload_ba) pfree(payload_ba);
+    if (chunk_ba) pfree(chunk_ba);
+    bb_free(code_bb);
+    bb_free(code_payload_bb);
+    *code_payload_bb_ptr = NULL;
+    *chunk_rows = 0;
+    (*chunk_idx)++;
+}
+
 static size_t estimate_table_rows(const char *table) {
     Oid argtypes[1] = {TEXTOID};
     Datum values[1];
@@ -909,7 +952,9 @@ Datum build_base(PG_FUNCTION_ARGS) {
         }
 
         ByteaBuilder *ctid_bb = bb_create();
-        ByteaBuilder *code_payload_bb = bb_create();
+        /* Chunk code payloads to avoid >1GB bytea / allocator limits on large tables (e.g., tpch10 lineitem). */
+        const uint32 code_chunk_max_rows = 1000000; /* keep per-chunk payload comfortably <256MB */
+        ByteaBuilder *code_payload_bb = NULL;
         size_t est_rows = estimate_table_rows(table);
         if (est_rows == 0)
             est_rows = 1024;
@@ -927,7 +972,6 @@ Datum build_base(PG_FUNCTION_ARGS) {
             if (est_rows > max_rows)
                 est_rows = max_rows;
         }
-        bb_reserve(code_payload_bb, est_rows * payload_per_row);
         int32 *row_tokens = NULL;
         if (token_count > 0)
             row_tokens = (int32 *) palloc(sizeof(int32) * token_count);
@@ -953,7 +997,10 @@ Datum build_base(PG_FUNCTION_ARGS) {
         PushActiveSnapshot(GetTransactionSnapshot());
         TableScanDesc scan = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
         TupleTableSlot *slot = MakeSingleTupleTableSlot(rel_desc, table_slot_callbacks(rel));
-        int64 rid = 0;
+        int64 total_rows = 0;
+        int chunk_idx = 0;
+        uint32 chunk_rows = 0;
+
         while (table_scan_getnextslot(scan, ForwardScanDirection, slot)) {
             if (!ItemPointerIsValid(&slot->tts_tid))
                 continue;
@@ -961,6 +1008,14 @@ Datum build_base(PG_FUNCTION_ARGS) {
             int32 off = (int32) ItemPointerGetOffsetNumber(&slot->tts_tid);
             bb_append_int32(ctid_bb, blk);
             bb_append_int32(ctid_bb, off);
+
+            if (!code_payload_bb) {
+                code_payload_bb = bb_create();
+                size_t reserve_rows = code_chunk_max_rows;
+                if (reserve_rows > (SIZE_MAX / payload_per_row))
+                    reserve_rows = SIZE_MAX / payload_per_row;
+                bb_reserve(code_payload_bb, reserve_rows * payload_per_row);
+            }
 
             uint16 ntoks = (uint16) token_count;
             bb_append_bytes(code_payload_bb, &ntoks, sizeof(uint16));
@@ -988,7 +1043,11 @@ Datum build_base(PG_FUNCTION_ARGS) {
             }
             if (token_count > 0)
                 bb_append_bytes(code_payload_bb, row_tokens, (size_t) token_count * sizeof(int32));
-            rid++;
+            total_rows++;
+            chunk_rows++;
+            if (chunk_rows >= code_chunk_max_rows) {
+                flush_code_chunk(table, &chunk_idx, &chunk_rows, &code_payload_bb);
+            }
         }
         table_endscan(scan);
         ExecDropSingleTupleTableSlot(slot);
@@ -999,27 +1058,34 @@ Datum build_base(PG_FUNCTION_ARGS) {
         char name_code[NAMEDATALEN * 2];
         snprintf(name_ctid, sizeof(name_ctid), "%s_ctid", table);
         snprintf(name_code, sizeof(name_code), "%s_code_base", table);
-        ByteaBuilder *code_bb = bb_create();
-        size_t payload_len = bb_size(code_payload_bb);
-        if (payload_len > (size_t) INT32_MAX)
-            ereport(ERROR, (errmsg("code payload too large for %s: %zu bytes", table, payload_len)));
-        if (rid > (int64) INT32_MAX)
-            ereport(ERROR, (errmsg("row count too large for %s: " INT64_FORMAT, table, rid)));
-        bb_reserve(code_bb, sizeof(uint32) + sizeof(int32) + sizeof(int32) + payload_len);
-        const char magic[4] = {'C', 'B', '0', '2'};
-        bb_append_bytes(code_bb, magic, sizeof(magic));
-        bb_append_int32(code_bb, (int32) rid);
-        bb_append_int32(code_bb, (int32) payload_len);
-        bytea *payload_ba = bb_to_bytea(code_payload_bb);
-        bb_append_bytes(code_bb, VARDATA(payload_ba), (size_t) VARSIZE_ANY_EXHDR(payload_ba));
-        insert_file(name_ctid, bb_to_bytea(ctid_bb));
-        insert_file(name_code, bb_to_bytea(code_bb));
+
+        /* Flush final partial chunk and then write a small CB03 manifest at <table>_code_base. */
+        flush_code_chunk(table, &chunk_idx, &chunk_rows, &code_payload_bb);
+        if (total_rows > (int64) INT32_MAX)
+            ereport(ERROR, (errmsg("row count too large for %s: " INT64_FORMAT, table, total_rows)));
+
+        ByteaBuilder *manifest_bb = bb_create();
+        const char magic3[4] = {'C', 'B', '0', '3'};
+        bb_append_bytes(manifest_bb, magic3, sizeof(magic3));
+        bb_append_int32(manifest_bb, (int32) total_rows);
+        bb_append_int32(manifest_bb, (int32) code_chunk_max_rows);
+        bb_append_int32(manifest_bb, (int32) token_count);
+        bb_append_int32(manifest_bb, (int32) chunk_idx);
+
+        bytea *ctid_ba = bb_to_bytea(ctid_bb);
+        insert_file(name_ctid, ctid_ba);
+        if (ctid_ba) pfree(ctid_ba);
+
+        bytea *manifest_ba = bb_to_bytea(manifest_bb);
+        insert_file(name_code, manifest_ba);
+        if (manifest_ba) pfree(manifest_ba);
+
         if (row_tokens)
             pfree(row_tokens);
-        pfree(payload_ba);
         bb_free(ctid_bb);
-        bb_free(code_payload_bb);
-        bb_free(code_bb);
+        if (code_payload_bb)
+            bb_free(code_payload_bb);
+        bb_free(manifest_bb);
     }
 
     MemoryContextDelete(build_mcxt);
