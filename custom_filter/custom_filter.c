@@ -633,12 +633,37 @@ typedef struct PlannerEvalCache
 {
     const Query *parse;
     char *policy_path;
+    uint64 rtable_sig;
     char **scanned_tables;
     int n_scanned_tables;
     PolicyEvalResultC *eval_res;
 } PlannerEvalCache;
 
 static PlannerEvalCache cf_plan_eval_cache = {0};
+
+static uint64
+cf_rtable_signature(Query *parse)
+{
+    if (!parse || !parse->rtable)
+        return 0;
+    /* FNV-1a over relation OIDs (order-sensitive). */
+    uint64 h = 1469598103934665603ULL;
+    ListCell *lc;
+    foreach (lc, parse->rtable)
+    {
+        RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+        if (!rte || rte->rtekind != RTE_RELATION)
+            continue;
+        Oid relid = rte->relid;
+        const unsigned char *p = (const unsigned char *) &relid;
+        for (size_t i = 0; i < sizeof(relid); i++)
+        {
+            h ^= (uint64) p[i];
+            h *= 1099511628211ULL;
+        }
+    }
+    return h;
+}
 
 static void
 cf_collect_parse_tables(Query *parse, MemoryContext mcxt, char ***out_tables, int *out_count)
@@ -706,9 +731,11 @@ cf_get_plan_eval(Query *parse)
     if (!parse || !cf_policy_path || cf_policy_path[0] == '\0')
         return NULL;
 
+    uint64 sig = cf_rtable_signature(parse);
     if (cf_plan_eval_cache.parse == parse &&
         cf_plan_eval_cache.policy_path &&
-        strcmp(cf_plan_eval_cache.policy_path, cf_policy_path) == 0)
+        strcmp(cf_plan_eval_cache.policy_path, cf_policy_path) == 0 &&
+        cf_plan_eval_cache.rtable_sig == sig)
         return cf_plan_eval_cache.eval_res;
 
     cf_clear_plan_eval_cache();
@@ -716,6 +743,7 @@ cf_get_plan_eval(Query *parse)
     MemoryContext oldctx = MemoryContextSwitchTo(TopMemoryContext);
     cf_plan_eval_cache.parse = parse;
     cf_plan_eval_cache.policy_path = pstrdup(cf_policy_path);
+    cf_plan_eval_cache.rtable_sig = sig;
     MemoryContextSwitchTo(oldctx);
 
     cf_collect_parse_tables(parse, TopMemoryContext,
@@ -787,16 +815,18 @@ cf_rel_pathlist_hook(PlannerInfo *root, RelOptInfo *rel,
     }
     table_close(relobj, NoLock);
 
+    /* Only wrap when there is provably something to enforce. */
+    if (!cf_query_has_policy_targets(root ? root->parse : NULL))
+        return;
+    if (!cf_rel_is_policy_target(root, rte->relid))
+        return;
+
     /*
-     * Correctness-first: wrap all base-relation paths when custom_filter is enabled.
+     * Wrap only policy-target base relations.
      *
-     * The planner may pull up relations from EXISTS/subqueries into the outer
-     * join tree. If we only wrap "policy targets" inferred from root->parse->rtable,
-     * we can miss those pulled-up relations and later hard-error in ExecutorStart
-     * when enforcement is required but the scan node was never wrapped.
-     *
-     * Wrapping a non-target table is safe: cf_exec() will simply pass tuples
-     * through when no TableFilterState exists for the relid.
+     * This is safe because we invalidate the planner eval cache if the parse
+     * range-table changes (e.g., pulled-up relations), ensuring target detection
+     * stays in sync with planning transformations.
      */
 
     const char *relname = rte ? get_rel_name(rte->relid) : NULL;
@@ -900,14 +930,14 @@ static bool
 cf_rel_is_policy_target(PlannerInfo *root, Oid relid)
 {
     if (!root || relid == InvalidOid)
-        return true;
+        return false;
     if (!cf_policy_path || cf_policy_path[0] == '\0')
-        return true;
+        return false;
 
     bool should_wrap = false;
     const PolicyEvalResultC *eval = cf_get_plan_eval(root->parse);
     if (!eval)
-        return true;
+        return false;
 
     const char *relname = get_rel_name(relid);
     if (relname && eval->target_count > 0)
