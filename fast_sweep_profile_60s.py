@@ -419,11 +419,29 @@ def connect(db: str, role: str):
     raise HarnessError(f"failed to connect to db={db} role={role}")
 
 
-def apply_timing_session_settings(cur, statement_timeout_ms: int) -> None:
-    # Disable parallelism everywhere (query and maintenance) to make experiment
-    # runs deterministic and comparable.
+def apply_no_parallel_settings(cur) -> None:
+    # Hard-disable all query/maintenance parallelism for determinism and to
+    # match the "no parallelism anywhere" experiment rule.
     cur.execute("SET max_parallel_workers_per_gather = 0;")
     cur.execute("SET max_parallel_maintenance_workers = 0;")
+    cur.execute("SET parallel_leader_participation = off;")
+    cur.execute("SET force_parallel_mode = off;")
+    cur.execute("SET enable_parallel_append = off;")
+    cur.execute("SET enable_parallel_hash = off;")
+
+    # This GUC may be superuser-only or not settable at the session level on
+    # some installs; try but don't fail the harness.
+    try:
+        cur.execute("SET max_parallel_workers = 0;")
+    except Exception:  # noqa: BLE001
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+
+
+def apply_timing_session_settings(cur, statement_timeout_ms: int) -> None:
+    apply_no_parallel_settings(cur)
     cur.execute("SET statement_timeout = %s;", [int(statement_timeout_ms)])
 
 
@@ -902,6 +920,7 @@ def apply_rls_policies_for_k(db: str, enabled_policy_lines: Sequence[str]) -> No
     conn = connect(db, "postgres")
     try:
         with conn.cursor() as cur:
+            apply_no_parallel_settings(cur)
             cur.execute("GRANT USAGE, CREATE ON SCHEMA public TO rls_user;")
             cur.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO rls_user;")
             drop_harness_policies_and_disable_rls(cur)
