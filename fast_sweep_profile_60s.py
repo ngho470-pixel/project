@@ -1024,7 +1024,7 @@ def create_rls_indexes_for_k(
 def ensure_build_base_function(cur) -> None:
     cur.execute(f"LOAD '{ARTIFACT_BUILDER_SO}';")
     cur.execute(
-        "SELECT p.oid, pg_get_function_result(p.oid) "
+        "SELECT p.oid, pg_get_function_result(p.oid), p.probin, p.prosrc "
         "FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace "
         "WHERE n.nspname='public' AND p.proname='build_base' "
         "AND pg_get_function_identity_arguments(p.oid)='text';"
@@ -1038,8 +1038,10 @@ def ensure_build_base_function(cur) -> None:
         return
 
     ret = str(row[1]).lower().strip()
-    if ret != "void":
-        cur.execute("DROP FUNCTION public.build_base(text);")
+    probin = str(row[2] or "")
+    prosrc = str(row[3] or "")
+    if ret != "void" or probin != ARTIFACT_BUILDER_SO or prosrc != "build_base":
+        cur.execute("DROP FUNCTION IF EXISTS public.build_base(text);")
         cur.execute(
             f"CREATE FUNCTION public.build_base(text) RETURNS void "
             f"AS '{ARTIFACT_BUILDER_SO}', 'build_base' LANGUAGE C STRICT;"
