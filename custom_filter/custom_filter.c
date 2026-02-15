@@ -74,9 +74,11 @@ typedef struct PolicyAllowListC {
 
 typedef struct PolicyRunProfileC {
     double artifact_parse_ms;
+    double atoms_ms;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
+    double fill_ms;
     double prop_ms;
     int prop_iters;
     double decode_ms;
@@ -1088,9 +1090,11 @@ typedef struct PolicyQueryState
     double eval_ms;
     double artifact_load_ms;
     double artifact_parse_ms;
+    double atoms_ms;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
+    double fill_ms;
     double prop_ms;
     int prop_iters;
     double decode_ms;
@@ -1499,8 +1503,8 @@ cf_log_query_metrics(PolicyQueryState *qs)
     if (!qs)
         return;
     elog(NOTICE,
-         "policy_profile: eval_ms=%.3f artifact_load_ms=%.3f artifact_parse_ms=%.3f "
-         "stamp_ms=%.3f bin_ms=%.3f local_sat_ms=%.3f prop_ms=%.3f prop_iters=%d "
+         "policy_profile: eval_ms=%.3f artifact_load_ms=%.3f artifact_parse_ms=%.3f atoms_ms=%.3f "
+         "stamp_ms=%.3f bin_ms=%.3f local_sat_ms=%.3f fill_ms=%.3f prop_ms=%.3f prop_iters=%d "
          "decode_ms=%.3f policy_total_ms=%.3f ctid_map_ms=%.3f filter_ms=%.3f "
          "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f "
          "n_scanned_tables=%d n_policy_targets=%d n_filters=%d "
@@ -1511,9 +1515,11 @@ cf_log_query_metrics(PolicyQueryState *qs)
          qs->eval_ms,
          qs->artifact_load_ms,
          qs->artifact_parse_ms,
+         qs->atoms_ms,
          qs->stamp_ms,
          qs->bin_ms,
          qs->local_sat_ms,
+         qs->fill_ms,
          qs->prop_ms,
          qs->prop_iters,
          qs->decode_ms,
@@ -2314,9 +2320,11 @@ cf_build_query_state(EState *estate, const char *query_str)
         const PolicyRunProfileC *pp = policy_run_profile(run_handle);
         if (pp) {
             qs->artifact_parse_ms += pp->artifact_parse_ms;
+            qs->atoms_ms += pp->atoms_ms;
             qs->stamp_ms += pp->stamp_ms;
             qs->bin_ms += pp->bin_ms;
             qs->local_sat_ms += pp->local_sat_ms;
+            qs->fill_ms += pp->fill_ms;
             qs->prop_ms += pp->prop_ms;
             qs->prop_iters += pp->prop_iters;
             qs->decode_ms += pp->decode_ms;

@@ -191,8 +191,11 @@ DASH_RUNS_COLUMNS = [
     "error_type",
     "error_msg",
     "result_count",
+    "result_hash",
     "ours_count",
+    "ours_hash",
     "rls_count",
+    "rls_hash",
     "correctness",
 ]
 
@@ -218,6 +221,7 @@ LAYER_PROBE_COLUMNS = [
     "policy_total_ms",
     "artifact_load_ms",
     "artifact_parse_ms",
+    "atoms_ms",
     "ctid_map_ms",
     "filter_ms",
     "child_exec_ms",
@@ -1755,6 +1759,36 @@ def result_count_in_session(cur, query_id: str, query_sql: str) -> int:
     return int(cur.fetchone()[0])
 
 
+def count_and_hash_wrapper(query_sql: str) -> Optional[str]:
+    # Order-insensitive hash (multiset) over result rows.
+    if not is_single_select(query_sql):
+        return None
+    s = query_sql.strip()
+    if s.endswith(";"):
+        s = s[:-1].strip()
+    return (
+        "WITH __q AS ("
+        + s
+        + "), __h AS (SELECT md5(row_to_json(__q)::text) AS h FROM __q) "
+        + "SELECT COUNT(*)::bigint AS count, "
+        + "COALESCE(md5(string_agg(h, '' ORDER BY h)), md5('')) AS hash "
+        + "FROM __h;"
+    )
+
+
+def result_count_and_hash_in_session(cur, query_id: str, query_sql: str) -> Tuple[int, str]:
+    base_sql: Optional[str] = query_sql if is_single_select(query_sql) else timing_fallback_sql(query_id)
+    wrapped = count_and_hash_wrapper(base_sql) if base_sql is not None else None
+    if wrapped is None:
+        # Best-effort fallback: keep counts so runs can proceed, but correctness becomes "skip".
+        return result_count_in_session(cur, query_id, query_sql), ""
+    cur.execute(wrapped)
+    row = cur.fetchone()
+    if not row or len(row) < 2:
+        raise HarnessError("count+hash wrapper returned no rows")
+    return int(row[0]), str(row[1] or "")
+
+
 def timing_sql_for_query(query_id: str, query_sql: str) -> str:
     fb = timing_fallback_sql(query_id)
     if fb is not None:
@@ -1870,6 +1904,7 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
 
             ours_metrics: Dict[str, ExplainMetrics] = {}
             ours_counts: Dict[str, Optional[int]] = {}
+            ours_hashes: Dict[str, str] = {}
             conn_o = connect(db, "postgres")
             try:
                 with conn_o.cursor() as cur:
@@ -1881,9 +1916,12 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
                         ours_metrics[qid] = m
                         if m.status == "ok":
                             try:
-                                ours_counts[qid] = result_count_in_session(cur, qid, qsql)
+                                cnt, h = result_count_and_hash_in_session(cur, qid, qsql)
+                                ours_counts[qid] = cnt
+                                ours_hashes[qid] = h
                             except Exception as exc:  # noqa: BLE001
                                 ours_counts[qid] = None
+                                ours_hashes[qid] = ""
                                 ours_metrics[qid] = ExplainMetrics(
                                     planning_ms=m.planning_ms,
                                     execution_ms=m.execution_ms,
@@ -1896,6 +1934,7 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
                                 )
                         else:
                             ours_counts[qid] = None
+                            ours_hashes[qid] = ""
             finally:
                 conn_o.close()
 
@@ -1908,6 +1947,7 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
 
             rls_metrics: Dict[str, ExplainMetrics] = {}
             rls_counts: Dict[str, Optional[int]] = {}
+            rls_hashes: Dict[str, str] = {}
             conn_r = connect(db, "rls_user")
             try:
                 with conn_r.cursor() as cur:
@@ -1920,9 +1960,12 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
                         rls_metrics[qid] = m
                         if m.status == "ok":
                             try:
-                                rls_counts[qid] = result_count_in_session(cur, qid, qsql)
+                                cnt, h = result_count_and_hash_in_session(cur, qid, qsql)
+                                rls_counts[qid] = cnt
+                                rls_hashes[qid] = h
                             except Exception as exc:  # noqa: BLE001
                                 rls_counts[qid] = None
+                                rls_hashes[qid] = ""
                                 rls_metrics[qid] = ExplainMetrics(
                                     planning_ms=m.planning_ms,
                                     execution_ms=m.execution_ms,
@@ -1935,6 +1978,7 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
                                 )
                         else:
                             rls_counts[qid] = None
+                            rls_hashes[qid] = ""
             finally:
                 conn_r.close()
 
@@ -1959,12 +2003,14 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
             # Runs rows (two per db,K,query).
             for qid, _qsql in queries:
                 oc = ours_counts.get(qid)
+                oh = ours_hashes.get(qid, "")
                 rc = rls_counts.get(qid)
+                rh = rls_hashes.get(qid, "")
                 correctness = ""
-                if oc is None or rc is None:
+                if oc is None or rc is None or not oh or not rh:
                     correctness = "skip"
                 else:
-                    correctness = "1" if int(oc) == int(rc) else "0"
+                    correctness = "1" if (int(oc) == int(rc) and oh == rh) else "0"
 
                 for baseline, m, cnt in [
                     ("ours", ours_metrics.get(qid), oc),
@@ -1982,6 +2028,11 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
                             error_msg="missing metrics",
                         )
                     peak_rss_mb = float(m.peak_rss_kb) / 1024.0
+                    result_hash = ""
+                    if baseline == "ours":
+                        result_hash = oh or ""
+                    elif baseline == "rls_with_index":
+                        result_hash = rh or ""
                     r_row = {
                         "run_id": run_id,
                         "ts": now_ts(),
@@ -2000,8 +2051,11 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
                         "error_type": m.error_type,
                         "error_msg": m.error_msg,
                         "result_count": "" if cnt is None else str(int(cnt)),
+                        "result_hash": "" if not result_hash else str(result_hash),
                         "ours_count": "" if oc is None else str(int(oc)),
+                        "ours_hash": "" if not oh else str(oh),
                         "rls_count": "" if rc is None else str(int(rc)),
+                        "rls_hash": "" if not rh else str(rh),
                         "correctness": correctness,
                     }
                     append_csv_row(runs_csv, DASH_RUNS_COLUMNS, r_row)
@@ -2178,6 +2232,7 @@ def run_layer_probe(args: argparse.Namespace) -> None:
                         "policy_total_ms": "",
                         "artifact_load_ms": "",
                         "artifact_parse_ms": "",
+                        "atoms_ms": "",
                         "ctid_map_ms": "",
                         "filter_ms": "",
                         "child_exec_ms": "",
@@ -2260,6 +2315,7 @@ def run_layer_probe(args: argparse.Namespace) -> None:
                     "policy_total_ms": g("policy_total_ms"),
                     "artifact_load_ms": g("artifact_load_ms"),
                     "artifact_parse_ms": g("artifact_parse_ms"),
+                    "atoms_ms": g("atoms_ms"),
                     "ctid_map_ms": g("ctid_map_ms"),
                     "filter_ms": g("filter_ms"),
                     "child_exec_ms": g("child_exec_ms"),

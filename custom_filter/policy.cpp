@@ -282,9 +282,11 @@ static void append_top_counts(const std::vector<uint64_t> &counts,
 
 typedef struct PolicyRunProfileC {
     double artifact_parse_ms;
+    double atoms_ms;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
+    double fill_ms;
     double prop_ms;
     int prop_iters;
     double decode_ms;
@@ -2196,6 +2198,8 @@ struct LocalStat {
     size_t bins = 0;
     int sat_calls = 0;
     int cache_hits = 0;
+    // Time spent building per-atom allowed-token vectors (often dominates at higher K).
+    double ms_atoms = 0.0;
     double ms_stamp = 0.0;
     double ms_bin = 0.0;
     double ms_eval = 0.0;
@@ -2223,6 +2227,8 @@ struct BundleProfile {
     std::vector<LocalStat> local;
     std::vector<PropStat> prop;
     std::vector<DecodeStat> decode;
+    // Time spent in atom preparation / allowed-token building outside the stamp/bin/eval/fill loop.
+    double atoms_ms_total = 0.0;
     double local_ms_total = 0.0;
     double prop_ms_total = 0.0;
     int prop_iterations = 0;
@@ -3062,9 +3068,11 @@ static bool eval_bins_sat_partial(const AstNode *ast,
 
 static bool build_const_allowed_map(const Loaded &loaded,
                                     const std::set<int> &vars,
-                                    std::map<int, std::vector<uint8_t>> *out) {
+                                    std::map<int, std::vector<uint8_t>> *out,
+                                    double *out_ms) {
     if (!out) return false;
     out->clear();
+    auto t0 = Clock::now();
     for (int aid : vars) {
         if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
             continue;
@@ -3080,6 +3088,8 @@ static bool build_const_allowed_map(const Loaded &loaded,
         DictType dtype = dict_type_for_key(loaded, ap->left.key());
         (*out)[aid] = build_allowed_tokens(it_dict->second, *ap, dtype);
     }
+    auto t1 = Clock::now();
+    if (out_ms) *out_ms += Ms(t1 - t0).count();
     return true;
 }
 
@@ -3277,6 +3287,7 @@ static bool compute_local_ok_bins(const Loaded &loaded,
             stat->bins = 0;
             stat->sat_calls = 0;
             stat->cache_hits = 0;
+            stat->ms_atoms = 0.0;
             stat->ms_stamp = 0.0;
             stat->ms_bin = 0.0;
             stat->ms_eval = 0.0;
@@ -3286,6 +3297,7 @@ static bool compute_local_ok_bins(const Loaded &loaded,
     }
 
     // ensure global atoms + bins for this table
+    double atoms_ms = 0.0;
     double stamp_ms = 0.0;
     double bin_ms = 0.0;
     if (!tc.global.ready) {
@@ -3293,6 +3305,7 @@ static bool compute_local_ok_bins(const Loaded &loaded,
         tc.global.atom_index.clear();
         tc.global.token_idx.clear();
         tc.global.allowed_by_key.clear();
+        auto t_atoms0 = Clock::now();
         for (int aid : ti.const_atom_ids) {
             if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
                 continue;
@@ -3317,6 +3330,8 @@ static bool compute_local_ok_bins(const Loaded &loaded,
             DictType dtype = dict_type_for_key(loaded, ap->left.key());
             tc.global.allowed_by_key[akey] = build_allowed_tokens(it_dict->second, *ap, dtype);
         }
+        auto t_atoms1 = Clock::now();
+        atoms_ms = Ms(t_atoms1 - t_atoms0).count();
         rebuild_global_bins(ti, tc, &stamp_ms, &bin_ms);
         tc.global.ms_stamp = stamp_ms;
         tc.global.ms_bin = bin_ms;
@@ -3336,7 +3351,10 @@ static bool compute_local_ok_bins(const Loaded &loaded,
         }
         stamp_ms = 0.0;
         bin_ms = 0.0;
+        atoms_ms = 0.0;
     }
+    if (stat)
+        stat->ms_atoms += atoms_ms;
 
     if (bundle_id > 0) {
         CF_TRACE_LOG( "policy: bundle_eval target=%s bundle_id=%d uses_atoms=%zu",
@@ -3647,6 +3665,7 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         if (profile && lst.atoms > 0) {
             profile->local.push_back(lst);
             profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
+            profile->atoms_ms_total += lst.ms_atoms;
         }
         if (out_allowed) out_allowed->clear();
         return true;
@@ -3811,6 +3830,7 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         if (profile && lst.atoms > 0) {
             profile->local.push_back(lst);
             profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
+            profile->atoms_ms_total += lst.ms_atoms;
         }
     }
 
@@ -4252,6 +4272,7 @@ static bool multi_join_token_domain_or(const Loaded &loaded,
         if (profile && lst.atoms > 0) {
             profile->local.push_back(lst);
             profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
+            profile->atoms_ms_total += lst.ms_atoms;
         }
         return true;
     }
@@ -4316,7 +4337,9 @@ static bool multi_join_token_domain_or(const Loaded &loaded,
     }
 
     std::map<int, std::vector<uint8_t>> const_allowed;
-    build_const_allowed_map(loaded, vars, &const_allowed);
+    double atoms_ms_const_allowed = 0.0;
+    build_const_allowed_map(loaded, vars, &const_allowed, &atoms_ms_const_allowed);
+    if (profile) profile->atoms_ms_total += atoms_ms_const_allowed;
 
     std::map<std::string, std::vector<uint8_t>> local_ok;
     std::map<std::string, uint32> local_ok_count;
@@ -4342,6 +4365,7 @@ static bool multi_join_token_domain_or(const Loaded &loaded,
         if (profile && lst.atoms > 0) {
             profile->local.push_back(lst);
             profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
+            profile->atoms_ms_total += lst.ms_atoms;
         }
     }
 
@@ -4752,7 +4776,9 @@ static bool multi_join_enforce_general(const Loaded &loaded,
 
         // Precompute allowed token sets for const atoms.
         std::map<int, std::vector<uint8_t>> const_allowed;
-        build_const_allowed_map(loaded, vars, &const_allowed);
+        double atoms_ms_const_allowed = 0.0;
+        build_const_allowed_map(loaded, vars, &const_allowed, &atoms_ms_const_allowed);
+        if (profile) profile->atoms_ms_total += atoms_ms_const_allowed;
 
         // Build a stable node index for per-row chase.
         struct AdjE {
@@ -5203,7 +5229,9 @@ static bool multi_join_enforce_general(const Loaded &loaded,
 
     // const allowed tokens for all const atoms
     std::map<int, std::vector<uint8_t>> const_allowed;
-    build_const_allowed_map(loaded, vars, &const_allowed);
+    double atoms_ms_const_allowed = 0.0;
+    build_const_allowed_map(loaded, vars, &const_allowed, &atoms_ms_const_allowed);
+    if (profile) profile->atoms_ms_total += atoms_ms_const_allowed;
 
     // token-level variable bitsets
     std::map<int, Bitset> var_bits;
@@ -5304,6 +5332,7 @@ static bool multi_join_enforce_general(const Loaded &loaded,
         if (profile && lst.atoms > 0) {
             profile->local.push_back(lst);
             profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
+            profile->atoms_ms_total += lst.ms_atoms;
         }
         Bitset bits;
         size_t D = domain_size[anchor_cid];
@@ -5839,7 +5868,9 @@ static bool const_only_enforce(const Loaded &loaded, PolicyAllowListC *out, Bund
             ereport(ERROR, (errmsg("policy: missing vars for target %s", t.c_str())));
 
         std::map<int, std::vector<uint8_t>> const_allowed;
-        build_const_allowed_map(loaded, it_vars->second, &const_allowed);
+        double atoms_ms_const_allowed = 0.0;
+        build_const_allowed_map(loaded, it_vars->second, &const_allowed, &atoms_ms_const_allowed);
+        if (profile) profile->atoms_ms_total += atoms_ms_const_allowed;
 
         std::vector<uint8_t> ok_rows;
         uint32 cnt = 0;
@@ -5874,6 +5905,7 @@ static bool const_only_enforce(const Loaded &loaded, PolicyAllowListC *out, Bund
         if (profile && lst.atoms > 0) {
             profile->local.push_back(lst);
             profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
+            profile->atoms_ms_total += lst.ms_atoms;
         }
     }
     return true;
@@ -6343,13 +6375,16 @@ static void fill_run_profile(const BundleProfile &profile,
 {
     if (!out) return;
     out->artifact_parse_ms = parse_ms;
+    out->atoms_ms = profile.atoms_ms_total;
     out->stamp_ms = 0.0;
     out->bin_ms = 0.0;
     out->local_sat_ms = 0.0;
+    out->fill_ms = 0.0;
     for (const auto &ls : profile.local) {
         out->stamp_ms += ls.ms_stamp;
         out->bin_ms += ls.ms_bin;
         out->local_sat_ms += ls.ms_eval;
+        out->fill_ms += ls.ms_fill;
     }
     out->prop_ms = profile.prop_ms_total;
     out->prop_iters = profile.prop_iterations;
