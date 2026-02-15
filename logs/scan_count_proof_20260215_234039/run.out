@@ -1,0 +1,17 @@
+[db] start db=tpch0_1
+[phase] db=tpch0_1 clean_start artifacts=0 indexes=0
+[policy_set] db=tpch0_1 K=15 enabled_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+[phase] db=tpch0_1 K=15 clean_before_k artifacts=0 indexes=0
+[correctness_sample] db=tpch0_1 K=15 queries=['1']
+Traceback (most recent call last):
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 2924, in <module>
+    main()
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 2919, in main
+    run_experiment(args)
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 2702, in run_experiment
+    ours_setup_ms, ours_disk = setup_ours_for_k(db, k, enabled_path_k, statement_timeout_ms)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 1067, in setup_ours_for_k
+    cur.execute("SELECT public.build_base(%s);", [str(enabled_path)])
+psycopg2.errors.InternalError_: failed to parse policies at logs/scan_count_proof_20260215_234039/policies_enabled_tpch0_1_k15.txt
+

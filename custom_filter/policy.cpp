@@ -5,6 +5,7 @@
 #include <chrono>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 #include <map>
 #include <set>
 #include <sstream>
@@ -3776,27 +3777,29 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
     }
 
     std::map<int, size_t> domain_size;
-    auto t_domain_start = Clock::now();
-    for (const auto &e : edges) {
-        int cid = e.cid;
-        int max_tok = -1;
-        for (const auto &t : {e.a, e.b}) {
-            const TableInfo &ti = loaded.tables.find(t)->second;
-            int idx = table_class_idx[t][cid];
-            for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.row_ptr(r);
-                if (!row) continue;
-                int32 tok = row[idx];
-                if (tok > max_tok) max_tok = tok;
+    if (is_tree) {
+        auto t_domain_start = Clock::now();
+        for (const auto &e : edges) {
+            int cid = e.cid;
+            int max_tok = -1;
+            for (const auto &t : {e.a, e.b}) {
+                const TableInfo &ti = loaded.tables.find(t)->second;
+                int idx = table_class_idx[t][cid];
+                for (uint32 r = 0; r < ti.n_rows; r++) {
+                    const int32_t *row = ti.row_ptr(r);
+                    if (!row) continue;
+                    int32 tok = row[idx];
+                    if (tok > max_tok) max_tok = tok;
+                }
             }
+            size_t ds = (max_tok >= 0) ? (size_t)max_tok + 1 : 0;
+            auto it_ds = domain_size.find(cid);
+            if (it_ds == domain_size.end() || ds > it_ds->second)
+                domain_size[cid] = ds;
         }
-        size_t ds = (max_tok >= 0) ? (size_t)max_tok + 1 : 0;
-        auto it_ds = domain_size.find(cid);
-        if (it_ds == domain_size.end() || ds > it_ds->second)
-            domain_size[cid] = ds;
+        auto t_domain_end = Clock::now();
+        if (profile) profile->presence_ms_total += Ms(t_domain_end - t_domain_start).count();
     }
-    auto t_domain_end = Clock::now();
-    if (profile) profile->presence_ms_total += Ms(t_domain_end - t_domain_start).count();
 
     std::map<int, std::vector<uint8_t>> const_allowed;
     auto t_atoms_start = Clock::now();
@@ -3917,42 +3920,80 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         }
 
         // Build unique tok->row maps for non-target tables on incident join classes.
+        ensure_local_cache_ctx();
+        register_query_callback();
         auto t_row_by_tok_start = Clock::now();
         std::vector<std::unordered_map<int, std::vector<int32_t>>> row_by_tok(N);
         for (size_t i = 0; i < N; i++) {
             if ((int)i == target_id) continue;
             const TableInfo &ti = *ti_by_id[i];
+
+            // Deduplicate incident join classes for this table and scan once to build all maps.
+            struct MapSpec { int cid; int idx; };
+            std::vector<MapSpec> specs;
+            specs.reserve(adj_id[i].size());
+            std::unordered_set<int> seen;
+            seen.reserve(adj_id[i].size());
             for (const auto &ae : adj_id[i]) {
-                int cid = ae.cid;
-                if (row_by_tok[i].find(cid) != row_by_tok[i].end())
+                if (seen.insert(ae.cid).second) {
+                    specs.push_back({ae.cid, ae.idx_self});
+                }
+            }
+            if (specs.empty())
+                continue;
+
+            std::vector<std::vector<int32_t>> maps(specs.size());
+            std::vector<int32_t> max_tok(specs.size(), -1);
+            std::vector<uint8_t> unique(specs.size(), 1);
+
+            // Track join-preprocessing scans separately from local/bin scans.
+            g_local_cache.scan_counts["join:" + node_list[i]] += 1;
+
+            for (uint32 r = 0; r < ti.n_rows; r++) {
+                if (ok_by_id[i] && !(*ok_by_id[i])[r])
                     continue;
-                auto it_ds = domain_size.find(cid);
-                size_t D = (it_ds != domain_size.end()) ? it_ds->second : 0;
-                if (D == 0)
+                if (!allow_bit(restrict_by_id[i], r))
                     continue;
-                std::vector<int32_t> map(D, -1);
-                bool unique = true;
-                int idx = table_class_idx[node_list[i]][cid];
-                for (uint32 r = 0; r < ti.n_rows; r++) {
-                    if (ok_by_id[i] && !(*ok_by_id[i])[r])
+                const int32_t *row = ti.row_ptr(r);
+                if (!row) continue;
+
+                for (size_t j = 0; j < specs.size(); j++) {
+                    if (!unique[j])
                         continue;
-                    if (!allow_bit(restrict_by_id[i], r))
+                    int32 tok = row[specs[j].idx];
+                    if (tok < 0)
                         continue;
-                    const int32_t *row = ti.row_ptr(r);
-                    if (!row) continue;
-                    int32 tok = row[idx];
-                    if (tok < 0 || (size_t)tok >= D)
-                        continue;
-                    if (map[(size_t)tok] == -1) {
-                        map[(size_t)tok] = (int32_t)r;
+                    if (tok > max_tok[j])
+                        max_tok[j] = tok;
+
+                    auto &vec = maps[j];
+                    size_t utok = (size_t)tok;
+                    if (utok >= vec.size()) {
+                        size_t new_sz = vec.size() ? vec.size() : 1024;
+                        while (new_sz <= utok) new_sz *= 2;
+                        vec.resize(new_sz, -1);
+                    }
+                    if (vec[utok] == -1) {
+                        vec[utok] = (int32_t)r;
                     } else {
-                        unique = false;
-                        break;
+                        unique[j] = 0;
+                        // Release memory early; this map won't be used.
+                        std::vector<int32_t>().swap(vec);
                     }
                 }
-                if (unique) {
-                    row_by_tok[i][cid] = std::move(map);
+            }
+
+            for (size_t j = 0; j < specs.size(); j++) {
+                if (!unique[j])
+                    continue;
+                auto &vec = maps[j];
+                int32_t mt = max_tok[j];
+                if (mt >= 0) {
+                    vec.resize((size_t)mt + 1, -1);
+                } else {
+                    vec.clear();
                 }
+                row_by_tok[i][specs[j].cid] = std::move(vec);
             }
         }
         auto t_row_by_tok_end = Clock::now();
@@ -4883,33 +4924,6 @@ static bool multi_join_enforce_general(const Loaded &loaded,
             return it_idx->second;
         };
 
-        // domain size per class (max token id + 1)
-        std::map<int, size_t> domain_size;
-        auto t_domain_start = Clock::now();
-        for (const auto &e : edges) {
-            int cid = e.cid;
-            int max_tok = -1;
-            for (const auto &t : {e.a, e.b}) {
-                int nid = get_node_idx(t);
-                const TableInfo &ti = *ti_by_id[(size_t)nid];
-                int idx = get_join_token_idx(t, cid);
-                for (uint32 r = 0; r < ti.n_rows; r++) {
-                    if (!allow_bit(restrict_by_id[(size_t)nid], r))
-                        continue;
-                    const int32_t *row = ti.row_ptr(r);
-                    if (!row) continue;
-                    int32 tok = row[idx];
-                    if (tok > max_tok) max_tok = tok;
-                }
-            }
-            size_t ds = (max_tok >= 0) ? (size_t)max_tok + 1 : 0;
-            auto it_ds = domain_size.find(cid);
-            if (it_ds == domain_size.end() || ds > it_ds->second)
-                domain_size[cid] = ds;
-        }
-        auto t_domain_end = Clock::now();
-        if (profile) profile->presence_ms_total += Ms(t_domain_end - t_domain_start).count();
-
         // Build adjacency with token indices for quick per-row lookups.
         std::vector<std::vector<AdjE>> adj_id(N);
         for (const auto &e : edges) {
@@ -4922,40 +4936,78 @@ static bool multi_join_enforce_general(const Loaded &loaded,
         }
 
         // Build unique tok->row maps for non-target tables on incident join classes.
+        ensure_local_cache_ctx();
+        register_query_callback();
         auto t_row_by_tok_start = Clock::now();
         std::vector<std::unordered_map<int, std::vector<int32_t>>> row_by_tok(N);
         for (size_t i = 0; i < N; i++) {
             if ((int)i == target_id) continue;
             const TableInfo &ti = *ti_by_id[i];
+
+            // Deduplicate incident join classes for this table and scan once to build all maps.
+            struct MapSpec { int cid; int idx; };
+            std::vector<MapSpec> specs;
+            specs.reserve(adj_id[i].size());
+            std::unordered_set<int> seen;
+            seen.reserve(adj_id[i].size());
             for (const auto &ae : adj_id[i]) {
-                int cid = ae.cid;
-                if (row_by_tok[i].find(cid) != row_by_tok[i].end())
+                if (seen.insert(ae.cid).second) {
+                    specs.push_back({ae.cid, ae.idx_self});
+                }
+            }
+            if (specs.empty())
+                continue;
+
+            std::vector<std::vector<int32_t>> maps(specs.size());
+            std::vector<int32_t> max_tok(specs.size(), -1);
+            std::vector<uint8_t> unique(specs.size(), 1);
+
+            // Record join-preprocessing scans separately from local/bin scans (which use plain table names).
+            g_local_cache.scan_counts["join:" + node_list[i]] += 1;
+
+            for (uint32 r = 0; r < ti.n_rows; r++) {
+                if (!allow_bit(restrict_by_id[i], r))
                     continue;
-                auto it_ds = domain_size.find(cid);
-                size_t D = (it_ds != domain_size.end()) ? it_ds->second : 0;
-                if (D == 0)
-                    continue;
-                std::vector<int32_t> map(D, -1);
-                bool unique = true;
-                int idx = get_join_token_idx(node_list[i], cid);
-                for (uint32 r = 0; r < ti.n_rows; r++) {
-                    if (!allow_bit(restrict_by_id[i], r))
+                const int32_t *row = ti.row_ptr(r);
+                if (!row) continue;
+
+                for (size_t j = 0; j < specs.size(); j++) {
+                    if (!unique[j])
                         continue;
-                    const int32_t *row = ti.row_ptr(r);
-                    if (!row) continue;
-                    int32 tok = row[idx];
-                    if (tok < 0 || (size_t)tok >= D)
+                    int32 tok = row[specs[j].idx];
+                    if (tok < 0)
                         continue;
-                    if (map[(size_t)tok] == -1) {
-                        map[(size_t)tok] = (int32_t)r;
+                    if (tok > max_tok[j])
+                        max_tok[j] = tok;
+
+                    auto &vec = maps[j];
+                    size_t utok = (size_t)tok;
+                    if (utok >= vec.size()) {
+                        size_t new_sz = vec.size() ? vec.size() : 1024;
+                        while (new_sz <= utok) new_sz *= 2;
+                        vec.resize(new_sz, -1);
+                    }
+                    if (vec[utok] == -1) {
+                        vec[utok] = (int32_t)r;
                     } else {
-                        unique = false;
-                        break;
+                        unique[j] = 0;
+                        // Release memory early; this map won't be used.
+                        std::vector<int32_t>().swap(vec);
                     }
                 }
-                if (unique) {
-                    row_by_tok[i][cid] = std::move(map);
+            }
+
+            for (size_t j = 0; j < specs.size(); j++) {
+                if (!unique[j])
+                    continue;
+                auto &vec = maps[j];
+                int32_t mt = max_tok[j];
+                if (mt >= 0) {
+                    vec.resize((size_t)mt + 1, -1);
+                } else {
+                    vec.clear();
                 }
+                row_by_tok[i][specs[j].cid] = std::move(vec);
             }
         }
         auto t_row_by_tok_end = Clock::now();
