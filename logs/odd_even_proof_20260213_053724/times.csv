@@ -1,0 +1,31 @@
+row_type,db,K,policy_ids,baseline,query_id,setup_ms,disk_overhead_bytes,cold_ms,cold_peak_rss_kb,hot1_ms,hot1_peak_rss_kb,hot2_ms,hot2_peak_rss_kb,hot3_ms,hot3_peak_rss_kb,hot4_ms,hot4_peak_rss_kb,hot5_ms,hot5_peak_rss_kb,hot_avg_ms,hot_avg_peak_rss_kb,status,error_type,error_msg
+setup,tpch0_1,1,1,ours,__setup__,705.199,10810396,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,1,1,rls_with_index,__setup__,464.355,8372224,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,1,1,ours,1,,,31.315,25396,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,1,1,rls_with_index,1,,,361.622,108368,361.851,114512,361.575,114512,,,,,,,361.713,114512,ok,,
+query,tpch0_1,1,1,ours,3,,,30.865,25396,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,1,1,rls_with_index,3,,,120.793,125840,120.664,139084,120.633,139012,,,,,,,120.649,139048,ok,,
+query,tpch0_1,1,1,ours,6,,,30.808,25396,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,1,1,rls_with_index,6,,,120.788,111440,90.554,114000,90.603,114000,,,,,,,90.579,114000,ok,,
+query,tpch0_1,1,1,ours,13,,,151.204,57748,120.769,57892,120.805,57664,,,,,,,120.787,57778,ok,,
+query,tpch0_1,1,1,rls_with_index,13,,,90.685,46360,90.560,51932,90.505,51780,,,,,,,90.532,51856,ok,,
+setup,tpch0_1,5,"1,2,3,4,5",ours,__setup__,3999.691,26776011,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,5,"1,2,3,4,5",rls_with_index,__setup__,2636.943,75563008,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,5,"1,2,3,4,5",ours,1,,,61.231,56376,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,5,"1,2,3,4,5",rls_with_index,1,,,120.762,103884,120.630,119032,120.701,118692,,,,,,,120.666,118862,ok,,
+query,tpch0_1,5,"1,2,3,4,5",ours,3,,,61.102,56520,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,5,"1,2,3,4,5",rls_with_index,3,,,90.650,135000,60.521,142168,60.478,141916,,,,,,,60.499,142042,ok,,
+query,tpch0_1,5,"1,2,3,4,5",ours,6,,,61.087,56248,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,5,"1,2,3,4,5",rls_with_index,6,,,60.573,63772,60.472,119324,60.434,118960,,,,,,,60.453,119142,ok,,
+query,tpch0_1,5,"1,2,3,4,5",ours,13,,,151.344,57288,120.979,57456,120.900,57260,,,,,,,120.939,57358,ok,,
+query,tpch0_1,5,"1,2,3,4,5",rls_with_index,13,,,90.697,46916,90.577,51484,90.513,51452,,,,,,,90.545,51468,ok,,
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,__setup__,4149.880,30629904,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,__setup__,2860.172,80003072,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,1,,,61.442,59084,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,1,,,150.830,117992,120.694,119276,120.664,119004,,,,,,,120.679,119140,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,3,,,91.422,72816,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,3,,,30.517,22296,30.457,27932,30.356,27932,,,,,,,30.406,27932,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,6,,,61.301,59384,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,6,,,60.551,60372,60.465,120760,60.442,120468,,,,,,,60.453,120614,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,13,,,31.189,25396,,,,,,,,,,,0.000,0,error,db_error,ERROR:  custom_filter[memctx_violation]: allocation escaped query context (label=artifact_blob rel=<global>)
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,13,,,30.451,22344,30.428,24472,30.348,24472,,,,,,,30.388,24472,ok,,

@@ -1,0 +1,203 @@
+[db] start db=tpch0_1
+[policy_set] db=tpch0_1 K=3 enabled_ids=[1, 2, 3]
+[setup_ours] K=3 setup_ms=2238.180 disk=20420305
+[CF_RLS_DUMP] tag=post_create db=tpch0_1
+[CF_RLS_DUMP] current_user=postgres session_user=postgres
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=postgres rolsuper=True rolbypassrls=True
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[index_infer] K=3 specs=['lineitem.l_discount', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode']
+[setup_rls] K=3 setup_ms=1873.363 disk=44032000 indexes=['cf_rls_k3_lineitem_l_discount_1', 'cf_rls_k3_lineitem_l_linestatus_2', 'cf_rls_k3_lineitem_l_quantity_3', 'cf_rls_k3_lineitem_l_returnflag_4', 'cf_rls_k3_lineitem_l_shipinstruct_5', 'cf_rls_k3_lineitem_l_shipmode_6']
+[correctness_sample] db=tpch0_1 K=3 queries=['1', '6']
+[progress] db=tpch0_1 K=3 baseline=ours query=1
+[progress] db=tpch0_1 K=3 baseline=rls_with_index query=1
+[CF_RLS_DUMP] tag=pre_query db=tpch0_1 baseline=rls_with_index q=1
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[progress] db=tpch0_1 K=3 baseline=ours query=6
+[progress] db=tpch0_1 K=3 baseline=rls_with_index query=6
+[CF_RLS_DUMP] tag=pre_query db=tpch0_1 baseline=rls_with_index q=6
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] tag=pre_count_query db=tpch0_1 baseline=rls_with_index
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] tag=pre_count_sql db=tpch0_1 baseline=rls_with_index
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[policy_set] db=tpch0_1 K=4 enabled_ids=[1, 2, 3, 4]
+[setup_ours] K=4 setup_ms=3868.384 disk=26776011
+[CF_RLS_DUMP] tag=post_create db=tpch0_1
+[CF_RLS_DUMP] current_user=postgres session_user=postgres
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=postgres rolsuper=True rolbypassrls=True
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[index_infer] K=4 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=4 setup_ms=2639.610 disk=75563008 indexes=['cf_rls_k4_lineitem_l_discount_1', 'cf_rls_k4_lineitem_l_extendedprice_2', 'cf_rls_k4_lineitem_l_linestatus_3', 'cf_rls_k4_lineitem_l_quantity_4', 'cf_rls_k4_lineitem_l_returnflag_5', 'cf_rls_k4_lineitem_l_shipinstruct_6', 'cf_rls_k4_lineitem_l_shipmode_7', 'cf_rls_k4_lineitem_l_tax_8']
+[correctness_sample] db=tpch0_1 K=4 queries=['1', '6']
+[progress] db=tpch0_1 K=4 baseline=ours query=1
+[progress] db=tpch0_1 K=4 baseline=rls_with_index query=1
+[CF_RLS_DUMP] tag=pre_query db=tpch0_1 baseline=rls_with_index q=1
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[progress] db=tpch0_1 K=4 baseline=ours query=6
+[progress] db=tpch0_1 K=4 baseline=rls_with_index query=6
+[CF_RLS_DUMP] tag=pre_query db=tpch0_1 baseline=rls_with_index q=6
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] tag=pre_count_query db=tpch0_1 baseline=rls_with_index
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] tag=pre_count_sql db=tpch0_1 baseline=rls_with_index
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[policy_set] db=tpch0_1 K=5 enabled_ids=[1, 2, 3, 4, 5]
+[setup_ours] K=5 setup_ms=3749.187 disk=26776011
+[CF_RLS_DUMP] tag=post_create db=tpch0_1
+[CF_RLS_DUMP] current_user=postgres session_user=postgres
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=postgres rolsuper=True rolbypassrls=True
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p5 permissive=PERMISSIVE roles=['rls_user'] qual=((((l_shipmode = ANY (ARRAY['AIR'::bpchar, 'AIR REG'::bpchar])) AND (l_quantity <= (15)::numeric) AND (l_discount <= 0.05) AND (l_linestatus = 'F'::bpchar)) OR ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) AND (l_quantity <= (30)::numeric) AND (l_discount <= 0.07) AND (l_returnflag = 'R'::bpchar))) AND (l_extendedprice > (0)::numeric))
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=2652.490 disk=75563008 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[correctness_sample] db=tpch0_1 K=5 queries=['1', '6']
+[progress] db=tpch0_1 K=5 baseline=ours query=1
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=1
+[CF_RLS_DUMP] tag=pre_query db=tpch0_1 baseline=rls_with_index q=1
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p5 permissive=PERMISSIVE roles=['rls_user'] qual=((((l_shipmode = ANY (ARRAY['AIR'::bpchar, 'AIR REG'::bpchar])) AND (l_quantity <= (15)::numeric) AND (l_discount <= 0.05) AND (l_linestatus = 'F'::bpchar)) OR ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) AND (l_quantity <= (30)::numeric) AND (l_discount <= 0.07) AND (l_returnflag = 'R'::bpchar))) AND (l_extendedprice > (0)::numeric))
+[progress] db=tpch0_1 K=5 baseline=ours query=6
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=6
+[CF_RLS_DUMP] tag=pre_query db=tpch0_1 baseline=rls_with_index q=6
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p5 permissive=PERMISSIVE roles=['rls_user'] qual=((((l_shipmode = ANY (ARRAY['AIR'::bpchar, 'AIR REG'::bpchar])) AND (l_quantity <= (15)::numeric) AND (l_discount <= 0.05) AND (l_linestatus = 'F'::bpchar)) OR ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) AND (l_quantity <= (30)::numeric) AND (l_discount <= 0.07) AND (l_returnflag = 'R'::bpchar))) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] tag=pre_count_query db=tpch0_1 baseline=rls_with_index
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p5 permissive=PERMISSIVE roles=['rls_user'] qual=((((l_shipmode = ANY (ARRAY['AIR'::bpchar, 'AIR REG'::bpchar])) AND (l_quantity <= (15)::numeric) AND (l_discount <= 0.05) AND (l_linestatus = 'F'::bpchar)) OR ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) AND (l_quantity <= (30)::numeric) AND (l_discount <= 0.07) AND (l_returnflag = 'R'::bpchar))) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] tag=pre_count_sql db=tpch0_1 baseline=rls_with_index
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p5 permissive=PERMISSIVE roles=['rls_user'] qual=((((l_shipmode = ANY (ARRAY['AIR'::bpchar, 'AIR REG'::bpchar])) AND (l_quantity <= (15)::numeric) AND (l_discount <= 0.05) AND (l_linestatus = 'F'::bpchar)) OR ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) AND (l_quantity <= (30)::numeric) AND (l_discount <= 0.07) AND (l_returnflag = 'R'::bpchar))) AND (l_extendedprice > (0)::numeric))
+[db] done db=tpch0_1
+[summary] db=tpch0_1 scale=0.1 K=3 median_hot ours=226.611ms rls=90.638ms ratio=2.500 cross_ratio=0.000 disk ours=20420305 rls=44032000 median_rss ours=169742KB rls=119290KB
+[summary] db=tpch0_1 scale=0.1 K=4 median_hot ours=271.601ms rls=90.675ms ratio=2.995 cross_ratio=0.000 disk ours=26776011 rls=75563008 median_rss ours=224952KB rls=121814KB
+[summary] db=tpch0_1 scale=0.1 K=5 median_hot ours=256.817ms rls=90.612ms ratio=2.834 cross_ratio=0.000 disk ours=26776011 rls=75563008 median_rss ours=212796KB rls=122510KB
+[plot] matplotlib unavailable: No module named 'matplotlib'
+[done] times_csv=logs/atom_policy_probe_notices_20260213_061110/times.csv
+[done] profile_csv=logs/atom_policy_probe_notices_20260213_061110/profile.csv
+[done] correctness_csv=logs/atom_policy_probe_notices_20260213_061110/correctness.csv
+[done] summary_csv=logs/atom_policy_probe_notices_20260213_061110/summary.csv
+[done] plots_dir=logs/atom_policy_probe_notices_20260213_061110/plots

@@ -1,0 +1,10 @@
+Pager usage is off.
+SET
+psql:bench/bench_artifact_build.sql:11: NOTICE:  relation "files" already exists, skipping
+CREATE TABLE
+DO
+CHECKPOINT
+LOAD
+psql:bench/bench_artifact_build.sql:62: ERROR:  syntax error at or near ":"
+LINE 20:       :'ARTIFACT_BUILDER_SO',
+               ^

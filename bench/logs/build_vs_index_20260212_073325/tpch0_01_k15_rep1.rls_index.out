@@ -1,0 +1,100 @@
+Pager usage is off.
+SET
+__BACKEND_PID__ 395140
+__PG_SETTINGS__
+64MB
+2
+on
+__END_PG_SETTINGS__
+psql:bench/bench_rls_index_build.sql:17: NOTICE:  schema "pg_temp" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+INSERT 0 24
+__DROP_INDEXES_BEGIN__
+DO
+psql:bench/bench_rls_index_build.sql:38: NOTICE:  index "idx_orders_o_custkey" does not exist, skipping
+DROP INDEX
+psql:bench/bench_rls_index_build.sql:39: NOTICE:  index "idx_customer_c_custkey" does not exist, skipping
+DROP INDEX
+psql:bench/bench_rls_index_build.sql:40: NOTICE:  index "idx_lineitem_l_orderkey" does not exist, skipping
+DROP INDEX
+psql:bench/bench_rls_index_build.sql:41: NOTICE:  index "idx_customer_c_custkey_mktsegment" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:1: NOTICE:  index "cf_rls_k15_customer_c_acctbal_1" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:2: NOTICE:  index "cf_rls_k15_customer_c_custkey_2" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:3: NOTICE:  index "cf_rls_k15_customer_c_mktsegment_3" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:4: NOTICE:  index "cf_rls_k15_customer_c_name_4" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:5: NOTICE:  index "cf_rls_k15_customer_c_nationkey_5" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:6: NOTICE:  index "cf_rls_k15_customer_c_phone_6" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:7: NOTICE:  index "cf_rls_k15_lineitem_l_discount_7" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:8: NOTICE:  index "cf_rls_k15_lineitem_l_extendedprice_8" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:9: NOTICE:  index "cf_rls_k15_lineitem_l_linestatus_9" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:10: NOTICE:  index "cf_rls_k15_lineitem_l_orderkey_10" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:11: NOTICE:  index "cf_rls_k15_lineitem_l_quantity_11" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:12: NOTICE:  index "cf_rls_k15_lineitem_l_returnflag_12" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:13: NOTICE:  index "cf_rls_k15_lineitem_l_shipinstruct_13" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:14: NOTICE:  index "cf_rls_k15_lineitem_l_shipmode_14" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:15: NOTICE:  index "cf_rls_k15_lineitem_l_tax_15" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:16: NOTICE:  index "cf_rls_k15_nation_n_name_16" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:17: NOTICE:  index "cf_rls_k15_nation_n_nationkey_17" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:18: NOTICE:  index "cf_rls_k15_nation_n_regionkey_18" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:19: NOTICE:  index "cf_rls_k15_orders_o_custkey_19" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:20: NOTICE:  index "cf_rls_k15_orders_o_orderkey_20" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:21: NOTICE:  index "cf_rls_k15_orders_o_orderpriority_21" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:22: NOTICE:  index "cf_rls_k15_orders_o_orderstatus_22" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:23: NOTICE:  index "cf_rls_k15_region_r_name_23" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:24: NOTICE:  index "cf_rls_k15_region_r_regionkey_24" does not exist, skipping
+DROP INDEX
+__DROP_INDEXES_END__
+__RLS_INDEX_BUILD_BEGIN__
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+DO
+CREATE INDEX
+DO
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+__RLS_INDEX_BUILD_END__ 2026-02-12 07:33:29.75848+05:30 2026-02-12 07:33:30.105928+05:30
+__RLS_INDEX_TOTAL_BYTES__
+9641984
+__END_RLS_INDEX_TOTAL_BYTES__

@@ -1,0 +1,14 @@
+[db] start db=tpch0_1
+[policy_set] db=tpch0_1 K=3 enabled_ids=[1, 2, 3]
+Traceback (most recent call last):
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 1798, in <module>
+    main()
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 1793, in main
+    run_experiment(args)
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 1648, in run_experiment
+    ours_setup_ms, ours_disk = setup_ours_for_k(db, k, enabled_path_k, statement_timeout_ms)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 868, in setup_ours_for_k
+    cur.execute(f"LOAD '{CUSTOM_FILTER_SO}';")
+psycopg2.errors.UndefinedFile: could not load library "/tmp/z3_lab/project/custom_filter/custom_filter.so": libcvc5.so.1: cannot open shared object file: No such file or directory
+

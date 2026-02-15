@@ -1,0 +1,19 @@
+[matrix] run_id=dashboard_sanity_20260213_235523 run_dir=logs/dashboard_sanity_20260213_235523
+[matrix] dbs=['tpch0_1'] Ks=[1] pool=1-20 warmup_runs=0 timed_runs=1
+[matrix] queries=['1']
+[db] start db=tpch0_1
+[clean_state] tag=clean_start db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[policy_set] db=tpch0_1 K=1 enabled_ids=[1]
+[clean_state] tag=clean_before_k K=1 db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+Traceback (most recent call last):
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 2439, in <module>
+    main()
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 2431, in main
+    run_matrix_tpch_scale(args)
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 1738, in run_matrix_tpch_scale
+    ours_setup_ms, ours_bytes_db, ours_bytes_disk = setup_ours_for_k_with_sizes(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/z3_lab/project/fast_sweep_profile_60s.py", line 1658, in setup_ours_for_k_with_sizes
+    cur.execute("SELECT public.build_base(%s);", [str(enabled_path)])
+psycopg2.errors.InternalError_: failed to parse policies at logs/dashboard_sanity_20260213_235523/policies_enabled_tpch0_1_k1.txt
+

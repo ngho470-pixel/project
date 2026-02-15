@@ -1,0 +1,73 @@
+[db] start db=tpch0_1
+[policy_set] db=tpch0_1 K=5 enabled_ids=[1, 2, 3, 4, 5]
+[setup_ours] K=5 setup_ms=3785.490 disk=26776011
+[CF_RLS_DUMP] tag=post_create db=tpch0_1
+[CF_RLS_DUMP] current_user=postgres session_user=postgres
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=postgres rolsuper=True rolbypassrls=True
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p5 permissive=PERMISSIVE roles=['rls_user'] qual=((((l_shipmode = ANY (ARRAY['AIR'::bpchar, 'AIR REG'::bpchar])) AND (l_quantity <= (15)::numeric) AND (l_discount <= 0.05) AND (l_linestatus = 'F'::bpchar)) OR ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) AND (l_quantity <= (30)::numeric) AND (l_discount <= 0.07) AND (l_returnflag = 'R'::bpchar))) AND (l_extendedprice > (0)::numeric))
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=2642.890 disk=75563008 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[correctness_sample] db=tpch0_1 K=5 queries=['1']
+[progress] db=tpch0_1 K=5 baseline=ours query=1
+[CF_POLICY_AST_DUMP] tag=db=tpch0_1 baseline=ours q=1 phase=cold lines=5
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=0 restrictive_total=0 targets=0 targets_perm0=0
+NOTICE:  CF_POLICY_AST target=lineitem perm=3 rest=2 y0=0 ast=(y13 or y7 or y4 and y1 and y10 or y5 and y3 and y8 or (y15 and y9 and y1 and y7 or y16 and y11 and y2 and y13) and y6) and y14 and (y16 or y17) and y14 and (y13 or y12) and (y18 or y1) and y6
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=3 restrictive_total=2 targets=1 targets_perm0=0
+NOTICE:  CF_POLICY_AST target=lineitem perm=3 rest=2 y0=0 ast=(y13 or y7 or y4 and y1 and y10 or y5 and y3 and y8 or (y15 and y9 and y1 and y7 or y16 and y11 and y2 and y13) and y6) and y14 and (y16 or y17) and y14 and (y13 or y12) and (y18 or y1) and y6
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=3 restrictive_total=2 targets=1 targets_perm0=0
+[CF_POLICY_AST_DUMP] tag=db=tpch0_1 baseline=ours q=1 phase=hot1 lines=5
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=0 restrictive_total=0 targets=0 targets_perm0=0
+NOTICE:  CF_POLICY_AST target=lineitem perm=3 rest=2 y0=0 ast=(y13 or y7 or y4 and y1 and y10 or y5 and y3 and y8 or (y15 and y9 and y1 and y7 or y16 and y11 and y2 and y13) and y6) and y14 and (y16 or y17) and y14 and (y13 or y12) and (y18 or y1) and y6
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=3 restrictive_total=2 targets=1 targets_perm0=0
+NOTICE:  CF_POLICY_AST target=lineitem perm=3 rest=2 y0=0 ast=(y13 or y7 or y4 and y1 and y10 or y5 and y3 and y8 or (y15 and y9 and y1 and y7 or y16 and y11 and y2 and y13) and y6) and y14 and (y16 or y17) and y14 and (y13 or y12) and (y18 or y1) and y6
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=3 restrictive_total=2 targets=1 targets_perm0=0
+[CF_POLICY_AST_DUMP] tag=profile_capture db=tpch0_1 q=1 lines=5
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=0 restrictive_total=0 targets=0 targets_perm0=0
+NOTICE:  CF_POLICY_AST target=lineitem perm=3 rest=2 y0=0 ast=(y13 or y7 or y4 and y1 and y10 or y5 and y3 and y8 or (y15 and y9 and y1 and y7 or y16 and y11 and y2 and y13) and y6) and y14 and (y16 or y17) and y14 and (y13 or y12) and (y18 or y1) and y6
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=3 restrictive_total=2 targets=1 targets_perm0=0
+NOTICE:  CF_POLICY_AST target=lineitem perm=3 rest=2 y0=0 ast=(y13 or y7 or y4 and y1 and y10 or y5 and y3 and y8 or (y15 and y9 and y1 and y7 or y16 and y11 and y2 and y13) and y6) and y14 and (y16 or y17) and y14 and (y13 or y12) and (y18 or y1) and y6
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=3 restrictive_total=2 targets=1 targets_perm0=0
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=1
+[CF_RLS_DUMP] tag=pre_query db=tpch0_1 baseline=rls_with_index q=1
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p5 permissive=PERMISSIVE roles=['rls_user'] qual=((((l_shipmode = ANY (ARRAY['AIR'::bpchar, 'AIR REG'::bpchar])) AND (l_quantity <= (15)::numeric) AND (l_discount <= 0.05) AND (l_linestatus = 'F'::bpchar)) OR ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) AND (l_quantity <= (30)::numeric) AND (l_discount <= 0.07) AND (l_returnflag = 'R'::bpchar))) AND (l_extendedprice > (0)::numeric))
+[CF_POLICY_AST_DUMP] tag=pre_count_query db=tpch0_1 baseline=ours lines=2
+NOTICE:  CF_POLICY_AST target=lineitem perm=3 rest=2 y0=0 ast=(y13 or y7 or y4 and y1 and y10 or y5 and y3 and y8 or (y15 and y9 and y1 and y7 or y16 and y11 and y2 and y13) and y6) and y14 and (y16 or y17) and y14 and (y13 or y12) and (y18 or y1) and y6
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=3 restrictive_total=2 targets=1 targets_perm0=0
+[CF_RLS_DUMP] tag=pre_count_query db=tpch0_1 baseline=rls_with_index
+[CF_RLS_DUMP] current_user=rls_user session_user=rls_user
+[CF_RLS_DUMP] row_security=on
+[CF_RLS_DUMP] role rolname=rls_user rolsuper=False rolbypassrls=False
+[CF_RLS_DUMP] rel relname=customer relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=lineitem relrowsecurity=True relforcerowsecurity=False
+[CF_RLS_DUMP] rel relname=orders relrowsecurity=False relforcerowsecurity=False
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p1 permissive=PERMISSIVE roles=['rls_user'] qual=((l_returnflag = 'R'::bpchar) OR (l_linestatus = 'F'::bpchar))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p2 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) OR (l_shipmode = ANY (ARRAY['TRUCK'::bpchar, 'RAIL'::bpchar]))))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p3 permissive=PERMISSIVE roles=['rls_user'] qual=(((l_discount >= 0.02) AND (l_discount <= 0.05) AND (l_quantity <= (25)::numeric)) OR ((l_discount >= 0.06) AND (l_discount <= 0.08) AND (l_quantity <= (10)::numeric)))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p4 permissive=RESTRICTIVE roles=['rls_user'] qual=((l_shipinstruct = 'DELIVER IN PERSON'::bpchar) AND ((l_returnflag = 'R'::bpchar) OR (l_returnflag = 'A'::bpchar)) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > (0)::numeric))
+[CF_RLS_DUMP] policy tablename=lineitem policyname=cf_p5 permissive=PERMISSIVE roles=['rls_user'] qual=((((l_shipmode = ANY (ARRAY['AIR'::bpchar, 'AIR REG'::bpchar])) AND (l_quantity <= (15)::numeric) AND (l_discount <= 0.05) AND (l_linestatus = 'F'::bpchar)) OR ((l_shipmode = ANY (ARRAY['MAIL'::bpchar, 'SHIP'::bpchar])) AND (l_quantity <= (30)::numeric) AND (l_discount <= 0.07) AND (l_returnflag = 'R'::bpchar))) AND (l_extendedprice > (0)::numeric))
+[db] done db=tpch0_1
+[summary] db=tpch0_1 scale=0.1 K=5 median_hot ours=392.255ms rls=120.832ms ratio=3.246 cross_ratio=0.000 disk ours=26776011 rls=75563008 median_rss ours=184672KB rls=117884KB
+[plot] matplotlib unavailable: No module named 'matplotlib'
+[done] times_csv=logs/odd_even_probe_20260213_053919/times.csv
+[done] profile_csv=logs/odd_even_probe_20260213_053919/profile.csv
+[done] correctness_csv=logs/odd_even_probe_20260213_053919/correctness.csv
+[done] summary_csv=logs/odd_even_probe_20260213_053919/summary.csv
+[done] plots_dir=/tmp/z3_lab/project/logs/policy_scaling_plots
