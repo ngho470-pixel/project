@@ -420,7 +420,10 @@ def connect(db: str, role: str):
 
 
 def apply_timing_session_settings(cur, statement_timeout_ms: int) -> None:
+    # Disable parallelism everywhere (query and maintenance) to make experiment
+    # runs deterministic and comparable.
     cur.execute("SET max_parallel_workers_per_gather = 0;")
+    cur.execute("SET max_parallel_maintenance_workers = 0;")
     cur.execute("SET statement_timeout = %s;", [int(statement_timeout_ms)])
 
 
