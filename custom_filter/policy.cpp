@@ -5513,6 +5513,7 @@ static bool multi_join_enforce_general(const Loaded &loaded,
     }
 
     // Build+bin row signatures for target table (streaming; no per-row signature storage).
+    auto t_sig_start = Clock::now();
     std::string base_sig = base_sig_for_bits((size_t)max_id);
     const size_t nbytes = base_sig.size();
     std::vector<uint8_t> base_bytes(nbytes, 0);
@@ -5578,11 +5579,16 @@ static bool multi_join_enforce_general(const Loaded &loaded,
             hist[(size_t)bid] += 1;
         }
     }
+    auto t_sig_end = Clock::now();
+    if (profile) profile->presence_ms_total += Ms(t_sig_end - t_sig_start).count();
 
     std::vector<uint8_t> allow_bin;
+    auto t_sat_start = Clock::now();
     if (!eval_bins_sat_flat(global_ast, max_id, bin_sig_flat, nbytes, hist.size(),
                             &allow_bin, nullptr, nullptr))
         ereport(ERROR, (errmsg("policy: failed to eval AST bins")));
+    auto t_sat_end = Clock::now();
+    if (profile) profile->presence_ms_total += Ms(t_sat_end - t_sat_start).count();
 
     // decode allowed rows
     size_t bytes = (ti_t.n_rows + 7) / 8;
