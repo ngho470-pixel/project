@@ -8,7 +8,9 @@ INCLUDES := -I$(shell $(PG_CONFIG) --includedir-server)
 
 # Ensure the packaged runtime can resolve cvc5 dependencies from a sibling `lib/`
 # directory (e.g. /tmp/z3_lab/custom_filter.so + /tmp/z3_lab/lib/libcvc5.so.1).
-LDFLAGS  := -Wl,-rpath,'$$ORIGIN/lib' -Wl,-z,origin
+# NOTE: We intentionally force DT_RPATH (not DT_RUNPATH) so that `$ORIGIN/lib`
+# is inherited and applies to libcvc5's transitive deps (e.g. libcln).
+LDFLAGS  := -Wl,--disable-new-dtags -Wl,-rpath,'$$ORIGIN/lib' -Wl,-z,origin
 
 CVC5_LIBS := -lcvc5
 
