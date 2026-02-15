@@ -2707,81 +2707,25 @@ static bool eval_bins_sat_flat(const AstNode *ast,
         return true;
     }
 
-    api::Solver slv;
-    slv.setLogic("SAT");
-    slv.setOption("produce-models", "false");
-    slv.setOption("incremental", "true");
-    api::Sort B = slv.getBooleanSort();
-    std::vector<api::Term> yvars(atom_count + 1);
-    for (int i = 1; i <= atom_count; i++) {
-        yvars[i] = slv.mkConst(B, "y" + std::to_string(i));
-    }
-
-    struct CnfCtx {
-        api::Solver *slv;
-        api::Sort B;
-        std::vector<api::Term> *yvars;
-        int next_id;
-        std::vector<api::Term> clauses;
-    };
-    CnfCtx ctx{&slv, B, &yvars, 0, {}};
-
-    std::function<api::Term(const AstNode*)> build_cnf = [&](const AstNode *node) -> api::Term {
-        if (!node) return ctx.slv->mkBoolean(true);
+    std::function<bool(const AstNode*, const uint8_t*)> eval_sig =
+        [&](const AstNode *node, const uint8_t *sig) -> bool {
+        if (!node) return true;
         if (node->type == AstNode::VAR) {
             int id = node->var_id;
-            if (id == 0)
-                return ctx.slv->mkBoolean(false);
-            if (id < 0 || id >= (int)ctx.yvars->size())
-                return ctx.slv->mkBoolean(true);
-            return (*ctx.yvars)[id];
+            if (id == 0) return false;
+            if (id < 0 || id > atom_count) return true;
+            return get_sig_bit_bytes(sig, nbytes, (size_t)(id - 1));
         }
-        api::Term a = build_cnf(node->left);
-        api::Term b = build_cnf(node->right);
-        api::Term z = ctx.slv->mkConst(ctx.B, "t" + std::to_string(++ctx.next_id));
-        if (node->type == AstNode::AND) {
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), a}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), b}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {a}),
-                                                   ctx.slv->mkTerm(api::Kind::NOT, {b}),
-                                                   z}));
-        } else {
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {a}), z}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {b}), z}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), a, b}));
-        }
-        return z;
+        if (node->type == AstNode::AND)
+            return eval_sig(node->left, sig) && eval_sig(node->right, sig);
+        return eval_sig(node->left, sig) || eval_sig(node->right, sig);
     };
 
-    api::Term top = build_cnf(ast);
-    for (auto &cl : ctx.clauses)
-        slv.assertFormula(cl);
-    slv.assertFormula(top);
-
-    auto t0 = Clock::now();
     for (size_t b = 0; b < n_bins; b++) {
         const uint8_t *sig = bin_sig_flat.data() + b * nbytes;
-        std::vector<api::Term> assumptions;
-        assumptions.reserve(atom_count);
-        for (int i = 1; i <= atom_count; i++) {
-            bool bit = get_sig_bit_bytes(sig, nbytes, (size_t)(i - 1));
-            api::Term lit = bit ? yvars[i]
-                                : slv.mkTerm(api::Kind::NOT, {yvars[i]});
-            assumptions.push_back(lit);
-        }
-        api::Result r = slv.checkSatAssuming(assumptions);
-        if (sat_calls) (*sat_calls)++;
-        if (r.isSat())
-            (*allow_bin)[b] = 1;
+        (*allow_bin)[b] = eval_sig(ast, sig) ? 1 : 0;
     }
-    auto t1 = Clock::now();
-    if (sat_ms) *sat_ms = Ms(t1 - t0).count();
+    if (sat_ms) *sat_ms = 0.0;
     return true;
 }
 
@@ -2808,10 +2752,11 @@ static bool eval_bins_sat(const AstNode *ast, int atom_count,
     auto sig_bit = [&](const std::string &s, int aid) -> bool {
         if (aid == 0) return false;
         if (aid < 0) return true;
+        if (aid > atom_count) return true;
         size_t bit = (size_t)(aid - 1);
         size_t byte = bit >> 3;
         size_t off = bit & 7;
-        if (byte >= s.size()) return false;
+        if (byte >= s.size()) return true;
         return (s[byte] & (char)(1u << off)) != 0;
     };
 
@@ -2837,64 +2782,19 @@ static bool eval_bins_sat(const AstNode *ast, int atom_count,
         return true;
     }
 
-    api::Solver slv;
-    slv.setLogic("SAT");
-    slv.setOption("produce-models", "false");
-    slv.setOption("incremental", "true");
-    api::Sort B = slv.getBooleanSort();
-    std::vector<api::Term> yvars(atom_count + 1);
-    for (int i = 1; i <= atom_count; i++) {
-        yvars[i] = slv.mkConst(B, "y" + std::to_string(i));
-    }
+    std::function<bool(const AstNode*, const std::string&)> eval_sig =
+        [&](const AstNode *node, const std::string &s) -> bool {
+            if (!node) return true;
+            if (node->type == AstNode::VAR)
+                return sig_bit(s, node->var_id);
+            if (node->type == AstNode::AND) {
+                if (!eval_sig(node->left, s)) return false;
+                return eval_sig(node->right, s);
+            }
+            if (eval_sig(node->left, s)) return true;
+            return eval_sig(node->right, s);
+        };
 
-    struct CnfCtx {
-        api::Solver *slv;
-        api::Sort B;
-        std::vector<api::Term> *yvars;
-        int next_id;
-        std::vector<api::Term> clauses;
-    };
-    CnfCtx ctx{&slv, B, &yvars, 0, {}};
-
-    std::function<api::Term(const AstNode*)> build_cnf = [&](const AstNode *node) -> api::Term {
-        if (!node) return ctx.slv->mkBoolean(true);
-        if (node->type == AstNode::VAR) {
-            int id = node->var_id;
-            if (id == 0)
-                return ctx.slv->mkBoolean(false);
-            if (id < 0 || id >= (int)ctx.yvars->size())
-                return ctx.slv->mkBoolean(true);
-            return (*ctx.yvars)[id];
-        }
-        api::Term a = build_cnf(node->left);
-        api::Term b = build_cnf(node->right);
-        api::Term z = ctx.slv->mkConst(ctx.B, "t" + std::to_string(++ctx.next_id));
-        if (node->type == AstNode::AND) {
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), a}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), b}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {a}),
-                                                   ctx.slv->mkTerm(api::Kind::NOT, {b}),
-                                                   z}));
-        } else {
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {a}), z}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {b}), z}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), a, b}));
-        }
-        return z;
-    };
-
-    api::Term top = build_cnf(ast);
-    for (auto &cl : ctx.clauses)
-        slv.assertFormula(cl);
-    slv.assertFormula(top);
-
-    auto t0 = Clock::now();
     for (size_t b = 0; b < bin_sig.size(); b++) {
         const std::string &s = bin_sig[b];
         if (decision_cache) {
@@ -2905,25 +2805,10 @@ static bool eval_bins_sat(const AstNode *ast, int atom_count,
                 continue;
             }
         }
-        std::vector<api::Term> assumptions;
-        assumptions.reserve(atom_count);
-        for (int i = 1; i <= atom_count; i++) {
-            bool bit = false;
-            if (!s.empty()) {
-                bit = (s[(i - 1) >> 3] & (1u << ((i - 1) & 7))) != 0;
-            }
-            api::Term lit = bit ? yvars[i]
-                                : slv.mkTerm(api::Kind::NOT, {yvars[i]});
-            assumptions.push_back(lit);
-        }
-        api::Result r = slv.checkSatAssuming(assumptions);
-        if (sat_calls) (*sat_calls)++;
-        if (r.isSat())
-            (*allow_bin)[b] = 1;
+        (*allow_bin)[b] = eval_sig(ast, s) ? 1 : 0;
         if (decision_cache) (*decision_cache)[s] = (*allow_bin)[b];
     }
-    auto t1 = Clock::now();
-    if (sat_ms) *sat_ms = Ms(t1 - t0).count();
+    if (sat_ms) *sat_ms = 0.0;
     return true;
 }
 

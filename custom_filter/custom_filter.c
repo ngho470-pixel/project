@@ -1058,10 +1058,11 @@ typedef struct CfExec
 
 typedef struct BlockIndex
 {
-    uint32 start_rid;
-    uint32 end_rid;
     uint32 max_off;
-    uint16 *off2delta;
+    /* Per-block bitmaps indexed by OffsetNumber (1-based). */
+    uint8 *present_bits;
+    uint8 *allow_bits;
+    size_t bit_bytes;
     bool present;
 } BlockIndex;
 
@@ -1751,6 +1752,18 @@ cf_build_blk_index(TableFilterState *tf, MemoryContext mcxt)
             max_blk = blk;
     }
     uint32 n_blocks = max_blk + 1;
+    /* Per-block maximum offset number (1-based). */
+    uint32 *max_off = NULL;
+    MemoryContext oldctx2 = MemoryContextSwitchTo(mcxt);
+    max_off = (uint32 *) palloc0(sizeof(uint32) * n_blocks);
+    MemoryContextSwitchTo(oldctx2);
+    for (uint32 r = 0; r < n_rows; r++)
+    {
+        uint32 blk = tf->ctid_pairs[2 * r];
+        uint32 off = tf->ctid_pairs[2 * r + 1];
+        if (blk < n_blocks && off > max_off[blk])
+            max_off[blk] = off;
+    }
 
     MemoryContext oldctx = MemoryContextSwitchTo(mcxt);
     tf->blk_index = (BlockIndex *) palloc0(sizeof(BlockIndex) * n_blocks);
@@ -1758,69 +1771,58 @@ cf_build_blk_index(TableFilterState *tf, MemoryContext mcxt)
     tf->n_blocks = n_blocks;
     tf->blk_index_bytes = (size_t) n_blocks * sizeof(BlockIndex);
 
-    for (uint32 r = 0; r < n_rows; r++)
-    {
-        uint32 blk = tf->ctid_pairs[2 * r];
-        uint32 off = tf->ctid_pairs[2 * r + 1];
-        BlockIndex *bi = &tf->blk_index[blk];
-        if (!bi->present)
-        {
-            bi->present = true;
-            bi->start_rid = r;
-            bi->end_rid = r;
-            bi->max_off = off;
-        }
-        else
-        {
-            bi->end_rid = r;
-            if (off > bi->max_off)
-                bi->max_off = off;
-        }
-    }
-
+    /* Allocate per-block bitmaps. */
     for (uint32 blk = 0; blk < n_blocks; blk++)
     {
-        BlockIndex *bi = &tf->blk_index[blk];
-        if (!bi->present)
+        uint32 moff = max_off[blk];
+        if (moff == 0)
             continue;
-
-        size_t off_entries = (size_t) bi->max_off + 1;
+        BlockIndex *bi = &tf->blk_index[blk];
+        bi->present = true;
+        bi->max_off = moff;
+        bi->bit_bytes = (size_t) ((moff + 8u) / 8u);
         oldctx = MemoryContextSwitchTo(mcxt);
-        bi->off2delta = (uint16 *) palloc(off_entries * sizeof(uint16));
+        bi->present_bits = (uint8 *) palloc0(bi->bit_bytes);
+        bi->allow_bits = (uint8 *) palloc0(bi->bit_bytes);
         MemoryContextSwitchTo(oldctx);
-        memset(bi->off2delta, 0xFF, off_entries * sizeof(uint16));
-        tf->blk_index_bytes += off_entries * sizeof(uint16);
-
-        if ((bi->end_rid - bi->start_rid) >= (uint32) 0xFFFF)
-            ereport(ERROR,
-                    (errmsg("custom_filter: block rid span exceeds uint16 delta rel=%s blk=%u span=%u",
-                            tf->relname[0] ? tf->relname : "<unknown>",
-                            blk,
-                            (bi->end_rid - bi->start_rid))));
+        tf->blk_index_bytes += bi->bit_bytes * 2;
     }
 
+    /* Populate present/allow bits. */
     for (uint32 r = 0; r < n_rows; r++)
     {
         uint32 blk = tf->ctid_pairs[2 * r];
         uint32 off = tf->ctid_pairs[2 * r + 1];
-        BlockIndex *bi = &tf->blk_index[blk];
-        uint32 delta = r - bi->start_rid;
-        if (delta >= (uint32) 0xFFFF)
+        if (blk >= tf->n_blocks)
             ereport(ERROR,
-                    (errmsg("custom_filter: delta overflow rel=%s blk=%u rid=%u start=%u",
+                    (errmsg("custom_filter: ctid blk out of range rel=%s blk=%u n_blocks=%u",
                             tf->relname[0] ? tf->relname : "<unknown>",
-                            blk, r, bi->start_rid)));
-        if (off > bi->max_off)
+                            blk, tf->n_blocks)));
+        BlockIndex *bi = &tf->blk_index[blk];
+        if (!bi->present || !bi->present_bits || !bi->allow_bits)
             ereport(ERROR,
-                    (errmsg("custom_filter: offset overflow rel=%s blk=%u off=%u max_off=%u",
+                    (errmsg("custom_filter: ctid blk index missing rel=%s blk=%u",
+                            tf->relname[0] ? tf->relname : "<unknown>",
+                            blk)));
+        if (off == 0 || off > bi->max_off)
+            ereport(ERROR,
+                    (errmsg("custom_filter: ctid off out of range rel=%s blk=%u off=%u max_off=%u",
                             tf->relname[0] ? tf->relname : "<unknown>",
                             blk, off, bi->max_off)));
-        if (bi->off2delta[off] != (uint16) 0xFFFF)
+        size_t byte_idx = (size_t) (off >> 3);
+        uint8 mask = (uint8) (1u << (off & 7u));
+        if (byte_idx >= bi->bit_bytes)
             ereport(ERROR,
-                    (errmsg("custom_filter: duplicate CTID key rel=%s blk=%u off=%u",
+                    (errmsg("custom_filter: ctid bitmap index out of range rel=%s blk=%u off=%u bytes=%zu",
                             tf->relname[0] ? tf->relname : "<unknown>",
-                            blk, off)));
-        bi->off2delta[off] = (uint16) delta;
+                            blk, off, bi->bit_bytes)));
+        bi->present_bits[byte_idx] |= mask;
+
+        size_t allow_byte = (size_t) (r >> 3);
+        uint8 allow_mask = (uint8) (1u << (r & 7u));
+        bool allow = (allow_byte < tf->allow_nbytes) && ((tf->allow_bits[allow_byte] & allow_mask) != 0);
+        if (allow)
+            bi->allow_bits[byte_idx] |= mask;
     }
 
     if (cf_trace_enabled())
@@ -1829,7 +1831,7 @@ cf_build_blk_index(TableFilterState *tf, MemoryContext mcxt)
         {
             uint32 blk = tf->ctid_pairs[2 * r];
             uint32 off = tf->ctid_pairs[2 * r + 1];
-            CF_TRACE_LOG( "custom_filter: ctid_map[%u]=(%u,%u)->%u", r, blk, off, r);
+            CF_TRACE_LOG( "custom_filter: ctid_map[%u]=(%u,%u)", r, blk, off);
         }
     }
 }
@@ -1837,32 +1839,11 @@ cf_build_blk_index(TableFilterState *tf, MemoryContext mcxt)
 static int32
 cf_ctid_to_rid(TableFilterState *tf, BlockNumber blk, OffsetNumber off)
 {
-    if (!tf || !tf->blk_index || tf->n_blocks == 0)
-        return -1;
-    if ((uint32) blk >= tf->n_blocks)
-        return -1;
-
-    BlockIndex *bi = &tf->blk_index[(uint32) blk];
-    if (!bi->present || !bi->off2delta)
-        return -1;
-    if ((uint32) off > bi->max_off)
-        return -1;
-    uint16 delta = bi->off2delta[(uint32) off];
-    if (delta == (uint16) 0xFFFF)
-        return -1;
-
-    uint32 rid = bi->start_rid + (uint32) delta;
-    if (rid < bi->start_rid || rid > bi->end_rid || rid >= tf->n_rows)
-        ereport(ERROR,
-                (errmsg("custom_filter[engine_error]: off2delta rid invalid rel=%s blk=%u off=%u rid=%u start=%u end=%u rows=%u",
-                        tf->relname[0] ? tf->relname : "<unknown>",
-                        (uint32) blk,
-                        (uint32) off,
-                        rid,
-                        bi->start_rid,
-                        bi->end_rid,
-                        tf->n_rows)));
-    return (int32) rid;
+    (void)tf;
+    (void)blk;
+    (void)off;
+    /* Deprecated: we now filter directly by CTID->(block,offset) bitmaps. */
+    return -1;
 }
 
 static TableFilterState *
@@ -2593,10 +2574,21 @@ cf_build_query_state(EState *estate, const char *query_str)
             for (uint32 r = 0; r < tf->n_rows && r < 100; r++) {
                 uint32 blk = tf->ctid_pairs[2 * r];
                 uint32 off = tf->ctid_pairs[2 * r + 1];
-                int32 rid2 = cf_ctid_to_rid(tf, blk, off);
-                if (rid2 != (int32)r) {
-                    CF_TRACE_LOG( "custom_filter: ctid_map_mismatch rel=%s r=%u -> %d (blk=%u off=%u)",
-                         tf->relname, r, rid2, blk, off);
+                if (blk >= tf->n_blocks || !tf->blk_index)
+                    break;
+                BlockIndex *bi = &tf->blk_index[blk];
+                if (!bi->present || !bi->present_bits || off == 0 || off > bi->max_off)
+                {
+                    CF_TRACE_LOG( "custom_filter: ctid_map_mismatch rel=%s r=%u missing (blk=%u off=%u)",
+                         tf->relname, r, blk, off);
+                    break;
+                }
+                size_t byte_idx = (size_t) (off >> 3);
+                uint8 mask = (uint8) (1u << (off & 7u));
+                if (byte_idx >= bi->bit_bytes || (bi->present_bits[byte_idx] & mask) == 0)
+                {
+                    CF_TRACE_LOG( "custom_filter: ctid_map_mismatch rel=%s r=%u not_present (blk=%u off=%u)",
+                         tf->relname, r, blk, off);
                     break;
                 }
             }
@@ -3747,7 +3739,6 @@ allow_check:
                      cf_tid_source_name(tid_src));
                 st->tid_logged = true;
             }
-            int32 rid = -1;
             BlockNumber blk = 0;
             OffsetNumber off = 0;
             if (cf_contract_enabled() && nodeTag(child) == T_SeqScanState)
@@ -3778,46 +3769,50 @@ allow_check:
             }
             blk  = ItemPointerGetBlockNumber(&tid_buf);
             off = ItemPointerGetOffsetNumber(&tid_buf);
-            instr_time rid_start, rid_end;
-            INSTR_TIME_SET_CURRENT(rid_start);
-            rid = cf_ctid_to_rid(tf, blk, off);
-            INSTR_TIME_SET_CURRENT(rid_end);
-            st->ctid_to_rid_ms += INSTR_TIME_GET_MILLISEC(rid_end) - INSTR_TIME_GET_MILLISEC(rid_start);
-            if (rid < 0)
+            instr_time allow_start, allow_end;
+            INSTR_TIME_SET_CURRENT(allow_start);
+            if (!tf->blk_index || tf->n_blocks == 0 || (uint32) blk >= tf->n_blocks)
             {
                 ereport(ERROR,
-                        (errmsg("custom_filter: CTID->rid not found for policy-required table (rel=%s blk=%u off=%u)",
+                        (errmsg("custom_filter: CTID blk not found for policy-required table (rel=%s blk=%u off=%u n_blocks=%u)",
+                                st->relname[0] ? st->relname : "<unknown>",
+                                (uint32) blk, (uint32) off, tf->n_blocks)));
+            }
+            BlockIndex *bi = &tf->blk_index[(uint32) blk];
+            if (!bi->present || !bi->present_bits || !bi->allow_bits)
+            {
+                ereport(ERROR,
+                        (errmsg("custom_filter: CTID blk index missing for policy-required table (rel=%s blk=%u off=%u)",
                                 st->relname[0] ? st->relname : "<unknown>",
                                 (uint32) blk, (uint32) off)));
             }
-            else if ((uint32) rid >= tf->n_rows)
+            if (off == 0 || (uint32) off > bi->max_off)
             {
                 ereport(ERROR,
-                        (errmsg("custom_filter: rid out of bounds for policy-required table (rel=%s rid=%d rows=%u)",
+                        (errmsg("custom_filter: CTID off out of range for policy-required table (rel=%s blk=%u off=%u max_off=%u)",
                                 st->relname[0] ? st->relname : "<unknown>",
-                                rid, tf->n_rows)));
+                                (uint32) blk, (uint32) off, bi->max_off)));
             }
-            else
+            size_t byte_idx = (size_t) ((uint32) off >> 3);
+            if (byte_idx >= bi->bit_bytes)
             {
-                instr_time allow_start, allow_end;
-                INSTR_TIME_SET_CURRENT(allow_start);
-                uint32 idx = (uint32) rid;
-                size_t byte_idx = (size_t) (idx >> 3);
-                if (byte_idx >= tf->allow_nbytes)
-                {
-                    ereport(ERROR,
-                            (errmsg("custom_filter[rid_oob]: allow_bits index out of range (rel=%s rid=%u rows=%u allow_bytes=%zu ctid=(%u,%u))",
-                                    st->relname[0] ? st->relname : "<unknown>",
-                                    idx, tf->n_rows, tf->allow_nbytes,
-                                    (uint32) blk, (uint32) off)));
-                }
-                uint8 byte = tf->allow_bits[byte_idx];
-                uint8 mask = (uint8) (1u << (idx & 7));
-                allow = (byte & mask) != 0;
-                INSTR_TIME_SET_CURRENT(allow_end);
-                st->allow_check_ms += INSTR_TIME_GET_MILLISEC(allow_end) -
-                                      INSTR_TIME_GET_MILLISEC(allow_start);
+                ereport(ERROR,
+                        (errmsg("custom_filter: CTID bitmap index out of range for policy-required table (rel=%s blk=%u off=%u bytes=%zu)",
+                                st->relname[0] ? st->relname : "<unknown>",
+                                (uint32) blk, (uint32) off, bi->bit_bytes)));
             }
+            uint8 mask = (uint8) (1u << ((uint32) off & 7u));
+            if ((bi->present_bits[byte_idx] & mask) == 0)
+            {
+                ereport(ERROR,
+                        (errmsg("custom_filter: CTID not present in artifacts for policy-required table (rel=%s blk=%u off=%u)",
+                                st->relname[0] ? st->relname : "<unknown>",
+                                (uint32) blk, (uint32) off)));
+            }
+            allow = (bi->allow_bits[byte_idx] & mask) != 0;
+            INSTR_TIME_SET_CURRENT(allow_end);
+            st->allow_check_ms += INSTR_TIME_GET_MILLISEC(allow_end) -
+                                  INSTR_TIME_GET_MILLISEC(allow_start);
         }
         else if (tf && !tf->allow_bits)
         {
