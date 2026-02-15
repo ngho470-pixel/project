@@ -2163,7 +2163,53 @@ def run_layer_probe(args: argparse.Namespace) -> None:
             clear_rls_indexes_and_policies(db)
             print_clean_state(db, tag=f"clean_before_k K={k}")
 
-            setup_ours_for_k_with_sizes(db, k, enabled_path_k, statement_timeout_ms)
+            try:
+                setup_ours_for_k_with_sizes(db, k, enabled_path_k, statement_timeout_ms)
+            except Exception as exc:  # noqa: BLE001
+                msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
+                print(f"[layer_probe] setup_error db={db} K={k} err={msg}")
+                for qid, _qsql in queries:
+                    row = {
+                        "run_id": run_id,
+                        "ts": now_ts(),
+                        "db": db,
+                        "K": str(k),
+                        "query_id": str(qid),
+                        "policy_total_ms": "",
+                        "artifact_load_ms": "",
+                        "artifact_parse_ms": "",
+                        "ctid_map_ms": "",
+                        "filter_ms": "",
+                        "child_exec_ms": "",
+                        "ctid_extract_ms": "",
+                        "ctid_to_rid_ms": "",
+                        "allow_check_ms": "",
+                        "projection_ms": "",
+                        "rss_mb": "",
+                        "rows_filtered": "",
+                        "rows_returned": "",
+                        "pe_total_ms": "",
+                        "pe_load_ms": "",
+                        "pe_local_ms": "",
+                        "pe_prop_ms": "",
+                        "pe_decode_ms": "",
+                        "local_stamp_ms": "0.000",
+                        "local_bin_ms": "0.000",
+                        "local_eval_ms": "0.000",
+                        "local_fill_ms": "0.000",
+                        "prop_ms_bundle": "0.000",
+                        "status": "error",
+                        "error_type": "setup_error",
+                        "error_msg": msg,
+                        "policy_profile_lines": "0",
+                        "policy_profile_query_lines": "0",
+                        "policy_profile_bundle_lines": "0",
+                    }
+                    append_csv_row(layer_csv, LAYER_PROBE_COLUMNS, row)
+                    out_rows.append(row)
+                clear_artifacts(db)
+                print_clean_state(db, tag=f"after_setup_error K={k}")
+                continue
 
             for qid, qsql in queries:
                 print(f"[progress] db={db} K={k} baseline=ours query={qid}")
