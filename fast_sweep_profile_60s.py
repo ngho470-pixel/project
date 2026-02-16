@@ -422,22 +422,26 @@ def connect(db: str, role: str):
 def apply_no_parallel_settings(cur) -> None:
     # Hard-disable all query/maintenance parallelism for determinism and to
     # match the "no parallelism anywhere" experiment rule.
-    cur.execute("SET max_parallel_workers_per_gather = 0;")
-    cur.execute("SET max_parallel_maintenance_workers = 0;")
-    cur.execute("SET parallel_leader_participation = off;")
-    cur.execute("SET force_parallel_mode = off;")
-    cur.execute("SET enable_parallel_append = off;")
-    cur.execute("SET enable_parallel_hash = off;")
+    stmts = [
+        "SET max_parallel_workers_per_gather = 0;",
+        "SET max_parallel_maintenance_workers = 0;",
+        "SET parallel_leader_participation = off;",
+        "SET force_parallel_mode = off;",
+        "SET enable_parallel_append = off;",
+        "SET enable_parallel_hash = off;",
+        "SET max_parallel_workers = 0;",
+    ]
 
-    # This GUC may be superuser-only or not settable at the session level on
-    # some installs; try but don't fail the harness.
-    try:
-        cur.execute("SET max_parallel_workers = 0;")
-    except Exception:  # noqa: BLE001
+    # Some clusters may run older Postgres versions (no parallel query) or
+    # restrict certain GUCs. In those cases we best-effort set what exists.
+    for stmt in stmts:
         try:
-            cur.connection.rollback()
-        except Exception:
-            pass
+            cur.execute(stmt)
+        except Exception:  # noqa: BLE001
+            try:
+                cur.connection.rollback()
+            except Exception:
+                pass
 
 
 def apply_timing_session_settings(cur, statement_timeout_ms: int) -> None:
