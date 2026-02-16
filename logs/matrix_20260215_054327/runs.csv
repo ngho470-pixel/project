@@ -1,0 +1,3 @@
+run_id,ts,db,K,policy_ids,baseline,query_id,warmup_runs,timed_runs,planning_ms,execution_ms,total_ms,peak_rss_mb,status,error_type,error_msg,result_count,result_hash,ours_count,ours_hash,rls_count,rls_hash,correctness
+matrix_20260215_054327,2026-02-15T05:43:28+05:30,tpch0_01,5,"1,2,3,4,5",ours,13,0,1,0.702,12.092,12.794,22.910,ok,,,32,700fbf9356cac1025e975fc54ad2bb6b,32,700fbf9356cac1025e975fc54ad2bb6b,32,700fbf9356cac1025e975fc54ad2bb6b,1
+matrix_20260215_054327,2026-02-15T05:43:28+05:30,tpch0_01,5,"1,2,3,4,5",rls_with_index,13,0,1,0.514,11.822,12.336,18.719,ok,,,32,700fbf9356cac1025e975fc54ad2bb6b,32,700fbf9356cac1025e975fc54ad2bb6b,32,700fbf9356cac1025e975fc54ad2bb6b,1

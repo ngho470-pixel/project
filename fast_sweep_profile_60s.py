@@ -31,6 +31,11 @@ DEFAULT_PLOTS_DIR = ROOT / "logs" / "policy_scaling_plots"
 CUSTOM_FILTER_SO = str(ROOT / "custom_filter" / "custom_filter.so")
 ARTIFACT_BUILDER_SO = str(ROOT / "artifact_builder" / "artifact_builder.so")
 
+# Connection target for the harness (server side is whoever is listening on this host:port).
+# Default matches the local dev setup, but can be overridden for remote DBs via args/env.
+PG_HOST = os.getenv("PGHOST", "localhost")
+PG_PORT = int(os.getenv("PGPORT", "5432"))
+
 DEFAULT_KS = [1, 5, 10, 11]
 DEFAULT_POLICY_POOL = "1-5,10-15"
 DEFAULT_MATRIX_KS = [1, 5, 10, 15, 20]
@@ -346,7 +351,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--warmup-runs", type=int, default=1, help="Warm-up runs (not recorded) per query in matrix mode")
     p.add_argument("--timed-runs", type=int, default=3, help="Timed runs per query in matrix mode (median recorded)")
     p.add_argument("--run-dir", default="", help="Output run directory (default: logs/matrix_<ts>)")
+    p.add_argument(
+        "--server-policy-dir",
+        default="",
+        help=(
+            "If set, write the enabled policy file on the DB server under this directory (via COPY TO file) and use "
+            "that server-side path for build_base/custom_filter.policy_path. Useful when the harness runs on a "
+            "different machine than the Postgres server (e.g., SSH tunnel to drona)."
+        ),
+    )
     p.add_argument("--statement-timeout", default="0", help="statement_timeout (e.g. 0, 300000, 30min, 1800s)")
+    p.add_argument("--pg-host", default=PG_HOST, help="Postgres host (default: $PGHOST or localhost)")
+    p.add_argument("--pg-port", type=int, default=PG_PORT, help="Postgres port (default: $PGPORT or 5432)")
     p.add_argument("--custom-filter-so", default=CUSTOM_FILTER_SO, help="Path to custom_filter.so (backend must be able to read)")
     p.add_argument(
         "--artifact-builder-so", default=ARTIFACT_BUILDER_SO, help="Path to artifact_builder.so (backend must be able to read)"
@@ -388,8 +404,8 @@ def connect(db: str, role: str):
     for attempt in range(30):
         try:
             conn = psycopg2.connect(
-                host="localhost",
-                port=5432,
+                host=str(PG_HOST),
+                port=int(PG_PORT),
                 dbname=db,
                 user=cfg["user"],
                 password=cfg["password"],
@@ -748,6 +764,40 @@ def select_enabled_policies(policy_lines: Sequence[str], pool_ids: Sequence[int]
 
 def write_enabled_policy_file(enabled_policy_lines: Sequence[str], enabled_path: Path) -> None:
     enabled_path.write_text("\n".join(enabled_policy_lines) + "\n", encoding="utf-8")
+
+
+def write_enabled_policy_file_on_server(db: str, enabled_policy_lines: Sequence[str], server_path: str) -> None:
+    # build_base/custom_filter.policy_path read files on the *server* filesystem.
+    # When the harness runs remotely this is naturally satisfied; when the harness
+    # runs locally against a remote DB, we need to create the file server-side.
+    if not enabled_policy_lines:
+        raise HarnessError("enabled policy file is empty")
+    if not server_path:
+        raise HarnessError("server_path is empty")
+    conn = connect(db, "postgres")
+    try:
+        with conn.cursor() as cur:
+            apply_no_parallel_settings(cur)
+            cur.execute("CREATE TEMP TABLE IF NOT EXISTS tmp_cf_enabled_policy_lines(line text);")
+            cur.execute("TRUNCATE tmp_cf_enabled_policy_lines;")
+            cur.executemany(
+                "INSERT INTO tmp_cf_enabled_policy_lines(line) VALUES (%s);",
+                [(line,) for line in enabled_policy_lines],
+            )
+            cur.execute(
+                sql.SQL("COPY tmp_cf_enabled_policy_lines(line) TO {};").format(sql.Literal(str(server_path)))
+            )
+    finally:
+        conn.close()
+
+
+def server_enabled_policy_path(server_policy_dir: str, run_id: str, local_enabled_path: Path) -> str:
+    # Reuse the local filename, but place it under a server-owned directory and
+    # prefix it with run_id to avoid collisions across runs.
+    if not server_policy_dir:
+        return ""
+    base = Path(server_policy_dir)
+    return str(base / f"{run_id}_{local_enabled_path.name}")
 
 
 def enabled_policy_path_for_k(base_path: Path, db: str, k: int) -> Path:
@@ -1923,13 +1973,18 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
             print(f"[policy_set] db={db} K={k} enabled_ids={enabled_ids}")
 
             write_enabled_policy_file(enabled, enabled_path_k)
+            enabled_path_k_server = enabled_path_k
+            if str(args.server_policy_dir).strip():
+                spath = server_enabled_policy_path(str(args.server_policy_dir), run_id, enabled_path_k)
+                write_enabled_policy_file_on_server(db, enabled, spath)
+                enabled_path_k_server = Path(spath)
             clear_artifacts(db)
             clear_rls_indexes_and_policies(db)
             print_clean_state(db, tag=f"clean_before_k K={k}")
 
             # OURS phase.
             ours_setup_ms, ours_bytes_db, ours_bytes_disk = setup_ours_for_k_with_sizes(
-                db, k, enabled_path_k, statement_timeout_ms
+                db, k, enabled_path_k_server, statement_timeout_ms
             )
 
             ours_metrics: Dict[str, ExplainMetrics] = {}
@@ -1938,7 +1993,9 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
             conn_o = connect(db, "postgres")
             try:
                 with conn_o.cursor() as cur:
-                    set_session_for_baseline(cur, "ours", enabled_path_k, statement_timeout_ms, ours_debug_mode="off")
+                    set_session_for_baseline(
+                        cur, "ours", enabled_path_k_server, statement_timeout_ms, ours_debug_mode="off"
+                    )
                     for qid, qsql in queries:
                         print(f"[progress] db={db} K={k} baseline=ours query={qid}")
                         timing_sql = timing_sql_for_query(qid, qsql)
@@ -1981,7 +2038,7 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
             conn_r = connect(db, "rls_user")
             try:
                 with conn_r.cursor() as cur:
-                    set_session_for_baseline(cur, "rls_with_index", enabled_path_k, statement_timeout_ms)
+                    set_session_for_baseline(cur, "rls_with_index", enabled_path_k_server, statement_timeout_ms)
                     cur.execute("SET row_security = on;")
                     for qid, qsql in queries:
                         print(f"[progress] db={db} K={k} baseline=rls_with_index query={qid}")
@@ -2242,13 +2299,18 @@ def run_layer_probe(args: argparse.Namespace) -> None:
             print(f"[policy_set] db={db} K={k} enabled_ids={enabled_ids}")
 
             write_enabled_policy_file(enabled, enabled_path_k)
+            enabled_path_k_server = enabled_path_k
+            if str(args.server_policy_dir).strip():
+                spath = server_enabled_policy_path(str(args.server_policy_dir), run_id, enabled_path_k)
+                write_enabled_policy_file_on_server(db, enabled, spath)
+                enabled_path_k_server = Path(spath)
 
             clear_artifacts(db)
             clear_rls_indexes_and_policies(db)
             print_clean_state(db, tag=f"clean_before_k K={k}")
 
             try:
-                setup_ours_for_k_with_sizes(db, k, enabled_path_k, statement_timeout_ms)
+                setup_ours_for_k_with_sizes(db, k, enabled_path_k_server, statement_timeout_ms)
             except Exception as exc:  # noqa: BLE001
                 msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
                 print(f"[layer_probe] setup_error db={db} K={k} err={msg}")
@@ -2301,7 +2363,7 @@ def run_layer_probe(args: argparse.Namespace) -> None:
                 metrics, payload, kv, cnt_pp, notices = run_ours_profile_capture(
                     db,
                     qsql,
-                    enabled_path_k,
+                    enabled_path_k_server,
                     statement_timeout_ms,
                     ours_profile_rescan=False,
                     ours_debug_mode="trace",
@@ -2617,6 +2679,7 @@ def run_smoke_check(
     queries: List[Tuple[str, str]],
     enabled_path: Path,
     statement_timeout_ms: int,
+    server_policy_dir: str = "",
 ) -> None:
     k = len(policy_pool)
     enabled_ids, enabled = select_enabled_policies(policy_lines, policy_pool, k)
@@ -2625,7 +2688,14 @@ def run_smoke_check(
     print(f"[smoke] Running K={k} (pool-full), queries {{3,13}}, hot-runs=2")
     print(f"[smoke] enabled_ids={enabled_ids}")
     write_enabled_policy_file(enabled, enabled_path_k)
-    setup_ours_for_k(db, k, enabled_path_k, statement_timeout_ms)
+    enabled_path_k_server = enabled_path_k
+    if str(server_policy_dir).strip():
+        run_id = f"smoke_{time.strftime('%Y%m%d_%H%M%S')}"
+        spath = server_enabled_policy_path(str(server_policy_dir), run_id, enabled_path_k)
+        write_enabled_policy_file_on_server(db, enabled, spath)
+        enabled_path_k_server = Path(spath)
+
+    setup_ours_for_k(db, k, enabled_path_k_server, statement_timeout_ms)
     apply_rls_policies_for_k(db, enabled)
     create_rls_indexes_for_k(db, k, enabled, statement_timeout_ms)
 
@@ -2634,8 +2704,10 @@ def run_smoke_check(
         if qid not in qmap:
             raise HarnessError(f"smoke query id {qid} missing from query file")
         q = qmap[qid]
-        cold_o, hot_o = run_query_series(db, "ours", q, 2, enabled_path_k, statement_timeout_ms, query_id=qid)
-        cold_r, hot_r = run_query_series(db, "rls_with_index", q, 2, enabled_path_k, statement_timeout_ms, query_id=qid)
+        cold_o, hot_o = run_query_series(db, "ours", q, 2, enabled_path_k_server, statement_timeout_ms, query_id=qid)
+        cold_r, hot_r = run_query_series(
+            db, "rls_with_index", q, 2, enabled_path_k_server, statement_timeout_ms, query_id=qid
+        )
         if cold_o.status != "ok" or cold_r.status != "ok":
             raise HarnessError(f"smoke failed: cold run error for q={qid}")
         if len(hot_o) != 2 or len(hot_r) != 2:
@@ -2651,14 +2723,14 @@ def run_smoke_check(
             f"hot_rls={[round(x,3) for x in rls_hot]}"
         )
 
-        ours_count = count_query(db, "ours", q, enabled_path_k, statement_timeout_ms)
-        rls_count = count_query(db, "rls_with_index", q, enabled_path_k, statement_timeout_ms)
+        ours_count = count_query(db, "ours", q, enabled_path_k_server, statement_timeout_ms)
+        rls_count = count_query(db, "rls_with_index", q, enabled_path_k_server, statement_timeout_ms)
         print(f"[smoke] K={k} q={qid} policy_ids={policy_ids} ours_count={ours_count} rls_count={rls_count}")
         if ours_count != rls_count:
             raise HarnessError(f"smoke failed: count mismatch for q={qid} ours={ours_count} rls={rls_count}")
 
     prof_metrics, prof_payload, prof_kv, prof_cnt, _notices = run_ours_profile_capture(
-        db, qmap["3"], enabled_path_k, statement_timeout_ms, query_id="3"
+        db, qmap["3"], enabled_path_k_server, statement_timeout_ms, query_id="3"
     )
     has_profile = bool(prof_payload) and "bytes_artifacts_loaded=" in prof_payload
     misses = int(prof_kv.get("ctid_misses", "-1"))
@@ -2700,6 +2772,7 @@ def run_experiment(args: argparse.Namespace) -> None:
     write_csv_header(correctness_csv, CORRECTNESS_COLUMNS)
 
     rng = random.Random(args.seed)
+    run_id = f"experiment_{time.strftime('%Y%m%d_%H%M%S')}"
 
     for db in dbs:
         print(f"[db] start db={db}")
@@ -2712,6 +2785,11 @@ def run_experiment(args: argparse.Namespace) -> None:
             policy_ids = ",".join(str(x) for x in enabled_ids)
             print(f"[policy_set] db={db} K={k} enabled_ids={enabled_ids}")
             write_enabled_policy_file(enabled, enabled_path_k)
+            enabled_path_k_server = enabled_path_k
+            if str(args.server_policy_dir).strip():
+                spath = server_enabled_policy_path(str(args.server_policy_dir), run_id, enabled_path_k)
+                write_enabled_policy_file_on_server(db, enabled, spath)
+                enabled_path_k_server = Path(spath)
             clear_artifacts(db)
             clear_rls_indexes_and_policies(db)
             print(f"[phase] db={db} K={k} clean_before_k artifacts=0 indexes=0")
@@ -2725,7 +2803,7 @@ def run_experiment(args: argparse.Namespace) -> None:
             print(f"[correctness_sample] db={db} K={k} queries={[qid for qid, _ in correctness_queries]}")
 
             # OURS phase: build artifacts -> run all queries.
-            ours_setup_ms, ours_disk = setup_ours_for_k(db, k, enabled_path_k, statement_timeout_ms)
+            ours_setup_ms, ours_disk = setup_ours_for_k(db, k, enabled_path_k_server, statement_timeout_ms)
             append_csv_row(
                 times_csv,
                 TIMES_COLUMNS,
@@ -2761,7 +2839,7 @@ def run_experiment(args: argparse.Namespace) -> None:
             for qid, qsql in queries:
                 print(f"[progress] db={db} K={k} baseline=ours query={qid}")
                 cold, hots = run_query_series(
-                    db, "ours", qsql, hot_runs, enabled_path_k, statement_timeout_ms, query_id=qid
+                    db, "ours", qsql, hot_runs, enabled_path_k_server, statement_timeout_ms, query_id=qid
                 )
                 row = build_time_row(db, k, policy_ids, "ours", qid, cold, hots, expected_hot=hot_runs)
                 append_csv_row(times_csv, TIMES_COLUMNS, row)
@@ -2769,7 +2847,7 @@ def run_experiment(args: argparse.Namespace) -> None:
                 prof_metrics, prof_payload, prof_kv, prof_cnt, notices = run_ours_profile_capture(
                     db,
                     qsql,
-                    enabled_path_k,
+                    enabled_path_k_server,
                     statement_timeout_ms,
                     ours_profile_rescan=bool(args.ours_profile_rescan),
                     ours_debug_mode=str(args.profile_debug_mode),
@@ -2787,9 +2865,9 @@ def run_experiment(args: argparse.Namespace) -> None:
                     fb = count_fallback_sql(qid)
                     try:
                         if fb is not None:
-                            oc = count_query_sql(db, "ours", fb, enabled_path_k, statement_timeout_ms)
+                            oc = count_query_sql(db, "ours", fb, enabled_path_k_server, statement_timeout_ms)
                         else:
-                            oc = count_query(db, "ours", qsql, enabled_path_k, statement_timeout_ms)
+                            oc = count_query(db, "ours", qsql, enabled_path_k_server, statement_timeout_ms)
                         ours_counts[qid] = oc
                     except Exception as exc:  # noqa: BLE001
                         ours_counts[qid] = None
@@ -2836,7 +2914,7 @@ def run_experiment(args: argparse.Namespace) -> None:
             for qid, qsql in queries:
                 print(f"[progress] db={db} K={k} baseline=rls_with_index query={qid}")
                 cold, hots = run_query_series(
-                    db, "rls_with_index", qsql, hot_runs, enabled_path_k, statement_timeout_ms, query_id=qid
+                    db, "rls_with_index", qsql, hot_runs, enabled_path_k_server, statement_timeout_ms, query_id=qid
                 )
                 row = build_time_row(db, k, policy_ids, "rls_with_index", qid, cold, hots, expected_hot=hot_runs)
                 append_csv_row(times_csv, TIMES_COLUMNS, row)
@@ -2845,9 +2923,9 @@ def run_experiment(args: argparse.Namespace) -> None:
                     fb = count_fallback_sql(qid)
                     try:
                         if fb is not None:
-                            rc = count_query_sql(db, "rls_with_index", fb, enabled_path_k, statement_timeout_ms)
+                            rc = count_query_sql(db, "rls_with_index", fb, enabled_path_k_server, statement_timeout_ms)
                         else:
-                            rc = count_query(db, "rls_with_index", qsql, enabled_path_k, statement_timeout_ms)
+                            rc = count_query(db, "rls_with_index", qsql, enabled_path_k_server, statement_timeout_ms)
                         rls_counts[qid] = rc
                     except Exception as exc:  # noqa: BLE001
                         rls_counts[qid] = None
@@ -2909,9 +2987,11 @@ def main() -> None:
         raise HarnessError("--smoke-only requires --smoke-check")
 
     # Allow overriding .so locations (useful when the DB backend can't traverse the harness user's $HOME).
-    global CUSTOM_FILTER_SO, ARTIFACT_BUILDER_SO
+    global CUSTOM_FILTER_SO, ARTIFACT_BUILDER_SO, PG_HOST, PG_PORT
     CUSTOM_FILTER_SO = str(args.custom_filter_so)
     ARTIFACT_BUILDER_SO = str(args.artifact_builder_so)
+    PG_HOST = str(args.pg_host)
+    PG_PORT = int(args.pg_port)
 
     if args.layer_probe:
         run_layer_probe(args)
@@ -2935,6 +3015,7 @@ def main() -> None:
             queries,
             Path(args.policies_enabled),
             timeout_ms,
+            server_policy_dir=str(args.server_policy_dir),
         )
         if args.smoke_only or not args.run:
             return

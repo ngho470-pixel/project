@@ -151,6 +151,27 @@ def build_rls_policies(conn, policy_lines: List[str]):
             cur.execute(sql.SQL("CREATE POLICY cf_all ON {} FOR SELECT TO rls_user USING ({});").format(
                 sql.Identifier(t), sql.SQL(combined)))
 
+def apply_no_parallel_settings(cur) -> None:
+    # Hard-disable all query/maintenance parallelism for determinism and to
+    # match the "no parallelism anywhere" experiment rule.
+    stmts = [
+        "SET max_parallel_workers_per_gather = 0;",
+        "SET max_parallel_maintenance_workers = 0;",
+        "SET parallel_leader_participation = off;",
+        "SET force_parallel_mode = off;",
+        "SET enable_parallel_append = off;",
+        "SET enable_parallel_hash = off;",
+        "SET max_parallel_workers = 0;",
+    ]
+    for stmt in stmts:
+        try:
+            cur.execute(stmt)
+        except Exception:
+            try:
+                cur.connection.rollback()
+            except Exception:
+                pass
+
 
 def run_ours(policy_path: Path, query_sql: str, log_path: Path) -> Tuple[Optional[int], Optional[str]]:
     conn = connect('postgres')
@@ -158,7 +179,7 @@ def run_ours(policy_path: Path, query_sql: str, log_path: Path) -> Tuple[Optiona
         conn.notices.clear()
         with conn.cursor() as cur:
             cur.execute("SET client_min_messages = notice")
-            cur.execute("SET max_parallel_workers_per_gather = 0")
+            apply_no_parallel_settings(cur)
             cur.execute(f"LOAD '{CUSTOM_FILTER_SO}'")
             cur.execute("SET custom_filter.enabled = on")
             cur.execute("SET custom_filter.contract_mode = off")
@@ -194,7 +215,7 @@ def run_rls(policy_lines: List[str], query_sql: str, log_path: Path) -> Tuple[Op
         conn.notices.clear()
         with conn.cursor() as cur:
             cur.execute("SET client_min_messages = notice")
-            cur.execute("SET max_parallel_workers_per_gather = 0")
+            apply_no_parallel_settings(cur)
             cur.execute(query_sql)
             row = cur.fetchone()
         log_path.write_text(''.join(conn.notices))

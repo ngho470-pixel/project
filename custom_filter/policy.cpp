@@ -865,11 +865,16 @@ struct Bitset {
     std::vector<uint8_t> bytes;
     size_t nbits = 0;
     void ensure(size_t bit) {
-        if (bit + 1 > nbits) {
+        if (bit + 1 > nbits)
             nbits = bit + 1;
-            size_t need = (nbits + 7) / 8;
-            if (need > bytes.size())
-                bytes.resize(need, 0);
+        size_t need = (nbits + 7) / 8;
+        if (need > bytes.size()) {
+            // Exponential growth avoids O(n^2) reallocation when tokens are discovered in
+            // increasing order (common for large TPCH domains).
+            size_t new_sz = bytes.empty() ? (size_t)1 : bytes.size();
+            while (new_sz < need)
+                new_sz *= 2;
+            bytes.resize(new_sz, 0);
         }
     }
     void set(size_t bit) {
@@ -889,6 +894,24 @@ static size_t bitset_popcount(const Bitset &bs, size_t limit_bits) {
         if (bs.test(i)) cnt++;
     }
     return cnt;
+}
+
+template <typename F>
+static void bitset_for_each_set_bit(const Bitset &bs, size_t limit_bits, F fn) {
+    const size_t nbits = std::min(limit_bits, bs.nbits);
+    const size_t nbytes = (nbits + 7) / 8;
+    const size_t avail = std::min(nbytes, bs.bytes.size());
+    for (size_t i = 0; i < avail; i++) {
+        uint8_t b = bs.bytes[i];
+        while (b != 0) {
+            unsigned int v = (unsigned int)b;
+            int lsb = __builtin_ctz(v);
+            size_t bit = i * 8 + (size_t)lsb;
+            if (bit >= nbits) break;
+            fn(bit);
+            b &= (uint8_t)(b - 1);
+        }
+    }
 }
 
 static void bitset_set_all(Bitset &bs, size_t nbits) {
@@ -5148,40 +5171,215 @@ static bool multi_join_enforce_general(const Loaded &loaded,
         }
     }
 
+    // child lists for the rooted join graph, used by token-propagation maps
+    std::map<std::string, std::vector<std::string>> children;
+    for (const auto &kv : parent) {
+        if (!kv.second.empty())
+            children[kv.second].push_back(kv.first);
+    }
+
+    // Domain size per join class.
+    //
+    // NOTE: join token domains are NOT written as dict/ artifacts today (only const dicts
+    // exist). So we cannot derive domain sizes from loaded.dicts. Instead, we derive each
+    // join-class domain size from the scanned code payloads while we fill presence[].
+    std::set<int> needed_cids;
+    for (const auto &e : edges)
+        needed_cids.insert(e.cid);
+
+    std::map<int, size_t> domain_size;  // computed after presence scan (cid -> max_tok+1)
+
     // presence bitsets per table/class (exists row with token)
     std::map<std::string, std::map<int, Bitset>> presence;
+
+    // Upward propagation maps for the rooted join tree:
+    // for a parent table P with parent join-class out_cid, build functional maps from each child
+    // join-class in_cid to out_cid, keyed by token value in P.
+    struct UpMap {
+        int out_cid = -1;
+        bool functional = true;
+        std::vector<int32_t> f;  // tok_in -> tok_out (or -1 if absent)
+    };
+    std::map<std::string, std::map<int, UpMap>> up_map;
+
+    // Initialize presence bitsets (dynamic growth; domain_size is computed after scanning).
     for (const auto &t : nodes) {
-        const TableInfo &ti = loaded.tables.find(t)->second;
-        for (int cid : ti.join_class_ids) {
+        for (int cid : needed_cids) {
+            auto it_idx = table_class_idx[t].find(cid);
+            if (it_idx == table_class_idx[t].end())
+                continue;
             presence[t][cid] = Bitset{};
         }
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            if (restrict_bits) {
-                auto it_rb = restrict_bits->find(t);
-                if (it_rb != restrict_bits->end() && !allow_bit(it_rb->second, r))
-                    continue;
+    }
+
+    // Preallocate functional propagation maps for internal nodes (scan each table once).
+    for (const auto &kv : children) {
+        const std::string &p = kv.first;
+        if (p == target)
+            continue;  // root has no parent edge
+        auto it_pc = parent_cid.find(p);
+        if (it_pc == parent_cid.end())
+            continue;
+        int out_cid = it_pc->second;
+
+        std::unordered_set<int> seen;
+        seen.reserve(kv.second.size());
+        for (const auto &c : kv.second) {
+            int in_cid = edge_class[p][c];
+            if (!seen.insert(in_cid).second)
+                continue;
+            UpMap um;
+            um.out_cid = out_cid;
+            // um.f is grown dynamically as tokens are observed (avoid needing domain_size here).
+            up_map[p][in_cid] = std::move(um);
+        }
+    }
+
+    // Precompute restrict pointers per table (avoid map lookups in row loops).
+    std::map<std::string, const uint8*> restrict_by_table;
+    if (restrict_bits) {
+        for (const auto &t : nodes) {
+            auto it_rb = restrict_bits->find(t);
+            restrict_by_table[t] = (it_rb != restrict_bits->end()) ? it_rb->second : nullptr;
+        }
+    }
+
+    // Scan each table once: fill presence bitsets and build functional propagation maps.
+    auto t_presence_start = Clock::now();
+    for (const auto &t : nodes) {
+        const TableInfo &ti = loaded.tables.find(t)->second;
+        const uint8 *t_restrict = nullptr;
+        auto it_r = restrict_by_table.find(t);
+        if (it_r != restrict_by_table.end())
+            t_restrict = it_r->second;
+
+        // Per-table precomputed indices for presence bitsets.
+        std::vector<std::pair<int, Bitset*>> pres_specs;
+        pres_specs.reserve(presence[t].size());
+        for (auto &kvp : presence[t]) {
+            int cid = kvp.first;
+            auto it_idx = table_class_idx[t].find(cid);
+            if (it_idx == table_class_idx[t].end())
+                continue;
+            pres_specs.push_back({it_idx->second, &kvp.second});
+        }
+
+        // Per-table precomputed indices for upward maps (if this is an internal node).
+        int out_cid = -1;
+        int idx_out = -1;
+        struct MapSpec {
+            int idx_in = -1;
+            UpMap *um = nullptr;
+            int in_cid = -1;
+        };
+        std::vector<MapSpec> map_specs;
+        auto it_um_t = up_map.find(t);
+        if (it_um_t != up_map.end()) {
+            auto it_pc = parent_cid.find(t);
+            if (it_pc != parent_cid.end()) {
+                out_cid = it_pc->second;
+                auto it_o = table_class_idx[t].find(out_cid);
+                if (it_o != table_class_idx[t].end())
+                    idx_out = it_o->second;
             }
+            map_specs.reserve(it_um_t->second.size());
+            for (auto &kvm : it_um_t->second) {
+                int in_cid = kvm.first;
+                auto it_i = table_class_idx[t].find(in_cid);
+                if (it_i == table_class_idx[t].end())
+                    continue;
+                map_specs.push_back({it_i->second, &kvm.second, in_cid});
+            }
+        }
+
+        for (uint32 r = 0; r < ti.n_rows; r++) {
+            if (!allow_bit(t_restrict, r))
+                continue;
             const int32_t *row = ti.row_ptr(r);
             if (!row) continue;
-            for (int cid : ti.join_class_ids) {
-                int idx = table_class_idx[t][cid];
-                int32 tok = row[idx];
+
+            // Fill presence[t][cid] for all needed join classes present in this table.
+            for (const auto &ps : pres_specs) {
+                int32 tok = row[ps.first];
                 if (tok >= 0)
-                    presence[t][cid].set((size_t)tok);
+                    ps.second->set((size_t)tok);
+            }
+
+            // Fill functional maps from in_cid -> out_cid for this parent table.
+            if (idx_out >= 0 && !map_specs.empty()) {
+                int32 tok_out = row[idx_out];
+                if (tok_out < 0)
+                    continue;
+                for (auto &ms : map_specs) {
+                    UpMap *um = ms.um;
+                    if (!um || !um->functional)
+                        continue;
+                    if (ms.in_cid == out_cid)
+                        continue;  // identity handled via presence intersection at use-site
+                    int32 tok_in = row[ms.idx_in];
+                    if (tok_in < 0)
+                        continue;
+                    size_t utok = (size_t)tok_in;
+                    if (utok >= um->f.size()) {
+                        // Exponential growth avoids O(n^2) reallocation when tokens are discovered in
+                        // increasing order (common for large TPCH domains).
+                        //
+                        // Keep a hard cap to fail fast on corrupted token payloads.
+                        if (utok > (size_t)1000000000) {
+                            ereport(ERROR,
+                                    (errmsg("policy: absurd join token table=%s class=%d tok=%zu",
+                                            t.c_str(), ms.in_cid, utok)));
+                        }
+                        size_t new_sz = um->f.empty() ? (size_t)1024 : um->f.size();
+                        while (new_sz <= utok) {
+                            if (new_sz > (SIZE_MAX / 2)) {
+                                new_sz = utok + 1;
+                                break;
+                            }
+                            new_sz *= 2;
+                        }
+                        um->f.resize(new_sz, -1);
+                    }
+                    int32_t &slot = um->f[utok];
+                    if (slot == -1) {
+                        slot = tok_out;
+                    } else if (slot != tok_out) {
+                        um->functional = false;
+                        std::vector<int32_t>().swap(um->f);
+                    }
+                }
             }
         }
     }
 
-    // domain size per class
-    std::map<int, size_t> domain_size;
-    for (const auto &kv : class_tables) {
-        int cid = kv.first;
-        size_t max_bits = 0;
-        for (const auto &t : kv.second) {
-            max_bits = std::max(max_bits, presence[t][cid].nbits);
+    // Derive join-class domain sizes from the scanned presence bitsets.
+    // This is exact for our token encoding (tok ids are dense in [0..max]), and
+    // avoids any extra passes over code payloads.
+    for (int cid : needed_cids)
+        domain_size[cid] = 0;
+    for (const auto &kt : presence) {
+        for (const auto &kc : kt.second) {
+            int cid = kc.first;
+            auto it = domain_size.find(cid);
+            if (it != domain_size.end() && kc.second.nbits > it->second)
+                it->second = kc.second.nbits;
         }
-        domain_size[cid] = max_bits;
     }
+    // Ensure functional maps have slots for all possible input tokens.
+    for (auto &kt : up_map) {
+        for (auto &kc : kt.second) {
+            int in_cid = kc.first;
+            UpMap &um = kc.second;
+            if (!um.functional)
+                continue;
+            size_t Din = domain_size[in_cid];
+            if (um.f.size() < Din)
+                um.f.resize(Din, -1);
+        }
+    }
+
+    auto t_presence_end = Clock::now();
+    if (profile) profile->presence_ms_total += Ms(t_presence_end - t_presence_start).count();
 
     // Extract table-local subformulas (non-target)
     int next_id = (int)loaded.atom_by_id.size();
@@ -5205,6 +5403,40 @@ static bool multi_join_enforce_general(const Loaded &loaded,
     std::map<int, Bitset> var_bits;
     std::map<int, int> var_class;
 
+    auto propagate_one_step_scan = [&](const std::string &p,
+                                       int in_cid,
+                                       int out_cid,
+                                       const Bitset &in_bits) -> Bitset {
+        const TableInfo &tp = loaded.tables.find(p)->second;
+        auto it_in = table_class_idx[p].find(in_cid);
+        auto it_out = table_class_idx[p].find(out_cid);
+        if (it_in == table_class_idx[p].end() || it_out == table_class_idx[p].end())
+            ereport(ERROR,
+                    (errmsg("policy: missing join token index for table=%s class=%d",
+                            p.c_str(), in_cid)));
+        Bitset out;
+        size_t D = domain_size[out_cid];
+        out.nbits = D;
+        out.bytes.assign((D + 7) / 8, 0);
+        const uint8 *p_restrict = nullptr;
+        auto it_r = restrict_by_table.find(p);
+        if (it_r != restrict_by_table.end())
+            p_restrict = it_r->second;
+        for (uint32 r = 0; r < tp.n_rows; r++) {
+            if (!allow_bit(p_restrict, r))
+                continue;
+            const int32_t *row = tp.row_ptr(r);
+            if (!row) continue;
+            int32 tok_in = row[it_in->second];
+            if (tok_in < 0 || !in_bits.test((size_t)tok_in))
+                continue;
+            int32 tok_out = row[it_out->second];
+            if (tok_out >= 0)
+                out.set((size_t)tok_out);
+        }
+        return out;
+    };
+
     auto propagate_to_target = [&](const std::string &start_table, int start_cid,
                                    const Bitset &start_bits) -> std::pair<int, Bitset> {
         std::string cur_table = start_table;
@@ -5222,32 +5454,53 @@ static bool multi_join_enforce_general(const Loaded &loaded,
                 break;
             }
             int next_cid = parent_cid[p];
-            const TableInfo &tp = loaded.tables.find(p)->second;
-            auto it_in = table_class_idx[p].find(cur_cid);
-            auto it_out = table_class_idx[p].find(next_cid);
-            if (it_in == table_class_idx[p].end() || it_out == table_class_idx[p].end())
-                ereport(ERROR,
-                        (errmsg("policy: missing join token index for table=%s class=%d",
-                                p.c_str(), cur_cid)));
-            Bitset next_bits;
-            size_t D = domain_size[next_cid];
-            next_bits.nbits = D;
-            next_bits.bytes.assign((D + 7) / 8, 0);
-            for (uint32 r = 0; r < tp.n_rows; r++) {
-                if (restrict_bits) {
-                    auto it_rb = restrict_bits->find(p);
-                    if (it_rb != restrict_bits->end() && !allow_bit(it_rb->second, r))
+
+            // Fast-path: use precomputed functional maps from child join-class -> parent join-class.
+            if (cur_cid == next_cid) {
+                // Identity propagation: restrict to tokens present in p.
+                auto it_pres_t = presence.find(p);
+                if (it_pres_t != presence.end()) {
+                    auto it_pres = it_pres_t->second.find(cur_cid);
+                    if (it_pres != it_pres_t->second.end()) {
+                        cur_bits = bitset_intersect(cur_bits, it_pres->second, domain_size[next_cid]);
+                        cur_table = p;
                         continue;
+                    }
                 }
-                const int32_t *row = tp.row_ptr(r);
-                if (!row) continue;
-                int32 tok_in = row[it_in->second];
-                if (tok_in < 0 || !cur_bits.test((size_t)tok_in))
-                    continue;
-                int32 tok_out = row[it_out->second];
-                if (tok_out >= 0)
-                    next_bits.set((size_t)tok_out);
+                // Fallback if presence missing (should not happen).
+                Bitset next_bits = propagate_one_step_scan(p, cur_cid, next_cid, cur_bits);
+                cur_bits = std::move(next_bits);
+                cur_cid = next_cid;
+                cur_table = p;
+                continue;
             }
+
+            auto it_um_t = up_map.find(p);
+            if (it_um_t != up_map.end()) {
+                auto it_um = it_um_t->second.find(cur_cid);
+                if (it_um != it_um_t->second.end() && it_um->second.functional) {
+                    UpMap &um = it_um->second;
+                    Bitset next_bits;
+                    size_t D_out = domain_size[next_cid];
+                    next_bits.nbits = D_out;
+                    next_bits.bytes.assign((D_out + 7) / 8, 0);
+                    const size_t D_in = domain_size[cur_cid];
+                    bitset_for_each_set_bit(cur_bits, D_in, [&](size_t tok_in) {
+                        if (tok_in >= um.f.size())
+                            return;
+                        int32_t tok_out = um.f[tok_in];
+                        if (tok_out >= 0)
+                            next_bits.set((size_t)tok_out);
+                    });
+                    cur_bits = std::move(next_bits);
+                    cur_cid = next_cid;
+                    cur_table = p;
+                    continue;
+                }
+            }
+
+            // Correct fallback: scan the parent table for this propagation step.
+            Bitset next_bits = propagate_one_step_scan(p, cur_cid, next_cid, cur_bits);
             cur_bits = std::move(next_bits);
             cur_cid = next_cid;
             cur_table = p;
@@ -5342,8 +5595,19 @@ static bool multi_join_enforce_general(const Loaded &loaded,
             continue;
         int cid = ap->join_class_id;
         size_t D = domain_size[cid];
-        Bitset base = bitset_intersect(presence[ap->left.table][cid],
-                                       presence[ap->right.table][cid], D);
+        auto it_pl = presence.find(ap->left.table);
+        auto it_pr = presence.find(ap->right.table);
+        if (it_pl == presence.end() || it_pr == presence.end())
+            ereport(ERROR,
+                    (errmsg("policy: missing presence bitset table=%s or table=%s",
+                            ap->left.table.c_str(), ap->right.table.c_str())));
+        auto it_bl = it_pl->second.find(cid);
+        auto it_br = it_pr->second.find(cid);
+        if (it_bl == it_pl->second.end() || it_br == it_pr->second.end())
+            ereport(ERROR,
+                    (errmsg("policy: missing presence bitset join_class=%d lhs=%s rhs=%s",
+                            cid, ap->left.table.c_str(), ap->right.table.c_str())));
+        Bitset base = bitset_intersect(it_bl->second, it_br->second, D);
         int target_cid = cid;
         if (table_class_idx[target].find(cid) == table_class_idx[target].end()) {
             std::string child;
@@ -5364,6 +5628,7 @@ static bool multi_join_enforce_general(const Loaded &loaded,
     // const atoms on non-target (if any left in AST)
     std::set<int> global_vars;
     collect_ast_vars(global_ast, global_vars);
+    std::map<std::string, std::vector<int>> const_ids_by_table;
     for (int vid : global_vars) {
         if (vid <= 0 || vid >= (int)loaded.atom_by_id.size())
             continue;
@@ -5377,37 +5642,74 @@ static bool multi_join_enforce_general(const Loaded &loaded,
         if (parent_cid.find(ap->left.table) == parent_cid.end())
             ereport(ERROR,
                     (errmsg("policy: const atom table %s not connected to target", ap->left.table.c_str())));
-        int anchor_cid = parent_cid[ap->left.table];
-        const TableInfo &ti = loaded.tables.find(ap->left.table)->second;
-        auto it_allowed = const_allowed.find(vid);
-        if (it_allowed == const_allowed.end())
-            ereport(ERROR,
-                    (errmsg("policy: missing dict for const atom y%d col=%s",
-                            vid, ap->left.key().c_str())));
-        Bitset bits;
+        const_ids_by_table[ap->left.table].push_back(vid);
+    }
+
+    for (const auto &kv : const_ids_by_table) {
+        const std::string &tbl = kv.first;
+        const auto &vids = kv.second;
+        if (vids.empty())
+            continue;
+        int anchor_cid = parent_cid[tbl];
         size_t D = domain_size[anchor_cid];
-        bits.nbits = D;
-        bits.bytes.assign((D + 7) / 8, 0);
-        int idx = table_class_idx[ap->left.table][anchor_cid];
-        int token_idx = ti.schema_offset.at(ap->lhs_schema_key);
+        Bitset deny_bits;
+        deny_bits.nbits = D;
+        deny_bits.bytes.assign((D + 7) / 8, 0);
+
+        const TableInfo &ti = loaded.tables.find(tbl)->second;
+        int idx_anchor = table_class_idx[tbl][anchor_cid];
+        const uint8 *t_restrict = nullptr;
+        auto it_r = restrict_by_table.find(tbl);
+        if (it_r != restrict_by_table.end())
+            t_restrict = it_r->second;
+
+        struct ConstSpec {
+            int vid = -1;
+            int token_idx = -1;
+            const std::vector<uint8_t> *allowed = nullptr;
+            Bitset bits;
+        };
+        std::vector<ConstSpec> specs;
+        specs.reserve(vids.size());
+        for (int vid : vids) {
+            const Atom *ap = loaded.atom_by_id[vid];
+            if (!ap) continue;
+            auto it_allowed = const_allowed.find(vid);
+            if (it_allowed == const_allowed.end())
+                ereport(ERROR,
+                        (errmsg("policy: missing dict for const atom y%d col=%s",
+                                vid, ap->left.key().c_str())));
+            int token_idx = ti.schema_offset.at(ap->lhs_schema_key);
+            ConstSpec cs;
+            cs.vid = vid;
+            cs.token_idx = token_idx;
+            cs.allowed = &it_allowed->second;
+            cs.bits = deny_bits;
+            specs.push_back(std::move(cs));
+        }
+
         for (uint32 r = 0; r < ti.n_rows; r++) {
-            if (restrict_bits) {
-                auto it_rb = restrict_bits->find(ap->left.table);
-                if (it_rb != restrict_bits->end() && !allow_bit(it_rb->second, r))
-                    continue;
-            }
+            if (!allow_bit(t_restrict, r))
+                continue;
             const int32_t *row = ti.row_ptr(r);
             if (!row) continue;
-            int32 tokc = row[token_idx];
-            bool ok = (tokc >= 0 && (size_t)tokc < it_allowed->second.size() &&
-                       it_allowed->second[(size_t)tokc]);
-            if (!ok) continue;
-            int32 tok = row[idx];
-            if (tok >= 0) bits.set((size_t)tok);
+            int32 tok_anchor = row[idx_anchor];
+            if (tok_anchor < 0)
+                continue;
+            for (auto &cs : specs) {
+                int32 tokc = row[cs.token_idx];
+                bool ok = (tokc >= 0 && (size_t)tokc < cs.allowed->size() &&
+                           (*cs.allowed)[(size_t)tokc]);
+                if (ok)
+                    cs.bits.set((size_t)tok_anchor);
+            }
         }
-        auto propagated = propagate_to_target(ap->left.table, anchor_cid, bits);
-        var_bits[vid] = std::move(propagated.second);
-        var_class[vid] = propagated.first;
+
+        for (auto &cs : specs) {
+            auto propagated = propagate_to_target(tbl, anchor_cid, cs.bits);
+            var_bits[cs.vid] = std::move(propagated.second);
+            var_class[cs.vid] = propagated.first;
+        }
     }
 
     // target const atoms

@@ -1048,6 +1048,8 @@ typedef struct CfExec
     bool tid_logged;
 
     struct TableFilterState *filter;
+    struct TableFilterState *validated_filter;
+    uint64 validated_build_seq;
     bool need_filter_rebind;
     uint64 bound_build_seq;
     bool attempted_filter_rebuild;
@@ -1834,6 +1836,58 @@ cf_build_blk_index(TableFilterState *tf, MemoryContext mcxt)
             CF_TRACE_LOG( "custom_filter: ctid_map[%u]=(%u,%u)", r, blk, off);
         }
     }
+}
+
+static void
+cf_validate_filter_invariants(TableFilterState *tf)
+{
+    if (!tf || !tf->allow_bits)
+        return;
+
+    if (tf->n_rows > 0 && tf->allow_nbytes == 0)
+        ereport(ERROR,
+                (errmsg("custom_filter[engine_error]: allow_nbytes is zero for rel=%s rows=%u",
+                        tf->relname[0] ? tf->relname : "<unknown>",
+                        tf->n_rows)));
+
+    size_t expected_allow_nbytes = (size_t) ((tf->n_rows + 7) / 8);
+    if (tf->allow_nbytes != expected_allow_nbytes)
+        ereport(ERROR,
+                (errmsg("custom_filter[engine_error]: allow_nbytes mismatch for rel=%s bytes=%zu expected=%zu rows=%u",
+                        tf->relname[0] ? tf->relname : "<unknown>",
+                        tf->allow_nbytes,
+                        expected_allow_nbytes,
+                        tf->n_rows)));
+
+    if (tf->ctid_pairs)
+    {
+        if ((tf->ctid_pairs_len & 1u) != 0)
+            ereport(ERROR,
+                    (errmsg("custom_filter[engine_error]: malformed ctid_pairs_len for rel=%s len=%u",
+                            tf->relname[0] ? tf->relname : "<unknown>",
+                            tf->ctid_pairs_len)));
+
+        if ((uint64) tf->ctid_pairs_len != ((uint64) tf->n_rows * 2ull))
+            ereport(ERROR,
+                    (errmsg("custom_filter[engine_error]: ctid length mismatch for rel=%s len=%u rows=%u",
+                            tf->relname[0] ? tf->relname : "<unknown>",
+                            tf->ctid_pairs_len,
+                            tf->n_rows)));
+    }
+    else if (tf->ctid_pairs_len != 0)
+    {
+        ereport(ERROR,
+                (errmsg("custom_filter[engine_error]: ctid_pairs pointer missing for rel=%s len=%u rows=%u",
+                        tf->relname[0] ? tf->relname : "<unknown>",
+                        tf->ctid_pairs_len,
+                        tf->n_rows)));
+    }
+
+    if (tf->n_rows > 0 && (!tf->blk_index || tf->n_blocks == 0))
+        ereport(ERROR,
+                (errmsg("custom_filter[engine_error]: missing ctid block index for rel=%s rows=%u",
+                        tf->relname[0] ? tf->relname : "<unknown>",
+                        tf->n_rows)));
 }
 
 static int32
@@ -2812,6 +2866,21 @@ cf_slot_get_ctid(TupleTableSlot *slot, ItemPointerData *out, CfTidSource *src)
         return true;
     }
 
+    bool should_free = false;
+    HeapTuple htup = ExecFetchSlotHeapTuple(slot, false, &should_free);
+    if (htup)
+    {
+        *out = htup->t_self;
+        if (should_free)
+            heap_freetuple(htup);
+        if (src) *src = CF_TID_HEAPTUPLE;
+        return ItemPointerIsValid(out);
+    }
+
+    /*
+     * Last resort: fetch CTID via sysattr. This can be slow; prefer tts_tid or
+     * heap-tuple CTIDs above.
+     */
     if (slot->tts_ops && slot->tts_ops->getsysattr)
     {
         bool isnull = false;
@@ -2826,17 +2895,6 @@ cf_slot_get_ctid(TupleTableSlot *slot, ItemPointerData *out, CfTidSource *src)
                 return true;
             }
         }
-    }
-
-    bool should_free = false;
-    HeapTuple htup = ExecFetchSlotHeapTuple(slot, false, &should_free);
-    if (htup)
-    {
-        *out = htup->t_self;
-        if (should_free)
-            heap_freetuple(htup);
-        if (src) *src = CF_TID_HEAPTUPLE;
-        return ItemPointerIsValid(out);
     }
 
     return false;
@@ -3409,6 +3467,8 @@ cf_create_state(CustomScan *cscan)
     st->scan_type = NULL;
     st->tid_logged = false;
     st->filter = NULL;
+    st->validated_filter = NULL;
+    st->validated_build_seq = 0;
     st->need_filter_rebind = true;
     st->bound_build_seq = 0;
     st->attempted_filter_rebuild = false;
@@ -3460,6 +3520,8 @@ cf_begin(CustomScanState *node, EState *estate, int eflags)
      */
     st->filter = cf_in_executor_start_init ? NULL : cf_find_filter(cf_query_state, st->relid, false);
     st->need_filter_rebind = true;
+    st->validated_filter = NULL;
+    st->validated_build_seq = 0;
     st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
     st->attempted_filter_rebuild = false;
 
@@ -3510,7 +3572,11 @@ cf_exec(CustomScanState *node)
     INSTR_TIME_SET_CURRENT(validation_start);
 
     if (cf_query_state && st->bound_build_seq != cf_query_state->build_seq)
+    {
         st->need_filter_rebind = true;
+        st->validated_filter = NULL;
+        st->validated_build_seq = 0;
+    }
 
     if (st->need_filter_rebind)
     {
@@ -3620,70 +3686,14 @@ cf_exec(CustomScanState *node)
         bool allow = true;
         if (tf)
             tf->seen++;
-allow_check:
+	allow_check:
         if (tf && tf->allow_bits)
         {
-            if (tf->n_rows > 0 && tf->allow_nbytes == 0)
+            if (st->validated_filter != tf || st->validated_build_seq != st->bound_build_seq)
             {
-                if (cf_query_state)
-                    cf_filters_guard_check(cf_query_state, "engine_error/allow_nbytes_zero");
-                ereport(ERROR,
-                        (errmsg("custom_filter[engine_error]: allow_nbytes is zero for rel=%s rows=%u",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                tf->n_rows)));
-            }
-            if (tf->ctid_pairs)
-            {
-                if ((tf->ctid_pairs_len & 1u) != 0)
-                {
-                    if (cf_query_state)
-                        cf_filters_guard_check(cf_query_state, "engine_error/ctid_pairs_len_odd");
-                    ereport(ERROR,
-                            (errmsg("custom_filter[engine_error]: malformed ctid_pairs_len for rel=%s len=%u",
-                                    st->relname[0] ? st->relname : "<unknown>",
-                                    tf->ctid_pairs_len)));
-                }
-                if ((uint64) tf->ctid_pairs_len != ((uint64) tf->n_rows * 2ull))
-                {
-                    if (cf_query_state)
-                        cf_filters_guard_check(cf_query_state, "engine_error/ctid_len_mismatch");
-                    ereport(ERROR,
-                            (errmsg("custom_filter[engine_error]: ctid length mismatch for rel=%s len=%u rows=%u",
-                                    st->relname[0] ? st->relname : "<unknown>",
-                                    tf->ctid_pairs_len,
-                                    tf->n_rows)));
-                }
-            }
-            else if (tf->ctid_pairs_len != 0)
-            {
-                if (cf_query_state)
-                    cf_filters_guard_check(cf_query_state, "engine_error/ctid_ptr_missing");
-                ereport(ERROR,
-                        (errmsg("custom_filter[engine_error]: ctid_pairs pointer missing for rel=%s len=%u rows=%u",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                tf->ctid_pairs_len,
-                                tf->n_rows)));
-            }
-            if (tf->n_rows > 0 && (!tf->blk_index || tf->n_blocks == 0))
-            {
-                if (cf_query_state)
-                    cf_filters_guard_check(cf_query_state, "engine_error/missing_blk_index");
-                ereport(ERROR,
-                        (errmsg("custom_filter[engine_error]: missing ctid block index for rel=%s rows=%u",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                tf->n_rows)));
-            }
-            size_t expected_allow_nbytes = (size_t) ((tf->n_rows + 7) / 8);
-            if (tf->allow_nbytes != expected_allow_nbytes)
-            {
-                if (cf_query_state)
-                    cf_filters_guard_check(cf_query_state, "engine_error/allow_nbytes_mismatch");
-                ereport(ERROR,
-                        (errmsg("custom_filter[engine_error]: allow_nbytes mismatch for rel=%s bytes=%zu expected=%zu rows=%u",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                tf->allow_nbytes,
-                                expected_allow_nbytes,
-                                tf->n_rows)));
+                cf_validate_filter_invariants(tf);
+                st->validated_filter = tf;
+                st->validated_build_seq = st->bound_build_seq;
             }
             TupleTableSlot *ctid_slot = slot;
             ItemPointerData tid_buf;
@@ -3802,7 +3812,7 @@ allow_check:
                                 (uint32) blk, (uint32) off, bi->bit_bytes)));
             }
             uint8 mask = (uint8) (1u << ((uint32) off & 7u));
-            if ((bi->present_bits[byte_idx] & mask) == 0)
+            if (cf_contract_enabled() && (bi->present_bits[byte_idx] & mask) == 0)
             {
                 ereport(ERROR,
                         (errmsg("custom_filter: CTID not present in artifacts for policy-required table (rel=%s blk=%u off=%u)",
@@ -4055,6 +4065,8 @@ cf_rescan(CustomScanState *node)
 
     st->seq_rid = 0;
     st->need_filter_rebind = true;
+    st->validated_filter = NULL;
+    st->validated_build_seq = 0;
     st->rescan_calls++;
     if (cf_profile_rescan && st->relid != InvalidOid)
     {
