@@ -308,7 +308,8 @@ typedef struct PolicyArtifactC {
 
 typedef struct PolicyTableAllowC {
     const char *table;
-    uint8 *allow_bits;
+    uint64 *block_words;
+    uint32 blocks;
     uint32 n_rows;
 } PolicyTableAllowC;
 
@@ -319,6 +320,85 @@ typedef struct PolicyAllowListC {
 }
 
 namespace {
+
+/* Fixed per-block bitmap layout: offsets are 1-based in CTIDs, so we map off -> (off-1). */
+#define CF_MAX_OFF 512u
+#define CF_WORDS_PER_BLOCK ((CF_MAX_OFF + 63u) / 64u)
+
+static inline void
+cf_block_words_set(uint64 *words, uint32 blocks, int32 blk, int32 off)
+{
+    if (!words || blocks == 0)
+        return;
+    if (blk < 0 || off < 1)
+        return;
+    uint32 blk_u = (uint32) blk;
+    uint32 off_u = (uint32) off;
+    if (blk_u >= blocks || off_u > CF_MAX_OFF)
+        return;
+    uint32 off0 = off_u - 1u;
+    size_t word_idx = (size_t) (off0 >> 6);
+    size_t flat = (size_t) blk_u * (size_t) CF_WORDS_PER_BLOCK + word_idx;
+    words[flat] |= (uint64)(1ULL << (off0 & 63u));
+}
+
+static inline bool
+cf_block_words_test(const uint64 *words, uint32 blocks, int32 blk, int32 off)
+{
+    if (!words || blocks == 0)
+        return false;
+    if (blk < 0 || off < 1)
+        return false;
+    uint32 blk_u = (uint32) blk;
+    uint32 off_u = (uint32) off;
+    if (blk_u >= blocks || off_u > CF_MAX_OFF)
+        return false;
+    uint32 off0 = off_u - 1u;
+    size_t word_idx = (size_t) (off0 >> 6);
+    size_t flat = (size_t) blk_u * (size_t) CF_WORDS_PER_BLOCK + word_idx;
+    uint64 mask = (uint64)(1ULL << (off0 & 63u));
+    return (words[flat] & mask) != 0;
+}
+
+static inline void
+cf_block_words_clear(uint64 *words, uint32 blocks, int32 blk, int32 off)
+{
+    if (!words || blocks == 0)
+        return;
+    if (blk < 0 || off < 1)
+        return;
+    uint32 blk_u = (uint32) blk;
+    uint32 off_u = (uint32) off;
+    if (blk_u >= blocks || off_u > CF_MAX_OFF)
+        return;
+    uint32 off0 = off_u - 1u;
+    size_t word_idx = (size_t) (off0 >> 6);
+    size_t flat = (size_t) blk_u * (size_t) CF_WORDS_PER_BLOCK + word_idx;
+    uint64 mask = (uint64)(1ULL << (off0 & 63u));
+    words[flat] &= ~mask;
+}
+
+static inline uint64
+cf_popcount_block_words(const uint64 *words, uint32 blocks)
+{
+    if (!words || blocks == 0)
+        return 0;
+    size_t nwords = (size_t) blocks * (size_t) CF_WORDS_PER_BLOCK;
+    uint64 cnt = 0;
+    for (size_t i = 0; i < nwords; i++)
+        cnt += (uint64) __builtin_popcountll((unsigned long long) words[i]);
+    return cnt;
+}
+
+struct Loaded;
+
+static bool cf_build_block_words_from_rid_bits(const Loaded &loaded,
+                                              const std::string &table,
+                                              const uint8 *rid_bits,
+                                              uint32 n_rows,
+                                              uint64 **out_words,
+                                              uint32 *out_blocks,
+                                              size_t *out_nbytes);
 
 static std::string trim_ws(const std::string &s) {
     size_t start = 0;
@@ -1088,6 +1168,58 @@ struct Loaded {
     std::map<int, std::vector<std::string>> join_class_cols;
     int class_count = 0;
 };
+
+static bool
+cf_build_block_words_from_rid_bits(const Loaded &loaded,
+                                  const std::string &table,
+                                  const uint8 *rid_bits,
+                                  uint32 n_rows,
+                                  uint64 **out_words,
+                                  uint32 *out_blocks,
+                                  size_t *out_nbytes)
+{
+    if (out_words) *out_words = nullptr;
+    if (out_blocks) *out_blocks = 0;
+    if (out_nbytes) *out_nbytes = 0;
+    if (n_rows == 0)
+        return true;
+
+    auto it_ctid = loaded.ctid_map.find(table);
+    if (it_ctid == loaded.ctid_map.end() || !it_ctid->second.data || it_ctid->second.len < 2)
+        ereport(ERROR, (errmsg("policy: missing ctid map for table %s", table.c_str())));
+    const CtidArray &arr = it_ctid->second;
+    if ((arr.len % 2u) != 0u)
+        ereport(ERROR, (errmsg("policy: malformed ctid map for table %s len=%u", table.c_str(), (unsigned) arr.len)));
+    uint32 ctid_rows = arr.len / 2u;
+    if (ctid_rows != n_rows)
+        ereport(ERROR,
+                (errmsg("policy: ctid rows mismatch for table %s ctid_rows=%u n_rows=%u",
+                        table.c_str(), (unsigned) ctid_rows, (unsigned) n_rows)));
+
+    int32 max_blk = -1;
+    for (uint32 r = 0; r < n_rows; r++) {
+        int32 b = arr.data[2 * r];
+        if (b > max_blk) max_blk = b;
+    }
+    if (max_blk < 0)
+        max_blk = 0;
+    uint32 blocks = (uint32) max_blk + 1u;
+    size_t nwords = (size_t) blocks * (size_t) CF_WORDS_PER_BLOCK;
+    uint64 *words = (uint64 *) palloc0(nwords * sizeof(uint64));
+
+    for (uint32 r = 0; r < n_rows; r++) {
+        if (rid_bits && ((rid_bits[r >> 3] & (uint8)(1u << (r & 7))) == 0))
+            continue;
+        int32 blk = arr.data[2 * r];
+        int32 off = arr.data[2 * r + 1];
+        cf_block_words_set(words, blocks, blk, off);
+    }
+
+    if (out_words) *out_words = words;
+    if (out_blocks) *out_blocks = blocks;
+    if (out_nbytes) *out_nbytes = nwords * sizeof(uint64);
+    return true;
+}
 
 static DictType dict_type_for_key(const Loaded &loaded, const std::string &key) {
     auto it = loaded.dict_types.find(key);
@@ -1869,11 +2001,13 @@ static bool build_allow_all(const Loaded &loaded, PolicyAllowListC *out)
         if (ti.n_rows == 0) continue;
         if (loaded.target_set.count(ti.name) == 0)
             continue;
-        size_t bytes = (ti.n_rows + 7) / 8;
-        uint8 *bits = (uint8 *)palloc0(bytes);
-        memset(bits, 0xFF, bytes);
         out->items[out->count].table = pstrdup(ti.name.c_str());
-        out->items[out->count].allow_bits = bits;
+        uint64 *words = nullptr;
+        uint32 blocks = 0;
+        size_t nbytes = 0;
+        (void) cf_build_block_words_from_rid_bits(loaded, ti.name, nullptr, ti.n_rows, &words, &blocks, &nbytes);
+        out->items[out->count].block_words = words;
+        out->items[out->count].blocks = blocks;
         out->items[out->count].n_rows = ti.n_rows;
         out->count++;
         CF_TRACE_LOG( "policy: allow_%s count = %u / %u",
@@ -3572,9 +3706,15 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         out->count = 0;
         out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
         out->items[0].table = pstrdup(target.c_str());
-        out->items[0].allow_bits = bits;
+        uint64 *words = nullptr;
+        uint32 blocks = 0;
+        size_t nbytes = 0;
+        (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti.n_rows, &words, &blocks, &nbytes);
+        out->items[0].block_words = words;
+        out->items[0].blocks = blocks;
         out->items[0].n_rows = ti.n_rows;
         out->count = 1;
+        pfree(bits);
         if (log_detail)
             CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), cnt, ti.n_rows);
         if (profile && lst.atoms > 0) {
@@ -4001,9 +4141,15 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
         out->count = 0;
         out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
         out->items[0].table = pstrdup(target.c_str());
-        out->items[0].allow_bits = bits;
+        uint64 *words = nullptr;
+        uint32 blocks = 0;
+        size_t nbytes = 0;
+        (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti_t.n_rows, &words, &blocks, &nbytes);
+        out->items[0].block_words = words;
+        out->items[0].blocks = blocks;
         out->items[0].n_rows = ti_t.n_rows;
         out->count = 1;
+        pfree(bits);
         if (log_detail)
             CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti_t.n_rows);
         if (out_allowed) out_allowed->clear();
@@ -4157,9 +4303,15 @@ static bool multi_join_enforce_ast(const Loaded &loaded,
     out->count = 0;
     out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
     out->items[0].table = pstrdup(target.c_str());
-    out->items[0].allow_bits = bits;
+    uint64 *words = nullptr;
+    uint32 blocks = 0;
+    size_t nbytes = 0;
+    (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti.n_rows, &words, &blocks, &nbytes);
+    out->items[0].block_words = words;
+    out->items[0].blocks = blocks;
     out->items[0].n_rows = ti.n_rows;
     out->count = 1;
+    pfree(bits);
     if (log_detail)
         CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti.n_rows);
     if (profile) {
@@ -4233,9 +4385,15 @@ static bool multi_join_token_domain_or(const Loaded &loaded,
         out->count = 0;
         out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
         out->items[0].table = pstrdup(target.c_str());
-        out->items[0].allow_bits = bits;
+        uint64 *words = nullptr;
+        uint32 blocks = 0;
+        size_t nbytes = 0;
+        (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti.n_rows, &words, &blocks, &nbytes);
+        out->items[0].block_words = words;
+        out->items[0].blocks = blocks;
         out->items[0].n_rows = ti.n_rows;
         out->count = 1;
+        pfree(bits);
         if (log_detail)
             CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), cnt, ti.n_rows);
         if (profile && lst.atoms > 0) {
@@ -4640,9 +4798,15 @@ static bool multi_join_token_domain_or(const Loaded &loaded,
     out->count = 0;
     out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
     out->items[0].table = pstrdup(target.c_str());
-    out->items[0].allow_bits = bits;
+    uint64 *words = nullptr;
+    uint32 blocks = 0;
+    size_t nbytes = 0;
+    (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti.n_rows, &words, &blocks, &nbytes);
+    out->items[0].block_words = words;
+    out->items[0].blocks = blocks;
     out->items[0].n_rows = ti.n_rows;
     out->count = 1;
+    pfree(bits);
     if (log_detail)
         CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti.n_rows);
     if (profile) {
@@ -5116,9 +5280,15 @@ static bool multi_join_enforce_general(const Loaded &loaded,
         out->count = 0;
         out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
         out->items[0].table = pstrdup(target.c_str());
-        out->items[0].allow_bits = final_bits;
+        uint64 *words = nullptr;
+        uint32 blocks = 0;
+        size_t nbytes = 0;
+        (void) cf_build_block_words_from_rid_bits(loaded, target, final_bits, ti_t.n_rows, &words, &blocks, &nbytes);
+        out->items[0].block_words = words;
+        out->items[0].blocks = blocks;
         out->items[0].n_rows = ti_t.n_rows;
         out->count = 1;
+        pfree(final_bits);
         if (log_detail)
             CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti_t.n_rows);
         if (profile) {
@@ -5852,9 +6022,15 @@ static bool multi_join_enforce_general(const Loaded &loaded,
     out->count = 0;
     out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
     out->items[0].table = pstrdup(target.c_str());
-    out->items[0].allow_bits = bits;
+    uint64 *words = nullptr;
+    uint32 blocks = 0;
+    size_t bm_nbytes = 0;
+    (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti_t.n_rows, &words, &blocks, &bm_nbytes);
+    out->items[0].block_words = words;
+    out->items[0].blocks = blocks;
     out->items[0].n_rows = ti_t.n_rows;
     out->count = 1;
+    pfree(bits);
     if (log_detail)
         CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti_t.n_rows);
     if (profile) {
@@ -6000,7 +6176,12 @@ multi_join_enforce_one_target(const Loaded &loaded,
 
     const TableInfo &ti = loaded.tables.find(target)->second;
     size_t bytes = (ti.n_rows + 7) / 8;
-    uint8 *final_bits = (uint8 *)palloc0(bytes);
+    uint8 *zero_bits = (uint8 *) palloc0(bytes);
+    uint64 *final_words = nullptr;
+    uint32 final_blocks = 0;
+    size_t final_nbytes = 0;
+    (void) cf_build_block_words_from_rid_bits(loaded, target, zero_bits, ti.n_rows, &final_words, &final_blocks, &final_nbytes);
+    pfree(zero_bits);
     std::map<int, Bitset> union_allowed;
 
     for (const auto &term : terms) {
@@ -6013,11 +6194,11 @@ multi_join_enforce_one_target(const Loaded &loaded,
                                     &term_out, profile, false, &term_allowed, restrict_bits)) {
             return false;
         }
-        if (term_out.count == 1 && term_out.items && term_out.items[0].allow_bits) {
-            uint8 *bits = term_out.items[0].allow_bits;
-            for (size_t i = 0; i < bytes; i++) {
-                final_bits[i] |= bits[i];
-            }
+        if (term_out.count == 1 && term_out.items && term_out.items[0].block_words && final_words) {
+            uint32 bmin = (term_out.items[0].blocks < final_blocks) ? term_out.items[0].blocks : final_blocks;
+            size_t nwords = (size_t) bmin * (size_t) CF_WORDS_PER_BLOCK;
+            for (size_t i = 0; i < nwords; i++)
+                final_words[i] |= term_out.items[0].block_words[i];
         }
         for (auto &kv : term_allowed) {
             auto &dst = union_allowed[kv.first];
@@ -6039,19 +6220,25 @@ multi_join_enforce_one_target(const Loaded &loaded,
             target_restrict = it_rb->second;
     }
 
-    uint32 passed = 0;
-    for (uint32 r = 0; r < ti.n_rows; r++) {
-        if (!allow_bit(target_restrict, r)) {
-            final_bits[r >> 3] &= (uint8) ~(1u << (r & 7));
-            continue;
+    if (target_restrict && final_words) {
+        auto it_ctid = loaded.ctid_map.find(target);
+        if (it_ctid == loaded.ctid_map.end() || !it_ctid->second.data)
+            ereport(ERROR, (errmsg("policy: missing ctid map for target %s", target.c_str())));
+        const CtidArray &arr = it_ctid->second;
+        for (uint32 r = 0; r < ti.n_rows; r++) {
+            if (allow_bit(target_restrict, r))
+                continue;
+            int32 blk = arr.data[2 * r];
+            int32 off = arr.data[2 * r + 1];
+            cf_block_words_clear(final_words, final_blocks, blk, off);
         }
-        if (final_bits[r >> 3] & (uint8)(1u << (r & 7)))
-            passed++;
     }
+    uint32 passed = (uint32) cf_popcount_block_words(final_words, final_blocks);
     out->count = 0;
     out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
     out->items[0].table = pstrdup(target.c_str());
-    out->items[0].allow_bits = final_bits;
+    out->items[0].block_words = final_words;
+    out->items[0].blocks = final_blocks;
     out->items[0].n_rows = ti.n_rows;
     out->count = 1;
 
@@ -6086,7 +6273,7 @@ multi_join_enforce_multi_target(const Loaded &loaded,
         PolicyAllowListC tmp{};
         if (!multi_join_enforce_one_target(loaded, target, &restrict_bits, &tmp, profile, true))
             return false;
-        if (tmp.count != 1 || !tmp.items || !tmp.items[0].table || !tmp.items[0].allow_bits) {
+        if (tmp.count != 1 || !tmp.items || !tmp.items[0].table || !tmp.items[0].block_words) {
             ereport(ERROR,
                     (errmsg("policy: invalid multi-target allow list for target %s", target.c_str())));
         }
@@ -6098,16 +6285,26 @@ multi_join_enforce_multi_target(const Loaded &loaded,
                             target.c_str(), tmp.items[0].n_rows, ti.n_rows)));
         }
 
-        size_t bytes = (ti.n_rows + 7) / 8;
-        uint8 *bits = (uint8 *) palloc0(bytes);
-        memcpy(bits, tmp.items[0].allow_bits, bytes);
-
         out->items[out->count].table = pstrdup(target.c_str());
-        out->items[out->count].allow_bits = bits;
+        out->items[out->count].block_words = tmp.items[0].block_words;
+        out->items[out->count].blocks = tmp.items[0].blocks;
         out->items[out->count].n_rows = ti.n_rows;
         out->count++;
 
-        restrict_bits[target] = bits;
+        /* Build RID-level restriction bits for downstream targets (cheap: scan CTIDs once). */
+        size_t bytes = (ti.n_rows + 7) / 8;
+        uint8 *rid_bits = (uint8 *) palloc0(bytes);
+        auto it_ctid = loaded.ctid_map.find(target);
+        if (it_ctid == loaded.ctid_map.end() || !it_ctid->second.data)
+            ereport(ERROR, (errmsg("policy: missing ctid map for target %s", target.c_str())));
+        const CtidArray &arr = it_ctid->second;
+        for (uint32 r = 0; r < ti.n_rows; r++) {
+            int32 blk = arr.data[2 * r];
+            int32 off = arr.data[2 * r + 1];
+            if (cf_block_words_test(tmp.items[0].block_words, tmp.items[0].blocks, blk, off))
+                rid_bits[r >> 3] |= (uint8)(1u << (r & 7));
+        }
+        restrict_bits[target] = rid_bits;
     }
 
     return true;
@@ -6175,9 +6372,15 @@ static bool const_only_enforce(const Loaded &loaded, PolicyAllowListC *out, Bund
         }
 
         out->items[out->count].table = pstrdup(t.c_str());
-        out->items[out->count].allow_bits = bits;
+        uint64 *words = nullptr;
+        uint32 blocks = 0;
+        size_t nbytes = 0;
+        (void) cf_build_block_words_from_rid_bits(loaded, t, bits, ti.n_rows, &words, &blocks, &nbytes);
+        out->items[out->count].block_words = words;
+        out->items[out->count].blocks = blocks;
         out->items[out->count].n_rows = ti.n_rows;
         out->count++;
+        pfree(bits);
 
         CF_TRACE_LOG( "policy: allow_%s count = %u / %u",
              t.c_str(), cnt, ti.n_rows);
@@ -6633,10 +6836,16 @@ static bool token_domain_run(const Loaded &loaded, PolicyAllowListC *out)
              ti.name.c_str(), passed, ti.n_rows);
 
         out->items[out->count].table = pstrdup(ti.name.c_str());
-        out->items[out->count].allow_bits = bits;
+        uint64 *words = nullptr;
+        uint32 blocks = 0;
+        size_t nbytes = 0;
+        (void) cf_build_block_words_from_rid_bits(loaded, ti.name, bits, ti.n_rows, &words, &blocks, &nbytes);
+        out->items[out->count].block_words = words;
+        out->items[out->count].blocks = blocks;
         out->items[out->count].n_rows = ti.n_rows;
         allow_map[ti.name] = &out->items[out->count];
         out->count++;
+        pfree(bits);
     }
 
     return true;
@@ -6685,11 +6894,7 @@ static void fill_decode_stats(const PolicyAllowListC *allow, BundleProfile *prof
         DecodeStat ds;
         ds.table = it->table;
         ds.rows_total = it->n_rows;
-        ds.rows_allowed = 0;
-        for (uint32 r = 0; r < it->n_rows; r++) {
-            if (it->allow_bits[r >> 3] & (uint8)(1u << (r & 7)))
-                ds.rows_allowed++;
-        }
+        ds.rows_allowed = (uint32) cf_popcount_block_words(it->block_words, it->blocks);
         ds.ms_decode = ms_decode_default;
         profile->decode.push_back(ds);
         profile->decode_ms_total += ds.ms_decode;

@@ -63,7 +63,8 @@ typedef struct PolicyArtifactC {
 
 typedef struct PolicyTableAllowC {
     const char *table;
-    uint8 *allow_bits;
+    uint64 *block_words;
+    uint32 blocks;
     uint32 n_rows;
 } PolicyTableAllowC;
 
@@ -92,6 +93,40 @@ extern PolicyRunHandle *policy_run(const PolicyArtifactC *arts, int art_count,
                                    const PolicyEngineInputC *in);
 extern const PolicyAllowListC *policy_run_allow_list(const PolicyRunHandle *h);
 extern const PolicyRunProfileC *policy_run_profile(const PolicyRunHandle *h);
+
+/* Fixed per-block bitmap layout: offsets are 1-based in CTIDs, so we map off -> (off-1). */
+#define CF_MAX_OFF 512u
+#define CF_WORDS_PER_BLOCK ((CF_MAX_OFF + 63u) / 64u)
+
+static inline bool
+cf_allowed_ctid_words(const uint64 *words, uint32 blocks, BlockNumber blk, OffsetNumber off)
+{
+    uint32 blk_u;
+    uint32 off_u;
+    uint32 off0;
+    size_t word_idx;
+    size_t flat;
+    uint64 mask;
+
+    if (!words || blocks == 0)
+        return false;
+    if (blk < 0)
+        return false;
+    blk_u = (uint32) blk;
+    if (blk_u >= blocks)
+        return false;
+    if (off < 1)
+        return false;
+    off_u = (uint32) off;
+    if (off_u > CF_MAX_OFF)
+        return false;
+
+    off0 = off_u - 1u;
+    word_idx = (size_t) (off0 >> 6);
+    flat = (size_t) blk_u * (size_t) CF_WORDS_PER_BLOCK + word_idx;
+    mask = 1ULL << (off0 & 63u);
+    return (words[flat] & mask) != 0;
+}
 
 #define CF_TRACE_LOG(fmt, ...) \
     do { \
@@ -132,6 +167,18 @@ cf_popcount_allow(const uint8 *bits, uint32 n_rows)
         if (bits[r >> 3] & (uint8)(1u << (r & 7)))
             cnt++;
     }
+    return cnt;
+}
+
+static uint64
+cf_popcount_block_words(const uint64 *words, uint32 blocks)
+{
+    uint64 cnt = 0;
+    if (!words || blocks == 0)
+        return 0;
+    size_t nwords = (size_t) blocks * (size_t) CF_WORDS_PER_BLOCK;
+    for (size_t i = 0; i < nwords; i++)
+        cnt += (uint64) __builtin_popcountll((unsigned long long) words[i]);
     return cnt;
 }
 
@@ -469,7 +516,6 @@ cf_log_policy_identity(const char *path)
 }
 static PolicyQueryState *cf_build_query_state(EState *estate, const char *query_str);
 static TableFilterState *cf_find_filter(PolicyQueryState *qs, Oid relid, bool log_on_miss);
-static int32 cf_ctid_to_rid(TableFilterState *tf, BlockNumber blk, OffsetNumber off);
 static TupleTableSlot *cf_store_slot(CustomScanState *node, TupleTableSlot *slot);
 static bool cf_table_wrapped(PolicyQueryState *qs, const char *name);
 static const char *cf_plan_find_scan_type(Plan *plan, PlannedStmt *pstmt, Oid relid);
@@ -1058,39 +1104,18 @@ typedef struct CfExec
     bool debug_exec_logged;
 } CfExec;
 
-typedef struct BlockIndex
-{
-    uint32 max_off;
-    /* Per-block bitmaps indexed by OffsetNumber (1-based). */
-    uint8 *present_bits;
-    uint8 *allow_bits;
-    size_t bit_bytes;
-    bool present;
-} BlockIndex;
-
 typedef struct TableFilterState
 {
     Oid relid;
     char relname[NAMEDATALEN];
     uint32 n_rows;
-    uint8 *allow_bits;
-    size_t allow_nbytes;
-    uint32 allow_popcount;
-    uint32 *ctid_pairs;
-    uint32 ctid_pairs_len;
-    size_t ctid_bytes;
-    BlockIndex *blk_index;
-    uint32 n_blocks;
-    size_t blk_index_bytes;
+    uint64 *block_words;
+    uint32 blocks;
+    size_t block_words_nbytes;
     uint64 seen;
     uint64 passed;
     uint64 misses;
 } TableFilterState;
-
-#define CF_ALLOW_CANARY_BYTES 8
-static const uint8 cf_allow_canary[CF_ALLOW_CANARY_BYTES] = {
-    0xA5, 0x5A, 0xC3, 0x3C, 0x9E, 0xE9, 0x77, 0x88
-};
 
 typedef struct PolicyQueryState
 {
@@ -1203,15 +1228,9 @@ cf_filters_guard_compute_hash(const PolicyQueryState *qs)
         if (rn > 0)
             h = cf_fnv1a64_update(h, tf->relname, rn);
         h = cf_fnv1a64_update(h, &tf->n_rows, sizeof(tf->n_rows));
-        h = cf_fnv1a64_update(h, &tf->allow_bits, sizeof(tf->allow_bits));
-        h = cf_fnv1a64_update(h, &tf->allow_nbytes, sizeof(tf->allow_nbytes));
-        h = cf_fnv1a64_update(h, &tf->allow_popcount, sizeof(tf->allow_popcount));
-        h = cf_fnv1a64_update(h, &tf->ctid_pairs, sizeof(tf->ctid_pairs));
-        h = cf_fnv1a64_update(h, &tf->ctid_pairs_len, sizeof(tf->ctid_pairs_len));
-        h = cf_fnv1a64_update(h, &tf->ctid_bytes, sizeof(tf->ctid_bytes));
-        h = cf_fnv1a64_update(h, &tf->blk_index, sizeof(tf->blk_index));
-        h = cf_fnv1a64_update(h, &tf->n_blocks, sizeof(tf->n_blocks));
-        h = cf_fnv1a64_update(h, &tf->blk_index_bytes, sizeof(tf->blk_index_bytes));
+        h = cf_fnv1a64_update(h, &tf->block_words, sizeof(tf->block_words));
+        h = cf_fnv1a64_update(h, &tf->blocks, sizeof(tf->blocks));
+        h = cf_fnv1a64_update(h, &tf->block_words_nbytes, sizeof(tf->block_words_nbytes));
     }
 
     return h;
@@ -1287,18 +1306,15 @@ cf_filters_guard_check(PolicyQueryState *qs, const char *phase)
     {
         const TableFilterState *tf = &qs->filters[i];
         appendStringInfo(&msg,
-                         " f%d(tf=%p relid=%u rel=%s allow=%p nbytes=%zu rows=%u ctid=%p ctid_len=%u blk=%p nblk=%u)",
+                         " f%d(tf=%p relid=%u rel=%s block_words=%p blocks=%u bytes=%zu rows=%u)",
                          i,
                          (void *) tf,
                          (unsigned int) tf->relid,
                          tf->relname[0] ? tf->relname : "<unknown>",
-                         (void *) tf->allow_bits,
-                         tf->allow_nbytes,
-                         tf->n_rows,
-                         (void *) tf->ctid_pairs,
-                         tf->ctid_pairs_len,
-                         (void *) tf->blk_index,
-                         tf->n_blocks);
+                         (void *) tf->block_words,
+                         (unsigned int) tf->blocks,
+                         tf->block_words_nbytes,
+                         tf->n_rows);
     }
     if (qs->n_filters > lim)
         appendStringInfoString(&msg, " ...");
@@ -1414,7 +1430,7 @@ cf_debug_log_scan_ids(const char *event, CfExec *st, CustomScanState *node)
                      "st_relid=%u st_relname=%s st_scan=%s "
                      "need_rebind=%d bound_build_seq=%llu "
                      "should_filter=%d in_policy_targets=%d scanned=%d wrapped=%d "
-                     "filter_ptr=%p filter_allow_bits=%p filter_found=%d",
+                     "filter_ptr=%p filter_block_words=%p filter_found=%d",
                      (int) getpid(),
                      (unsigned long long) (qs ? qs->build_seq : 0),
                      (void *) qs,
@@ -1435,7 +1451,7 @@ cf_debug_log_scan_ids(const char *event, CfExec *st, CustomScanState *node)
                      scanned ? 1 : 0,
                      wrapped ? 1 : 0,
                      (void *) st->filter,
-                     (void *) (st->filter ? st->filter->allow_bits : NULL),
+                     (void *) (st->filter ? st->filter->block_words : NULL),
                      st->filter ? 1 : 0);
 }
 
@@ -1740,165 +1756,7 @@ cf_load_artifacts_batch(char **needed_files, int needed_count,
     return ok;
 }
 
-static void
-cf_build_blk_index(TableFilterState *tf, MemoryContext mcxt)
-{
-    if (!tf || !tf->ctid_pairs || tf->ctid_pairs_len < 2)
-        return;
-    uint32 n_rows = tf->ctid_pairs_len / 2;
-    uint32 max_blk = 0;
-    for (uint32 r = 0; r < n_rows; r++)
-    {
-        uint32 blk = tf->ctid_pairs[2 * r];
-        if (blk > max_blk)
-            max_blk = blk;
-    }
-    uint32 n_blocks = max_blk + 1;
-    /* Per-block maximum offset number (1-based). */
-    uint32 *max_off = NULL;
-    MemoryContext oldctx2 = MemoryContextSwitchTo(mcxt);
-    max_off = (uint32 *) palloc0(sizeof(uint32) * n_blocks);
-    MemoryContextSwitchTo(oldctx2);
-    for (uint32 r = 0; r < n_rows; r++)
-    {
-        uint32 blk = tf->ctid_pairs[2 * r];
-        uint32 off = tf->ctid_pairs[2 * r + 1];
-        if (blk < n_blocks && off > max_off[blk])
-            max_off[blk] = off;
-    }
-
-    MemoryContext oldctx = MemoryContextSwitchTo(mcxt);
-    tf->blk_index = (BlockIndex *) palloc0(sizeof(BlockIndex) * n_blocks);
-    MemoryContextSwitchTo(oldctx);
-    tf->n_blocks = n_blocks;
-    tf->blk_index_bytes = (size_t) n_blocks * sizeof(BlockIndex);
-
-    /* Allocate per-block bitmaps. */
-    for (uint32 blk = 0; blk < n_blocks; blk++)
-    {
-        uint32 moff = max_off[blk];
-        if (moff == 0)
-            continue;
-        BlockIndex *bi = &tf->blk_index[blk];
-        bi->present = true;
-        bi->max_off = moff;
-        bi->bit_bytes = (size_t) ((moff + 8u) / 8u);
-        oldctx = MemoryContextSwitchTo(mcxt);
-        bi->present_bits = (uint8 *) palloc0(bi->bit_bytes);
-        bi->allow_bits = (uint8 *) palloc0(bi->bit_bytes);
-        MemoryContextSwitchTo(oldctx);
-        tf->blk_index_bytes += bi->bit_bytes * 2;
-    }
-
-    /* Populate present/allow bits. */
-    for (uint32 r = 0; r < n_rows; r++)
-    {
-        uint32 blk = tf->ctid_pairs[2 * r];
-        uint32 off = tf->ctid_pairs[2 * r + 1];
-        if (blk >= tf->n_blocks)
-            ereport(ERROR,
-                    (errmsg("custom_filter: ctid blk out of range rel=%s blk=%u n_blocks=%u",
-                            tf->relname[0] ? tf->relname : "<unknown>",
-                            blk, tf->n_blocks)));
-        BlockIndex *bi = &tf->blk_index[blk];
-        if (!bi->present || !bi->present_bits || !bi->allow_bits)
-            ereport(ERROR,
-                    (errmsg("custom_filter: ctid blk index missing rel=%s blk=%u",
-                            tf->relname[0] ? tf->relname : "<unknown>",
-                            blk)));
-        if (off == 0 || off > bi->max_off)
-            ereport(ERROR,
-                    (errmsg("custom_filter: ctid off out of range rel=%s blk=%u off=%u max_off=%u",
-                            tf->relname[0] ? tf->relname : "<unknown>",
-                            blk, off, bi->max_off)));
-        size_t byte_idx = (size_t) (off >> 3);
-        uint8 mask = (uint8) (1u << (off & 7u));
-        if (byte_idx >= bi->bit_bytes)
-            ereport(ERROR,
-                    (errmsg("custom_filter: ctid bitmap index out of range rel=%s blk=%u off=%u bytes=%zu",
-                            tf->relname[0] ? tf->relname : "<unknown>",
-                            blk, off, bi->bit_bytes)));
-        bi->present_bits[byte_idx] |= mask;
-
-        size_t allow_byte = (size_t) (r >> 3);
-        uint8 allow_mask = (uint8) (1u << (r & 7u));
-        bool allow = (allow_byte < tf->allow_nbytes) && ((tf->allow_bits[allow_byte] & allow_mask) != 0);
-        if (allow)
-            bi->allow_bits[byte_idx] |= mask;
-    }
-
-    if (cf_trace_enabled())
-    {
-        for (uint32 r = 0; r < n_rows && r < 5; r++)
-        {
-            uint32 blk = tf->ctid_pairs[2 * r];
-            uint32 off = tf->ctid_pairs[2 * r + 1];
-            CF_TRACE_LOG( "custom_filter: ctid_map[%u]=(%u,%u)", r, blk, off);
-        }
-    }
-}
-
-static void
-cf_validate_filter_invariants(TableFilterState *tf)
-{
-    if (!tf || !tf->allow_bits)
-        return;
-
-    if (tf->n_rows > 0 && tf->allow_nbytes == 0)
-        ereport(ERROR,
-                (errmsg("custom_filter[engine_error]: allow_nbytes is zero for rel=%s rows=%u",
-                        tf->relname[0] ? tf->relname : "<unknown>",
-                        tf->n_rows)));
-
-    size_t expected_allow_nbytes = (size_t) ((tf->n_rows + 7) / 8);
-    if (tf->allow_nbytes != expected_allow_nbytes)
-        ereport(ERROR,
-                (errmsg("custom_filter[engine_error]: allow_nbytes mismatch for rel=%s bytes=%zu expected=%zu rows=%u",
-                        tf->relname[0] ? tf->relname : "<unknown>",
-                        tf->allow_nbytes,
-                        expected_allow_nbytes,
-                        tf->n_rows)));
-
-    if (tf->ctid_pairs)
-    {
-        if ((tf->ctid_pairs_len & 1u) != 0)
-            ereport(ERROR,
-                    (errmsg("custom_filter[engine_error]: malformed ctid_pairs_len for rel=%s len=%u",
-                            tf->relname[0] ? tf->relname : "<unknown>",
-                            tf->ctid_pairs_len)));
-
-        if ((uint64) tf->ctid_pairs_len != ((uint64) tf->n_rows * 2ull))
-            ereport(ERROR,
-                    (errmsg("custom_filter[engine_error]: ctid length mismatch for rel=%s len=%u rows=%u",
-                            tf->relname[0] ? tf->relname : "<unknown>",
-                            tf->ctid_pairs_len,
-                            tf->n_rows)));
-    }
-    else if (tf->ctid_pairs_len != 0)
-    {
-        ereport(ERROR,
-                (errmsg("custom_filter[engine_error]: ctid_pairs pointer missing for rel=%s len=%u rows=%u",
-                        tf->relname[0] ? tf->relname : "<unknown>",
-                        tf->ctid_pairs_len,
-                        tf->n_rows)));
-    }
-
-    if (tf->n_rows > 0 && (!tf->blk_index || tf->n_blocks == 0))
-        ereport(ERROR,
-                (errmsg("custom_filter[engine_error]: missing ctid block index for rel=%s rows=%u",
-                        tf->relname[0] ? tf->relname : "<unknown>",
-                        tf->n_rows)));
-}
-
-static int32
-cf_ctid_to_rid(TableFilterState *tf, BlockNumber blk, OffsetNumber off)
-{
-    (void)tf;
-    (void)blk;
-    (void)off;
-    /* Deprecated: we now filter directly by CTID->(block,offset) bitmaps. */
-    return -1;
-}
+/* Legacy CTID->RID/blk_index filtering removed: runtime checks use block_words directly. */
 
 static TableFilterState *
 cf_find_filter(PolicyQueryState *qs, Oid relid, bool log_on_miss)
@@ -1928,11 +1786,11 @@ cf_find_filter(PolicyQueryState *qs, Oid relid, bool log_on_miss)
         {
             TableFilterState *f = &qs->filters[i];
             appendStringInfo(&buf,
-                             " f%d(relid=%u,name=%s,allow=%p,rows=%u)",
+                             " f%d(relid=%u,name=%s,block_words=%p,rows=%u)",
                              i,
                              (unsigned int) f->relid,
                              f->relname[0] ? f->relname : "<unknown>",
-                             (void *) f->allow_bits,
+                             (void *) f->block_words,
                              f->n_rows);
         }
         elog(NOTICE, "%s", buf.data);
@@ -2414,27 +2272,24 @@ cf_build_query_state(EState *estate, const char *query_str)
             const PolicyTableAllowC *it = &allow_list->items[i];
             const char *tname = (it && it->table) ? it->table : "<null>";
             uint32 rows = it ? it->n_rows : 0;
-            uint32 cnt = 0;
-            if (it && it->allow_bits)
-                cnt = cf_popcount_allow(it->allow_bits, rows);
-            CF_TRACE_LOG( "custom_filter: allow_%s count=%u/%u", tname, cnt, rows);
+            uint64 cnt = 0;
+            if (it && it->block_words)
+                cnt = cf_popcount_block_words(it->block_words, it->blocks);
+            CF_TRACE_LOG( "custom_filter: allow_%s count=%llu/%u", tname, (unsigned long long) cnt, rows);
         }
     }
 
+    /* Build filter states from the policy engine output (already a CTID bitmap). */
     int n_filters = 0;
-    for (int i = 0; i < qs->n_needed_files; i++)
+    if (allow_list && allow_list->count > 0)
     {
-        if (arts[i].name && cf_has_suffix(arts[i].name, "_ctid"))
+        for (int i = 0; i < allow_list->count; i++)
         {
-            size_t nlen = strlen(arts[i].name);
-            if (nlen <= 5) continue;
-            char tblname[NAMEDATALEN];
-            size_t tlen = nlen - 5;
-            if (tlen >= sizeof(tblname))
-                tlen = sizeof(tblname) - 1;
-            memcpy(tblname, arts[i].name, tlen);
-            tblname[tlen] = '\0';
-            if (cf_table_should_filter(qs, tblname))
+            const PolicyTableAllowC *it = &allow_list->items[i];
+            const char *tname = (it && it->table) ? it->table : NULL;
+            if (!tname)
+                continue;
+            if (cf_table_should_filter(qs, tname))
                 n_filters++;
         }
     }
@@ -2473,219 +2328,44 @@ cf_build_query_state(EState *estate, const char *query_str)
     }
 
     int fidx = 0;
-    for (int i = 0; i < qs->n_needed_files; i++)
+    if (allow_list && allow_list->count > 0)
     {
-        if (!arts[i].name)
-            continue;
-        size_t nlen = strlen(arts[i].name);
-        if (nlen <= 5 || !cf_has_suffix(arts[i].name, "_ctid"))
-            continue;
-
-        char tblname[NAMEDATALEN];
-        size_t tlen = nlen - 5;
-        if (tlen >= sizeof(tblname))
-            tlen = sizeof(tblname) - 1;
-        memcpy(tblname, arts[i].name, tlen);
-        tblname[tlen] = '\0';
-
-        if (!cf_table_should_filter(qs, tblname))
-            continue;
-
-        TableFilterState *tf = &qs->filters[fidx++];
-        qs->allow_build_calls++;
-        memset(tf, 0, sizeof(TableFilterState));
-        strlcpy(tf->relname, tblname, sizeof(tf->relname));
-        Oid nsp = get_namespace_oid("public", true);
-        if (OidIsValid(nsp))
-            tf->relid = get_relname_relid(tblname, nsp);
-        if (!OidIsValid(tf->relid))
-            tf->relid = get_relname_relid(tblname, InvalidOid);
-
-        if (!arts[i].data)
-            ereport(ERROR,
-                    (errmsg("custom_filter[missing_artifact]: NULL _ctid payload for %s",
-                            tblname)));
-        size_t ctid_payload_bytes = (size_t) VARSIZE_ANY_EXHDR(arts[i].data);
-        if ((ctid_payload_bytes % sizeof(uint32)) != 0)
-            ereport(ERROR,
-                    (errmsg("custom_filter[missing_artifact]: malformed _ctid payload for %s (bytes=%zu not multiple of %zu)",
-                            tblname, ctid_payload_bytes, sizeof(uint32))));
-        size_t ctid_words = ctid_payload_bytes / sizeof(uint32);
-        if ((ctid_words & 1u) != 0)
-            ereport(ERROR,
-                    (errmsg("custom_filter[missing_artifact]: malformed _ctid payload for %s (len=%zu not even)",
-                            tblname, ctid_words)));
-        if (ctid_words > (size_t) UINT32_MAX)
-            ereport(ERROR,
-                    (errmsg("custom_filter[missing_artifact]: _ctid payload too large for %s (len=%zu)",
-                            tblname, ctid_words)));
-
-        tf->ctid_pairs = (uint32 *) VARDATA_ANY(arts[i].data);
-        tf->ctid_pairs_len = (uint32) ctid_words;
-        if ((tf->ctid_pairs_len & 1u) != 0)
-            ereport(ERROR,
-                    (errmsg("custom_filter[missing_artifact]: malformed _ctid payload for %s (len=%u not even)",
-                            tblname, tf->ctid_pairs_len)));
-        tf->n_rows = tf->ctid_pairs_len / 2;
-        tf->ctid_bytes = ctid_payload_bytes;
-        tf->allow_nbytes = (size_t) ((tf->n_rows + 7) / 8);
-        if (cf_contract_enabled())
-            cf_contract_assert_chunk("ctid_blob", tblname, arts[i].data, qctx);
-
-        bool found_allow = false;
-        uint32 found_allow_rows = 0;
-        uint8 *found_allow_bits = NULL;
-        int allow_count = allow_list ? allow_list->count : 0;
-        for (int j = 0; j < allow_count; j++)
+        for (int i = 0; i < allow_list->count; i++)
         {
-            if (strcmp(allow_list->items[j].table, tblname) == 0)
-            {
-                found_allow_bits = allow_list->items[j].allow_bits;
-                found_allow_rows = allow_list->items[j].n_rows;
-                found_allow = true;
-                break;
-            }
-        }
-        if (!found_allow)
-        {
-            size_t bytes = tf->allow_nbytes;
-            MemoryContext old_allow_ctx = MemoryContextSwitchTo(qctx);
-            tf->allow_bits = (uint8 *) palloc0(bytes + CF_ALLOW_CANARY_BYTES);
-            MemoryContextSwitchTo(old_allow_ctx);
-            memset(tf->allow_bits, 0xFF, bytes);
-            memcpy(tf->allow_bits + bytes, cf_allow_canary, CF_ALLOW_CANARY_BYTES);
-            tf->allow_popcount = tf->n_rows;
-            if (cf_contract_enabled() && eval_res && eval_res->target_joinclass_counts)
-            {
-                int tidx = cf_eval_target_index(eval_res, tblname);
-                if (tidx >= 0 && eval_res->target_joinclass_counts[tidx] > 1)
-                {
-                    CF_TRACE_LOG( "custom_filter: multi-join contract mode, skip allow bits for %s (allow-all)",
-                         tblname);
-                }
-                else
-                {
-                    elog(WARNING, "custom_filter: allow bits not found for %s, default allow-all", tblname);
-                }
-            }
-            else
-            {
-                elog(WARNING, "custom_filter: allow bits not found for %s, default allow-all", tblname);
-            }
-        }
-        else
-        {
-            if (!found_allow_bits)
+            const PolicyTableAllowC *it = &allow_list->items[i];
+            const char *tname = (it && it->table) ? it->table : NULL;
+            if (!tname)
+                continue;
+            if (!cf_table_should_filter(qs, tname))
+                continue;
+            if (!it->block_words || it->blocks == 0)
                 ereport(ERROR,
-                        (errmsg("custom_filter[engine_error]: allow_bits pointer missing for %s",
-                                tblname)));
-            if (found_allow_rows != tf->n_rows)
-                ereport(ERROR,
-                        (errmsg("custom_filter[engine_error]: allow rows mismatch for %s allow_rows=%u ctid_rows=%u",
-                                tblname, found_allow_rows, tf->n_rows)));
-            /* Defensive copy of allow_bits into query context to avoid aliasing. */
-            size_t bytes = tf->allow_nbytes;
+                        (errmsg("custom_filter[engine_error]: missing block_words for %s", tname)));
+
+            TableFilterState *tf = &qs->filters[fidx++];
+            qs->allow_build_calls++;
+            memset(tf, 0, sizeof(TableFilterState));
+            strlcpy(tf->relname, tname, sizeof(tf->relname));
+            Oid nsp = get_namespace_oid("public", true);
+            if (OidIsValid(nsp))
+                tf->relid = get_relname_relid(tname, nsp);
+            if (!OidIsValid(tf->relid))
+                tf->relid = get_relname_relid(tname, InvalidOid);
+
+            tf->n_rows = it->n_rows;
+            tf->blocks = it->blocks;
+            tf->block_words_nbytes = (size_t)tf->blocks * (size_t)CF_WORDS_PER_BLOCK * sizeof(uint64);
+
+            /* Defensive copy into query context to avoid aliasing. */
             MemoryContext old_allow_ctx = MemoryContextSwitchTo(qctx);
-            uint8 *copy_bits = (uint8 *) palloc0(bytes + CF_ALLOW_CANARY_BYTES);
+            uint64 *copy_words = (uint64 *) palloc0(tf->block_words_nbytes);
             MemoryContextSwitchTo(old_allow_ctx);
-            memcpy(copy_bits, found_allow_bits, bytes);
-            memcpy(copy_bits + bytes, cf_allow_canary, CF_ALLOW_CANARY_BYTES);
-            tf->allow_bits = copy_bits;
-            uint32 allow_cnt = 0;
-            for (uint32 r = 0; r < tf->n_rows; r++)
-            {
-                size_t byte_idx = (size_t) (r >> 3);
-                if (byte_idx >= tf->allow_nbytes)
-                    ereport(ERROR,
-                            (errmsg("custom_filter[engine_error]: allow_bits length mismatch rel=%s rid=%u bytes=%zu",
-                                    tf->relname, r, tf->allow_nbytes)));
-                if (tf->allow_bits[byte_idx] & (uint8)(1u << (r & 7)))
-                    allow_cnt++;
-            }
-            tf->allow_popcount = allow_cnt;
-            CF_TRACE_LOG( "custom_filter: allow_%s popcount=%u/%u", tblname, allow_cnt, tf->n_rows);
-        }
+            memcpy(copy_words, it->block_words, tf->block_words_nbytes);
+            tf->block_words = copy_words;
 
-        instr_time blk_start, blk_end;
-        INSTR_TIME_SET_CURRENT(blk_start);
-        qs->blk_index_build_calls++;
-        cf_build_blk_index(tf, qctx);
-        if (tf->n_rows > 0 && (!tf->blk_index || tf->n_blocks == 0))
-            ereport(ERROR,
-                    (errmsg("custom_filter[engine_error]: failed to build ctid index for rel=%s rows=%u",
-                            tf->relname, tf->n_rows)));
-        if (cf_contract_enabled()) {
-            cf_contract_assert_chunk("allow_bits", tf->relname, tf->allow_bits, qctx);
-            if (tf->blk_index)
-                cf_contract_assert_chunk("blk_index", tf->relname, tf->blk_index, qctx);
-        }
-        INSTR_TIME_SET_CURRENT(blk_end);
-        double blk_ms = INSTR_TIME_GET_MILLISEC(blk_end) - INSTR_TIME_GET_MILLISEC(blk_start);
-        CF_TRACE_LOG( "custom_filter: ctid_index_ms=%.3f rel=%s", blk_ms, tf->relname);
-        qs->ctid_map_ms += blk_ms;
-        if (cf_trace_enabled() && tf->ctid_pairs)
-        {
-            for (uint32 r = 0; r < tf->n_rows && r < 100; r++) {
-                uint32 blk = tf->ctid_pairs[2 * r];
-                uint32 off = tf->ctid_pairs[2 * r + 1];
-                if (blk >= tf->n_blocks || !tf->blk_index)
-                    break;
-                BlockIndex *bi = &tf->blk_index[blk];
-                if (!bi->present || !bi->present_bits || off == 0 || off > bi->max_off)
-                {
-                    CF_TRACE_LOG( "custom_filter: ctid_map_mismatch rel=%s r=%u missing (blk=%u off=%u)",
-                         tf->relname, r, blk, off);
-                    break;
-                }
-                size_t byte_idx = (size_t) (off >> 3);
-                uint8 mask = (uint8) (1u << (off & 7u));
-                if (byte_idx >= bi->bit_bytes || (bi->present_bits[byte_idx] & mask) == 0)
-                {
-                    CF_TRACE_LOG( "custom_filter: ctid_map_mismatch rel=%s r=%u not_present (blk=%u off=%u)",
-                         tf->relname, r, blk, off);
-                    break;
-                }
-            }
-        }
+            qs->bytes_allow += tf->block_words_nbytes;
 
-        size_t allow_bytes = tf->allow_nbytes;
-        qs->bytes_allow += allow_bytes;
-        qs->bytes_ctid += tf->ctid_bytes;
-        qs->bytes_blk_index += tf->blk_index_bytes;
-
-        if (tf->ctid_pairs && tf->ctid_pairs_len >= 10)
-        {
-            CF_TRACE_LOG( "custom_filter: %s_ctid head [%u,%u %u,%u %u,%u %u,%u %u,%u]",
-                 tf->relname,
-                 tf->ctid_pairs[0], tf->ctid_pairs[1],
-                 tf->ctid_pairs[2], tf->ctid_pairs[3],
-                 tf->ctid_pairs[4], tf->ctid_pairs[5],
-                 tf->ctid_pairs[6], tf->ctid_pairs[7],
-                 tf->ctid_pairs[8], tf->ctid_pairs[9]);
-        }
-
-        CF_TRACE_LOG( "custom_filter: retain rel=%s allow=%zuB ctid=%zuB blk_index=%zuB",
-             tf->relname, allow_bytes,
-             tf->ctid_bytes,
-             tf->blk_index_bytes);
-
-        CF_RESCAN_LOG("event=filter_built pid=%d build_seq=%llu rel=%s relid=%u rows=%u allow_bytes=%zu blk_index_bytes=%zu",
-                      (int) getpid(),
-                      (unsigned long long) qs->build_seq,
-                      tf->relname,
-                      tf->relid,
-                      tf->n_rows,
-                      allow_bytes,
-                      tf->blk_index_bytes);
-
-        if (!cf_trace_enabled() && arts[i].owned && arts[i].data)
-        {
-            pfree(arts[i].data);
-            arts[i].data = NULL;
-            arts[i].len = 0;
-            arts[i].owned = false;
-            tf->ctid_pairs = NULL;
-            tf->ctid_pairs_len = 0;
+            CF_TRACE_LOG("custom_filter: allow_%s blocks=%u bytes=%zu", tname, tf->blocks, tf->block_words_nbytes);
         }
     }
 
@@ -2715,19 +2395,21 @@ cf_build_query_state(EState *estate, const char *query_str)
         for (int i = 0; i < qs->n_filters; i++)
         {
             TableFilterState *tf = &qs->filters[i];
-            if (tf->allow_bits)
+            if (tf->block_words)
             {
-                uint32 cnt = cf_popcount_allow(tf->allow_bits, tf->n_rows);
-                size_t bytes = tf->allow_nbytes;
-                bool canary_ok = (memcmp(tf->allow_bits + bytes,
-                                         cf_allow_canary,
-                                         CF_ALLOW_CANARY_BYTES) == 0);
-                MemoryContext mctx = GetMemoryChunkContext(tf->allow_bits);
+                uint64 cnt = cf_popcount_block_words(tf->block_words, tf->blocks);
+                MemoryContext mctx = GetMemoryChunkContext(tf->block_words);
                 CF_TRACE_LOG(
-                     "custom_filter: allow_bits pre_exec rel=%s count=%u/%u ptr=%p canary=%s mctx=%p qctx=%p qs=%p",
-                     tf->relname, cnt, tf->n_rows, (void *) tf->allow_bits,
-                     canary_ok ? "ok" : "BAD", (void *) mctx,
-                     (void *) qctx, (void *) qs);
+                     "custom_filter: block_words pre_exec rel=%s count=%llu rows=%u ptr=%p blocks=%u bytes=%zu mctx=%p qctx=%p qs=%p",
+                     tf->relname,
+                     (unsigned long long) cnt,
+                     tf->n_rows,
+                     (void *) tf->block_words,
+                     (unsigned int) tf->blocks,
+                     tf->block_words_nbytes,
+                     (void *) mctx,
+                     (void *) qctx,
+                     (void *) qs);
             }
         }
     }
@@ -2786,18 +2468,15 @@ finalize:
         for (int i = 0; i < qs->n_filters; i++)
         {
             TableFilterState *tf = &qs->filters[i];
-            CF_DEBUG_QS_LOG("pid=%d build_seq=%llu filter[%d] key_relid=%u rel=%s allow_bits=%p allow_nbytes=%zu blk_index=%p n_blocks=%u ctid_pairs=%p ctid_pairs_len=%u n_rows=%u",
+            CF_DEBUG_QS_LOG("pid=%d build_seq=%llu filter[%d] key_relid=%u rel=%s block_words=%p blocks=%u bytes=%zu n_rows=%u",
                             (int) getpid(),
                             (unsigned long long) qs->build_seq,
                             i,
                             tf->relid,
                             tf->relname[0] ? tf->relname : "<unknown>",
-                            (void *) tf->allow_bits,
-                            tf->allow_nbytes,
-                            (void *) tf->blk_index,
-                            tf->n_blocks,
-                            (void *) tf->ctid_pairs,
-                            tf->ctid_pairs_len,
+                            (void *) tf->block_words,
+                            (unsigned int) tf->blocks,
+                            tf->block_words_nbytes,
                             tf->n_rows);
         }
 
@@ -2819,19 +2498,15 @@ finalize:
         for (int i = 0; i < qs->n_filters; i++)
         {
             TableFilterState *tf = &qs->filters[i];
-            MemoryContext allow_mctx = tf->allow_bits ? GetMemoryChunkContext(tf->allow_bits) : NULL;
-            MemoryContext blk_mctx = tf->blk_index ? GetMemoryChunkContext(tf->blk_index) : NULL;
-            CF_DEBUG_QS_LOG("pid=%d build_seq=%llu memctx rel=%s relid=%u allow=%p mctx=%p(%s) blk=%p mctx=%p(%s)",
+            MemoryContext allow_mctx = tf->block_words ? GetMemoryChunkContext(tf->block_words) : NULL;
+            CF_DEBUG_QS_LOG("pid=%d build_seq=%llu memctx rel=%s relid=%u block_words=%p mctx=%p(%s)",
                             (int) getpid(),
                             (unsigned long long) qs->build_seq,
                             tf->relname[0] ? tf->relname : "<unknown>",
                             (unsigned int) tf->relid,
-                            (void *) tf->allow_bits,
+                            (void *) tf->block_words,
                             (void *) allow_mctx,
-                            cf_mctx_safe_name(allow_mctx),
-                            (void *) tf->blk_index,
-                            (void *) blk_mctx,
-                            cf_mctx_safe_name(blk_mctx));
+                            cf_mctx_safe_name(allow_mctx));
         }
     }
     CF_RESCAN_LOG("event=query_state_ready pid=%d build_seq=%llu eval_calls=%llu load_calls=%llu policy_run_calls=%llu allow_build_calls=%llu blk_index_build_calls=%llu n_filters=%d",
@@ -3628,17 +3303,6 @@ cf_exec(CustomScanState *node)
                 }
             }
 
-            /*
-             * Guardrail: if a scan state captured a stale filter pointer (e.g. due
-             * to query-state being rebuilt upward to a longer-lived context), rebind
-             * it to the current query state's filter for this relid.
-             */
-            if (st->filter && !st->filter->allow_bits)
-            {
-                TableFilterState *reb = cf_find_filter(cf_query_state, st->relid, true);
-                if (reb && reb->allow_bits)
-                    st->filter = reb;
-            }
             st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
             st->need_filter_rebind = false;
 
@@ -3687,14 +3351,8 @@ cf_exec(CustomScanState *node)
         if (tf)
             tf->seen++;
 	allow_check:
-        if (tf && tf->allow_bits)
+        if (tf && tf->block_words)
         {
-            if (st->validated_filter != tf || st->validated_build_seq != st->bound_build_seq)
-            {
-                cf_validate_filter_invariants(tf);
-                st->validated_filter = tf;
-                st->validated_build_seq = st->bound_build_seq;
-            }
             TupleTableSlot *ctid_slot = slot;
             ItemPointerData tid_buf;
             CfTidSource tid_src = CF_TID_NONE;
@@ -3751,80 +3409,16 @@ cf_exec(CustomScanState *node)
             }
             BlockNumber blk = 0;
             OffsetNumber off = 0;
-            if (cf_contract_enabled() && nodeTag(child) == T_SeqScanState)
-            {
-                if (tf && tf->ctid_pairs && st->seq_rid < 100)
-                {
-                    size_t pair_idx = (size_t) st->seq_rid * 2;
-                    if (pair_idx + 1 < (size_t) tf->ctid_pairs_len)
-                    {
-                        uint32 exp_blk = tf->ctid_pairs[pair_idx];
-                        uint32 exp_off = tf->ctid_pairs[pair_idx + 1];
-                        if (!has_tid)
-                        {
-                            CF_TRACE_LOG( "custom_filter: seqscan no tid for rid=%u", st->seq_rid);
-                        }
-                        else if ((uint32) ItemPointerGetBlockNumber(&tid_buf) != exp_blk ||
-                                 (uint32) ItemPointerGetOffsetNumber(&tid_buf) != exp_off)
-                        {
-                            CF_TRACE_LOG( "custom_filter: seqscan ctid mismatch rid=%u got=(%u,%u) exp=(%u,%u)",
-                                 st->seq_rid,
-                                 (uint32) ItemPointerGetBlockNumber(&tid_buf),
-                                 (uint32) ItemPointerGetOffsetNumber(&tid_buf),
-                                 exp_blk, exp_off);
-                        }
-                    }
-                }
-                st->seq_rid++;
-            }
             blk  = ItemPointerGetBlockNumber(&tid_buf);
             off = ItemPointerGetOffsetNumber(&tid_buf);
             instr_time allow_start, allow_end;
             INSTR_TIME_SET_CURRENT(allow_start);
-            if (!tf->blk_index || tf->n_blocks == 0 || (uint32) blk >= tf->n_blocks)
-            {
-                ereport(ERROR,
-                        (errmsg("custom_filter: CTID blk not found for policy-required table (rel=%s blk=%u off=%u n_blocks=%u)",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                (uint32) blk, (uint32) off, tf->n_blocks)));
-            }
-            BlockIndex *bi = &tf->blk_index[(uint32) blk];
-            if (!bi->present || !bi->present_bits || !bi->allow_bits)
-            {
-                ereport(ERROR,
-                        (errmsg("custom_filter: CTID blk index missing for policy-required table (rel=%s blk=%u off=%u)",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                (uint32) blk, (uint32) off)));
-            }
-            if (off == 0 || (uint32) off > bi->max_off)
-            {
-                ereport(ERROR,
-                        (errmsg("custom_filter: CTID off out of range for policy-required table (rel=%s blk=%u off=%u max_off=%u)",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                (uint32) blk, (uint32) off, bi->max_off)));
-            }
-            size_t byte_idx = (size_t) ((uint32) off >> 3);
-            if (byte_idx >= bi->bit_bytes)
-            {
-                ereport(ERROR,
-                        (errmsg("custom_filter: CTID bitmap index out of range for policy-required table (rel=%s blk=%u off=%u bytes=%zu)",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                (uint32) blk, (uint32) off, bi->bit_bytes)));
-            }
-            uint8 mask = (uint8) (1u << ((uint32) off & 7u));
-            if (cf_contract_enabled() && (bi->present_bits[byte_idx] & mask) == 0)
-            {
-                ereport(ERROR,
-                        (errmsg("custom_filter: CTID not present in artifacts for policy-required table (rel=%s blk=%u off=%u)",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                (uint32) blk, (uint32) off)));
-            }
-            allow = (bi->allow_bits[byte_idx] & mask) != 0;
+            allow = cf_allowed_ctid_words(tf->block_words, tf->blocks, blk, off);
             INSTR_TIME_SET_CURRENT(allow_end);
             st->allow_check_ms += INSTR_TIME_GET_MILLISEC(allow_end) -
                                   INSTR_TIME_GET_MILLISEC(allow_start);
         }
-        else if (tf && !tf->allow_bits)
+        else if (tf && !tf->block_words)
         {
             /*
              * Robustness: if a scan state captured a stale filter pointer (e.g. due
@@ -3832,7 +3426,7 @@ cf_exec(CustomScanState *node)
              * rebuild once so we either recover or fail with useful context.
              */
             TableFilterState *reb = cf_query_state ? cf_find_filter(cf_query_state, st->relid, true) : NULL;
-            if (reb && reb->allow_bits)
+            if (reb && reb->block_words)
             {
                 st->filter = reb;
                 st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
@@ -3848,7 +3442,7 @@ cf_exec(CustomScanState *node)
                                                     debug_query_string ? debug_query_string : "",
                                                     estate->es_plannedstmt);
                 reb = cf_query_state ? cf_find_filter(cf_query_state, st->relid, true) : NULL;
-                if (reb && reb->allow_bits)
+                if (reb && reb->block_words)
                 {
                     st->filter = reb;
                     st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
@@ -3873,7 +3467,7 @@ cf_exec(CustomScanState *node)
                     wrapped = cf_table_wrapped(qs, st->relname);
                 }
                 elog(NOTICE,
-                     "custom_filter: missing_allow_bits_debug qs=%p build_seq=%llu st=%p rel=%s relid=%u tf=%p "
+                     "custom_filter: missing_block_words_debug qs=%p build_seq=%llu st=%p rel=%s relid=%u tf=%p "
                      "in_policy_targets=%d scanned=%d should_filter=%d wrapped=%d n_filters=%d n_policy_targets=%d n_scanned_tables=%d",
                      (void *) qs,
                      (unsigned long long) (qs ? qs->build_seq : 0),
@@ -3894,25 +3488,25 @@ cf_exec(CustomScanState *node)
                     {
                         TableFilterState *k = &qs->filters[i];
                         elog(NOTICE,
-                             "custom_filter: missing_allow_bits_debug key[%d] rel=%s relid=%u allow_bits=%p allow_nbytes=%zu blk_index=%p n_blocks=%u",
+                             "custom_filter: missing_block_words_debug key[%d] rel=%s relid=%u block_words=%p blocks=%u bytes=%zu rows=%u",
                              i,
                              k->relname[0] ? k->relname : "<unknown>",
                              k->relid,
-                             (void *) k->allow_bits,
-                             k->allow_nbytes,
-                             (void *) k->blk_index,
-                             k->n_blocks);
+                             (void *) k->block_words,
+                             (unsigned int) k->blocks,
+                             k->block_words_nbytes,
+                             k->n_rows);
                     }
                 }
             }
 
             if (cf_debug_ids)
             {
-                cf_debug_log_scan_ids("MissingAllowBits", st, node);
+                cf_debug_log_scan_ids("MissingBlockWords", st, node);
                 PolicyQueryState *qs = cf_query_state;
                 if (qs)
                 {
-                    CF_DEBUG_IDS_LOG("pid=%d build_seq=%llu missing_allow_bits_state qs=%p n_filters=%d n_policy_targets=%d",
+                    CF_DEBUG_IDS_LOG("pid=%d build_seq=%llu missing_block_words_state qs=%p n_filters=%d n_policy_targets=%d",
                                      (int) getpid(),
                                      (unsigned long long) qs->build_seq,
                                      (void *) qs,
@@ -3923,18 +3517,15 @@ cf_exec(CustomScanState *node)
                         for (int i = 0; i < qs->n_filters; i++)
                         {
                             TableFilterState *k = &qs->filters[i];
-                            CF_DEBUG_IDS_LOG("pid=%d build_seq=%llu key[%d] rel=%s relid=%u allow_bits=%p allow_nbytes=%zu blk_index=%p n_blocks=%u ctid_pairs=%p ctid_pairs_len=%u n_rows=%u",
+                            CF_DEBUG_IDS_LOG("pid=%d build_seq=%llu key[%d] rel=%s relid=%u block_words=%p blocks=%u bytes=%zu n_rows=%u",
                                              (int) getpid(),
                                              (unsigned long long) qs->build_seq,
                                              i,
                                              k->relname[0] ? k->relname : "<unknown>",
                                              k->relid,
-                                             (void *) k->allow_bits,
-                                             k->allow_nbytes,
-                                             (void *) k->blk_index,
-                                             k->n_blocks,
-                                             (void *) k->ctid_pairs,
-                                             k->ctid_pairs_len,
+                                             (void *) k->block_words,
+                                             (unsigned int) k->blocks,
+                                             k->block_words_nbytes,
                                              k->n_rows);
                         }
                     }
@@ -3942,7 +3533,7 @@ cf_exec(CustomScanState *node)
             }
 
             ereport(ERROR,
-                    (errmsg("custom_filter[engine_error]: missing allow_bits for policy-required table rel=%s",
+                    (errmsg("custom_filter[engine_error]: missing block_words for policy-required table rel=%s",
                             st->relname[0] ? st->relname : "<unknown>")));
         }
 
@@ -3974,45 +3565,7 @@ cf_end(CustomScanState *node)
         st->child_plan = NULL;
     }
 
-    if (cf_contract_enabled() && st->filter && st->filter->allow_bits)
-    {
-        TableFilterState *tf = st->filter;
-        uint32 allow_cnt = 0;
-        for (uint32 r = 0; r < tf->n_rows; r++)
-        {
-            size_t byte_idx = (size_t) (r >> 3);
-            if (byte_idx >= tf->allow_nbytes)
-                ereport(ERROR,
-                        (errmsg("custom_filter[rid_oob]: end-phase allow_bits index out of range (rel=%s rid=%u rows=%u allow_bytes=%zu)",
-                                st->relname[0] ? st->relname : "<unknown>",
-                                r, tf->n_rows, tf->allow_nbytes)));
-            if (tf->allow_bits[byte_idx] & (uint8)(1u << (r & 7)))
-                allow_cnt++;
-        }
-        size_t bytes = tf->allow_nbytes;
-        bool canary_ok = (memcmp(tf->allow_bits + bytes,
-                                 cf_allow_canary,
-                                 CF_ALLOW_CANARY_BYTES) == 0);
-        if (!canary_ok)
-        {
-            CF_TRACE_LOG( "custom_filter: allow_bits canary BAD rel=%s ptr=%p n_rows=%u",
-                 st->relname[0] ? st->relname : "<unknown>",
-                 (void *) tf->allow_bits, tf->n_rows);
-        }
-        if (allow_cnt != tf->allow_popcount)
-        {
-            CF_TRACE_LOG( "custom_filter: allow_bits changed rel=%s before=%u after=%u",
-                 st->relname[0] ? st->relname : "<unknown>",
-                 tf->allow_popcount, allow_cnt);
-        }
-        if (st->tuples_passed != (uint64)allow_cnt)
-        {
-            CF_TRACE_LOG( "custom_filter: allow_bits mismatch rel=%s allow=%u passed=%llu",
-                 st->relname[0] ? st->relname : "<unknown>",
-                 allow_cnt,
-                 (unsigned long long) st->tuples_passed);
-        }
-    }
+    /* Contract-mode allow-bit canary checks removed (filter is now a CTID bitmap). */
 
     CF_TRACE_LOG( "custom_filter exec: rel=%s oid=%u seen=%llu passed=%llu misses=%llu mode=%s",
          st->relname[0] ? st->relname : "<unknown>",
