@@ -395,6 +395,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Write full NOTICE lines from the OURS profile-capture run into the profile CSV directory",
     )
+    p.add_argument(
+        "--baselines",
+        nargs="*",
+        default=None,
+        help=(
+            "Baselines to run in --matrix-tpch-scale mode. "
+            "Supported: ours, ours_with_index, rls, rls_with_index. "
+            "Default: ours rls_with_index"
+        ),
+    )
     return p.parse_args()
 
 
@@ -1161,7 +1171,7 @@ def set_session_for_baseline(
     ours_debug_mode: str = "off",
 ) -> None:
     apply_timing_session_settings(cur, statement_timeout_ms)
-    if baseline == "ours":
+    if baseline in ("ours", "ours_with_index"):
         cur.execute(f"LOAD '{CUSTOM_FILTER_SO}';")
         cur.execute("SET custom_filter.enabled = on;")
         cur.execute("SET custom_filter.contract_mode = off;")
@@ -1176,11 +1186,19 @@ def set_session_for_baseline(
         cur.execute("SET enable_tidscan = off;")
         cur.execute("SET enable_indexonlyscan = off;")
         cur.execute(sql.SQL("SET custom_filter.policy_path = %s;"), [str(enabled_path)])
-    elif baseline == "rls_with_index":
+    elif baseline in ("rls", "rls_with_index"):
         cur.execute("SET custom_filter.enabled = off;")
         cur.execute("SET enable_indexonlyscan = off;")
     else:
         raise HarnessError(f"Unknown baseline: {baseline}")
+
+
+def role_for_baseline(baseline: str) -> str:
+    if baseline in ("ours", "ours_with_index"):
+        return "postgres"
+    if baseline in ("rls", "rls_with_index"):
+        return "rls_user"
+    raise HarnessError(f"Unknown baseline: {baseline}")
 
 
 def run_query_series(
@@ -1192,16 +1210,16 @@ def run_query_series(
     statement_timeout_ms: int,
     query_id: str = "",
 ) -> Tuple[RunMetrics, List[RunMetrics]]:
-    role = "postgres" if baseline == "ours" else "rls_user"
+    role = role_for_baseline(baseline)
     conn = None
     try:
         conn = connect(db, role)
         with conn.cursor() as cur:
             set_session_for_baseline(cur, baseline, enabled_path, statement_timeout_ms)
-            if baseline == "rls_with_index":
+            if baseline in ("rls", "rls_with_index"):
                 maybe_dump_rls_state(cur, f"pre_query db={db} baseline={baseline} q={query_id or 'unknown'}")
             cold = execute_with_rss(cur, query_sql)
-            if baseline == "ours":
+            if baseline in ("ours", "ours_with_index"):
                 maybe_dump_policy_ast_notices(conn, f"db={db} baseline={baseline} q={query_id or 'unknown'} phase=cold")
             hots: List[RunMetrics] = []
             for run_idx in range(1, hot_runs + 1):
@@ -1211,7 +1229,7 @@ def run_query_series(
                     msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
                     etype, emsg = classify_error(exc, msg)
                     hots.append(make_error_metrics(etype, emsg))
-                if baseline == "ours":
+                if baseline in ("ours", "ours_with_index"):
                     maybe_dump_policy_ast_notices(
                         conn,
                         f"db={db} baseline={baseline} q={query_id or 'unknown'} phase=hot{run_idx}",
@@ -1611,15 +1629,15 @@ def timing_fallback_sql(query_id: str) -> Optional[str]:
 
 
 def count_query_sql(db: str, baseline: str, sql_text: str, enabled_path: Path, statement_timeout_ms: int) -> int:
-    role = "postgres" if baseline == "ours" else "rls_user"
+    role = role_for_baseline(baseline)
     conn = connect(db, role)
     try:
         with conn.cursor() as cur:
             set_session_for_baseline(cur, baseline, enabled_path, statement_timeout_ms)
-            if baseline == "rls_with_index":
+            if baseline in ("rls", "rls_with_index"):
                 maybe_dump_rls_state(cur, f"pre_count_sql db={db} baseline={baseline}")
             cur.execute(sql_text)
-            if baseline == "ours":
+            if baseline in ("ours", "ours_with_index"):
                 maybe_dump_policy_ast_notices(conn, f"pre_count_sql db={db} baseline={baseline}")
             return int(cur.fetchone()[0])
     finally:
@@ -1630,15 +1648,15 @@ def count_query(db: str, baseline: str, query_sql: str, enabled_path: Path, stat
     wrapped = count_wrapper(query_sql)
     if wrapped is None:
         raise HarnessError("cannot count-wrap multi-statement query")
-    role = "postgres" if baseline == "ours" else "rls_user"
+    role = role_for_baseline(baseline)
     conn = connect(db, role)
     try:
         with conn.cursor() as cur:
             set_session_for_baseline(cur, baseline, enabled_path, statement_timeout_ms)
-            if baseline == "rls_with_index":
+            if baseline in ("rls", "rls_with_index"):
                 maybe_dump_rls_state(cur, f"pre_count_query db={db} baseline={baseline}")
             cur.execute(wrapped)
-            if baseline == "ours":
+            if baseline in ("ours", "ours_with_index"):
                 maybe_dump_policy_ast_notices(conn, f"pre_count_query db={db} baseline={baseline}")
             return int(cur.fetchone()[0])
     finally:
@@ -1940,6 +1958,14 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
     skip_ids.add("20")
     queries = filter_queries_by_args(queries, args.query_ids, list(skip_ids))
 
+    baselines = [str(b).strip() for b in (args.baselines or []) if str(b).strip()]
+    if not baselines:
+        baselines = ["ours", "rls_with_index"]
+    allowed_baselines = {"ours", "ours_with_index", "rls", "rls_with_index"}
+    unknown = [b for b in baselines if b not in allowed_baselines]
+    if unknown:
+        raise HarnessError(f"unknown baselines: {unknown} (allowed={sorted(allowed_baselines)})")
+
     if str(args.run_dir).strip():
         run_dir = Path(args.run_dir)
         if not run_dir.is_absolute():
@@ -1958,6 +1984,7 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
 
     print(f"[matrix] run_id={run_id} run_dir={run_dir}")
     print(f"[matrix] dbs={dbs} Ks={ks} pool={pool_spec} warmup_runs={warmup_runs} timed_runs={timed_runs}")
+    print(f"[matrix] baselines={baselines}")
     print(f"[matrix] queries={[qid for qid, _ in queries]}")
 
     for db in dbs:
@@ -1982,95 +2009,199 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
             clear_rls_indexes_and_policies(db)
             print_clean_state(db, tag=f"clean_before_k K={k}")
 
-            # OURS phase.
-            ours_setup_ms, ours_bytes_db, ours_bytes_disk = setup_ours_for_k_with_sizes(
-                db, k, enabled_path_k_server, statement_timeout_ms
-            )
+            run_ours = "ours" in baselines
+            run_ours_idx = "ours_with_index" in baselines
+            run_rls = "rls" in baselines
+            run_rls_idx = "rls_with_index" in baselines
 
-            ours_metrics: Dict[str, ExplainMetrics] = {}
+            ours_ref = "ours" if run_ours else ("ours_with_index" if run_ours_idx else "")
+            rls_ref = "rls_with_index" if run_rls_idx else ("rls" if run_rls else "")
+
+            metrics_by_baseline: Dict[str, Dict[str, ExplainMetrics]] = {b: {} for b in baselines}
+
+            ours_setup_ms = 0.0
+            ours_bytes_db = 0
+            ours_bytes_disk = 0
+            ours_idx_setup_ms = 0.0
+            ours_idx_bytes = 0
+            rls_setup_ms = 0.0
+            rls_index_bytes = 0
+
             ours_counts: Dict[str, Optional[int]] = {}
             ours_hashes: Dict[str, str] = {}
-            conn_o = connect(db, "postgres")
-            try:
-                with conn_o.cursor() as cur:
-                    set_session_for_baseline(
-                        cur, "ours", enabled_path_k_server, statement_timeout_ms, ours_debug_mode="off"
-                    )
-                    for qid, qsql in queries:
-                        print(f"[progress] db={db} K={k} baseline=ours query={qid}")
-                        timing_sql = timing_sql_for_query(qid, qsql)
-                        m = measure_explain_median_in_session(cur, timing_sql, warmup_runs, timed_runs)
-                        ours_metrics[qid] = m
-                        if m.status == "ok":
-                            try:
-                                cnt, h = result_count_and_hash_in_session(cur, qid, qsql)
-                                ours_counts[qid] = cnt
-                                ours_hashes[qid] = h
-                            except Exception as exc:  # noqa: BLE001
-                                ours_counts[qid] = None
-                                ours_hashes[qid] = ""
-                                ours_metrics[qid] = ExplainMetrics(
-                                    planning_ms=m.planning_ms,
-                                    execution_ms=m.execution_ms,
-                                    total_ms=m.total_ms,
-                                    wall_ms=m.wall_ms,
-                                    peak_rss_kb=m.peak_rss_kb,
-                                    status="error",
-                                    error_type="count_error",
-                                    error_msg=str(exc).replace("\n", " ")[:240],
-                                )
-                        else:
-                            ours_counts[qid] = None
-                            ours_hashes[qid] = ""
-            finally:
-                conn_o.close()
-
-            clear_artifacts(db)
-            print_clean_state(db, tag=f"after_ours_drop K={k}")
-
-            # RLS phase.
-            apply_rls_policies_for_k(db, enabled)
-            rls_setup_ms, rls_index_bytes, _idxs = create_rls_indexes_for_k(db, k, enabled, statement_timeout_ms)
-
-            rls_metrics: Dict[str, ExplainMetrics] = {}
             rls_counts: Dict[str, Optional[int]] = {}
             rls_hashes: Dict[str, str] = {}
-            conn_r = connect(db, "rls_user")
-            try:
-                with conn_r.cursor() as cur:
-                    set_session_for_baseline(cur, "rls_with_index", enabled_path_k_server, statement_timeout_ms)
-                    cur.execute("SET row_security = on;")
-                    for qid, qsql in queries:
-                        print(f"[progress] db={db} K={k} baseline=rls_with_index query={qid}")
-                        timing_sql = timing_sql_for_query(qid, qsql)
-                        m = measure_explain_median_in_session(cur, timing_sql, warmup_runs, timed_runs)
-                        rls_metrics[qid] = m
-                        if m.status == "ok":
-                            try:
-                                cnt, h = result_count_and_hash_in_session(cur, qid, qsql)
-                                rls_counts[qid] = cnt
-                                rls_hashes[qid] = h
-                            except Exception as exc:  # noqa: BLE001
-                                rls_counts[qid] = None
-                                rls_hashes[qid] = ""
-                                rls_metrics[qid] = ExplainMetrics(
-                                    planning_ms=m.planning_ms,
-                                    execution_ms=m.execution_ms,
-                                    total_ms=m.total_ms,
-                                    wall_ms=m.wall_ms,
-                                    peak_rss_kb=m.peak_rss_kb,
-                                    status="error",
-                                    error_type="count_error",
-                                    error_msg=str(exc).replace("\n", " ")[:240],
-                                )
-                        else:
-                            rls_counts[qid] = None
-                            rls_hashes[qid] = ""
-            finally:
-                conn_r.close()
 
-            clear_rls_indexes_and_policies(db)
-            print_clean_state(db, tag=f"after_rls_drop K={k}")
+            # OURS baselines: build artifacts once, then run requested baselines.
+            if run_ours or run_ours_idx:
+                ours_setup_ms, ours_bytes_db, ours_bytes_disk = setup_ours_for_k_with_sizes(
+                    db, k, enabled_path_k_server, statement_timeout_ms
+                )
+
+                if run_ours:
+                    conn_o = connect(db, "postgres")
+                    try:
+                        with conn_o.cursor() as cur:
+                            set_session_for_baseline(
+                                cur, "ours", enabled_path_k_server, statement_timeout_ms, ours_debug_mode="off"
+                            )
+                            for qid, qsql in queries:
+                                print(f"[progress] db={db} K={k} baseline=ours query={qid}")
+                                timing_sql = timing_sql_for_query(qid, qsql)
+                                m = measure_explain_median_in_session(cur, timing_sql, warmup_runs, timed_runs)
+                                metrics_by_baseline["ours"][qid] = m
+                                if m.status == "ok" and ours_ref == "ours":
+                                    try:
+                                        cnt, h = result_count_and_hash_in_session(cur, qid, qsql)
+                                        ours_counts[qid] = cnt
+                                        ours_hashes[qid] = h
+                                    except Exception as exc:  # noqa: BLE001
+                                        ours_counts[qid] = None
+                                        ours_hashes[qid] = ""
+                                        metrics_by_baseline["ours"][qid] = ExplainMetrics(
+                                            planning_ms=m.planning_ms,
+                                            execution_ms=m.execution_ms,
+                                            total_ms=m.total_ms,
+                                            wall_ms=m.wall_ms,
+                                            peak_rss_kb=m.peak_rss_kb,
+                                            status="error",
+                                            error_type="count_error",
+                                            error_msg=str(exc).replace("\n", " ")[:240],
+                                        )
+                                else:
+                                    ours_counts.setdefault(qid, None)
+                                    ours_hashes.setdefault(qid, "")
+                    finally:
+                        conn_o.close()
+
+                if run_ours_idx:
+                    # Indexes inferred from policy expressions, created on base tables.
+                    (ours_idx_setup_ms, ours_idx_bytes, _idxs) = create_rls_indexes_for_k(
+                        db, k, enabled, statement_timeout_ms
+                    )
+                    print(f"[setup_ours_index] K={k} setup_ms={ours_idx_setup_ms:.3f} disk={ours_idx_bytes}")
+
+                    conn_oi = connect(db, "postgres")
+                    try:
+                        with conn_oi.cursor() as cur:
+                            set_session_for_baseline(
+                                cur, "ours_with_index", enabled_path_k_server, statement_timeout_ms, ours_debug_mode="off"
+                            )
+                            for qid, qsql in queries:
+                                print(f"[progress] db={db} K={k} baseline=ours_with_index query={qid}")
+                                timing_sql = timing_sql_for_query(qid, qsql)
+                                m = measure_explain_median_in_session(cur, timing_sql, warmup_runs, timed_runs)
+                                metrics_by_baseline["ours_with_index"][qid] = m
+                                if m.status == "ok" and ours_ref == "ours_with_index":
+                                    try:
+                                        cnt, h = result_count_and_hash_in_session(cur, qid, qsql)
+                                        ours_counts[qid] = cnt
+                                        ours_hashes[qid] = h
+                                    except Exception as exc:  # noqa: BLE001
+                                        ours_counts[qid] = None
+                                        ours_hashes[qid] = ""
+                                        metrics_by_baseline["ours_with_index"][qid] = ExplainMetrics(
+                                            planning_ms=m.planning_ms,
+                                            execution_ms=m.execution_ms,
+                                            total_ms=m.total_ms,
+                                            wall_ms=m.wall_ms,
+                                            peak_rss_kb=m.peak_rss_kb,
+                                            status="error",
+                                            error_type="count_error",
+                                            error_msg=str(exc).replace("\n", " ")[:240],
+                                        )
+                                else:
+                                    ours_counts.setdefault(qid, None)
+                                    ours_hashes.setdefault(qid, "")
+                    finally:
+                        conn_oi.close()
+
+                clear_artifacts(db)
+                print_clean_state(db, tag=f"after_ours_drop K={k}")
+
+            # RLS baselines: apply policies once, then run requested baselines.
+            if run_rls or run_rls_idx:
+                # Drop any leftover harness indexes before the "no-index" baseline.
+                clear_rls_indexes_and_policies(db)
+
+                apply_rls_policies_for_k(db, enabled)
+
+                if run_rls:
+                    conn_r0 = connect(db, "rls_user")
+                    try:
+                        with conn_r0.cursor() as cur:
+                            set_session_for_baseline(cur, "rls", enabled_path_k_server, statement_timeout_ms)
+                            cur.execute("SET row_security = on;")
+                            for qid, qsql in queries:
+                                print(f"[progress] db={db} K={k} baseline=rls query={qid}")
+                                timing_sql = timing_sql_for_query(qid, qsql)
+                                m = measure_explain_median_in_session(cur, timing_sql, warmup_runs, timed_runs)
+                                metrics_by_baseline["rls"][qid] = m
+                                if m.status == "ok" and rls_ref == "rls":
+                                    try:
+                                        cnt, h = result_count_and_hash_in_session(cur, qid, qsql)
+                                        rls_counts[qid] = cnt
+                                        rls_hashes[qid] = h
+                                    except Exception as exc:  # noqa: BLE001
+                                        rls_counts[qid] = None
+                                        rls_hashes[qid] = ""
+                                        metrics_by_baseline["rls"][qid] = ExplainMetrics(
+                                            planning_ms=m.planning_ms,
+                                            execution_ms=m.execution_ms,
+                                            total_ms=m.total_ms,
+                                            wall_ms=m.wall_ms,
+                                            peak_rss_kb=m.peak_rss_kb,
+                                            status="error",
+                                            error_type="count_error",
+                                            error_msg=str(exc).replace("\n", " ")[:240],
+                                        )
+                                else:
+                                    rls_counts.setdefault(qid, None)
+                                    rls_hashes.setdefault(qid, "")
+                    finally:
+                        conn_r0.close()
+
+                if run_rls_idx:
+                    rls_setup_ms, rls_index_bytes, _idxs = create_rls_indexes_for_k(
+                        db, k, enabled, statement_timeout_ms
+                    )
+
+                    conn_r1 = connect(db, "rls_user")
+                    try:
+                        with conn_r1.cursor() as cur:
+                            set_session_for_baseline(cur, "rls_with_index", enabled_path_k_server, statement_timeout_ms)
+                            cur.execute("SET row_security = on;")
+                            for qid, qsql in queries:
+                                print(f"[progress] db={db} K={k} baseline=rls_with_index query={qid}")
+                                timing_sql = timing_sql_for_query(qid, qsql)
+                                m = measure_explain_median_in_session(cur, timing_sql, warmup_runs, timed_runs)
+                                metrics_by_baseline["rls_with_index"][qid] = m
+                                if m.status == "ok" and rls_ref == "rls_with_index":
+                                    try:
+                                        cnt, h = result_count_and_hash_in_session(cur, qid, qsql)
+                                        rls_counts[qid] = cnt
+                                        rls_hashes[qid] = h
+                                    except Exception as exc:  # noqa: BLE001
+                                        rls_counts[qid] = None
+                                        rls_hashes[qid] = ""
+                                        metrics_by_baseline["rls_with_index"][qid] = ExplainMetrics(
+                                            planning_ms=m.planning_ms,
+                                            execution_ms=m.execution_ms,
+                                            total_ms=m.total_ms,
+                                            wall_ms=m.wall_ms,
+                                            peak_rss_kb=m.peak_rss_kb,
+                                            status="error",
+                                            error_type="count_error",
+                                            error_msg=str(exc).replace("\n", " ")[:240],
+                                        )
+                                else:
+                                    rls_counts.setdefault(qid, None)
+                                    rls_hashes.setdefault(qid, "")
+                    finally:
+                        conn_r1.close()
+
+                clear_rls_indexes_and_policies(db)
+                print_clean_state(db, tag=f"after_rls_drop K={k}")
 
             # Build row (one per db,K).
             b_row = {
@@ -2087,22 +2218,21 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
             }
             append_csv_row(build_csv, DASH_BUILD_COLUMNS, b_row)
 
-            # Runs rows (two per db,K,query).
+            # Runs rows (one per db,K,query,baseline).
             for qid, _qsql in queries:
                 oc = ours_counts.get(qid)
                 oh = ours_hashes.get(qid, "")
                 rc = rls_counts.get(qid)
                 rh = rls_hashes.get(qid, "")
+
                 correctness = ""
                 if oc is None or rc is None or not oh or not rh:
                     correctness = "skip"
                 else:
                     correctness = "1" if (int(oc) == int(rc) and oh == rh) else "0"
 
-                for baseline, m, cnt in [
-                    ("ours", ours_metrics.get(qid), oc),
-                    ("rls_with_index", rls_metrics.get(qid), rc),
-                ]:
+                for baseline in baselines:
+                    m = metrics_by_baseline.get(baseline, {}).get(qid)
                     if m is None:
                         m = ExplainMetrics(
                             planning_ms=0.0,
@@ -2115,11 +2245,15 @@ def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
                             error_msg="missing metrics",
                         )
                     peak_rss_mb = float(m.peak_rss_kb) / 1024.0
-                    result_hash = ""
-                    if baseline == "ours":
+
+                    # Report baseline-local output as the reference (ours*) or ground truth (rls*).
+                    if baseline in ("ours", "ours_with_index"):
+                        cnt = oc
                         result_hash = oh or ""
-                    elif baseline == "rls_with_index":
+                    else:
+                        cnt = rc
                         result_hash = rh or ""
+
                     r_row = {
                         "run_id": run_id,
                         "ts": now_ts(),
