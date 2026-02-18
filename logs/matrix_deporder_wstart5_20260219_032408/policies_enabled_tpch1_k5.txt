@@ -1,0 +1,5 @@
+5. lineitem : ((l_shipmode IN ('AIR','AIR REG') AND l_quantity <= 15 AND l_discount <= 0.05 AND l_linestatus = 'F') OR (l_shipmode IN ('MAIL','SHIP') AND l_quantity <= 30 AND l_discount <= 0.07 AND l_returnflag = 'R')) AND (l_extendedprice > 0)
+6. customer : (c_mktsegment = 'AUTOMOBILE') OR (c_mktsegment = 'BUILDING')
+7. customer : (c_acctbal > 0) AND ((c_mktsegment = 'FURNITURE') OR (c_mktsegment = 'HOUSEHOLD')) AND (c_nationkey < 10)
+8. customer : ((c_acctbal >= 500 AND c_acctbal <= 7000) OR (c_phone LIKE '1%' AND c_phone LIKE '%-%'))
+9. customer : (c_name LIKE 'Customer%') AND ((c_phone LIKE '2%') OR (c_phone LIKE '3%')) AND ((c_mktsegment = 'MACHINERY') OR (c_mktsegment = 'HOUSEHOLD')) AND (c_acctbal < 9000)

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <limits>
 #include <map>
@@ -64,6 +65,11 @@ typedef struct PolicyRunProfileC {
     double atoms_ms;
     double propagate_ms;
     double project_ms;
+    double project_mask_ms;
+    double project_row_ms;
+    size_t project_mask_bytes;
+    int project_n_join_evals_max;
+    int project_clause_words_max;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
@@ -791,6 +797,11 @@ struct BuildProfile {
     double atoms_ms = 0.0;
     double propagate_ms = 0.0;
     double project_ms = 0.0;
+    double project_mask_ms = 0.0;
+    double project_row_ms = 0.0;
+    size_t project_mask_bytes = 0;
+    int project_n_join_evals_max = 0;
+    int project_clause_words_max = 0;
     double decode_ms = 0.0;
     int prop_iters = 0;
     double total_ms = 0.0;
@@ -2868,7 +2879,8 @@ static bool build_target_allow_list(const Loaded &loaded,
                                     const TargetPlan &tp,
                                     PolicyTableAllowC *out_item,
                                     BuildProfile *profile,
-                                    const std::unordered_map<std::string, const uint8 *> *restrict_bits = nullptr)
+                                    const std::unordered_map<std::string, const uint8 *> *restrict_bits = nullptr,
+                                    std::vector<uint8_t> *out_rid_bits = nullptr)
 {
     if (!out_item || !profile)
         return false;
@@ -2909,25 +2921,71 @@ static bool build_target_allow_list(const Loaded &loaded,
                 continue;
 
             if (!cl.has_join_atom) {
+                // Avoid scanning the target table once per local-only clause.
+                // If the clause is globally satisfiable, treat it as a regular OR-clause
+                // and evaluate all local/join clauses together in one target scan below.
                 bool clause_global_ok = true;
-                std::vector<uint8_t> clause_bits;
-                auto t_proj0 = Clock::now();
-                if (!build_rid_bits_for_clause_nojoins(cl,
-                                                       loaded,
-                                                       &clause_bits,
-                                                       restrict_bits,
-                                                       &clause_global_ok)) {
-                    return false;
+                const ClauseTablePlan *target_tp = nullptr;
+                for (const auto &tp_tbl : cl.tables) {
+                    auto it_t = loaded.tables.find(tp_tbl.table);
+                    if (it_t == loaded.tables.end())
+                        return false;
+                    const TableData &ti = it_t->second;
+
+                    if (tp_tbl.table == cl.target) {
+                        target_tp = &tp_tbl;
+                        continue;
+                    }
+
+                    if (tp_tbl.predicates.empty()) {
+                        if (ti.nrows == 0) {
+                            clause_global_ok = false;
+                            break;
+                        }
+                    } else {
+                        if (!table_has_predicate_witness(tp_tbl, ti, restrict_bits)) {
+                            clause_global_ok = false;
+                            break;
+                        }
+                    }
                 }
-                profile->project_ms += Ms(Clock::now() - t_proj0).count();
                 if (!clause_global_ok)
                     continue;
 
-                auto t_or0 = Clock::now();
-                size_t n = std::min(final_bits.size(), clause_bits.size());
-                for (size_t i = 0; i < n; i++)
-                    final_bits[i] |= clause_bits[i];
-                profile->project_ms += Ms(Clock::now() - t_or0).count();
+                if (!cl.target_present) {
+                    // Clause independent of target row: if satisfiable, it allows all target rows.
+                    allow_all = true;
+                    break;
+                }
+
+                if (!target_tp) {
+                    // No target-local constraints: if globally satisfiable, it allows all target rows.
+                    allow_all = true;
+                    break;
+                }
+
+                JoinClauseEval je;
+                je.target_tp = target_tp;
+                je.allowed.clear();
+                if (!cl.join_classes.empty()) {
+                    je.allowed.reserve(cl.join_classes.size());
+                    for (int cid : cl.join_classes) {
+                        int dom = (cid >= 0 && cid < (int)loaded.class_domain.size())
+                                      ? loaded.class_domain[(size_t)cid]
+                                      : 0;
+                        if (dom <= 0) {
+                            clause_global_ok = false;
+                            break;
+                        }
+                        TokenBitset bs((size_t)dom);
+                        bs.fill_all();
+                        je.allowed.push_back(std::move(bs));
+                    }
+                }
+                if (!clause_global_ok)
+                    continue;
+
+                join_evals.push_back(std::move(je));
                 continue;
             }
 
@@ -3007,26 +3065,50 @@ static bool build_target_allow_list(const Loaded &loaded,
         } else if (!join_evals.empty()) {
             auto t_proj0 = Clock::now();
 
-            bool used_mask = false;
             const size_t nclauses = join_evals.size();
+            bool used_mask = false;
+            const int clause_words = (int)((nclauses + 63u) / 64u);
+            profile->project_n_join_evals_max = std::max(profile->project_n_join_evals_max, (int)nclauses);
+            profile->project_clause_words_max = std::max(profile->project_clause_words_max, clause_words);
 
-            if (nclauses <= 64) {
-                const uint64_t all_mask = (nclauses == 64) ? ~uint64_t(0) : ((uint64_t(1) << nclauses) - 1u);
+            auto run_mask_singleword = [&](auto word_zero) -> bool {
+                using WordT = decltype(word_zero);
+                constexpr size_t kBits = sizeof(WordT) * 8u;
+
+                if (nclauses == 0 || nclauses > kBits)
+                    return false;
+
+                WordT all_mask = 0;
+                if (nclauses == kBits) {
+                    all_mask = ~WordT(0);
+                } else {
+                    all_mask = WordT((WordT(1) << nclauses) - 1u);
+                }
 
                 struct JCEntry {
                     int class_id = -1;
                     const std::vector<int32_t> *col_data = nullptr;
-                    uint64_t default_mask = 0;
+                    WordT default_mask = 0;
                     size_t domain = 0;
-                    std::vector<uint64_t> by_tok;  // lazily allocated
+                    std::vector<WordT> by_tok;  // lazily allocated
+                    int restrict_count = 0;
                 };
 
                 struct PredEntry {
                     int col_idx = -1;
                     const std::vector<int32_t> *col_data = nullptr;
-                    uint64_t default_mask = 0;
+                    WordT default_mask = 0;
                     size_t domain = 0;
-                    std::vector<uint64_t> by_tok;  // lazily allocated
+                    std::vector<WordT> by_tok;  // lazily allocated
+                    int restrict_count = 0;
+                };
+
+                auto popcnt = [](WordT x) -> int {
+                    if constexpr (sizeof(WordT) <= sizeof(unsigned int)) {
+                        return __builtin_popcount((unsigned int)x);
+                    } else {
+                        return __builtin_popcountll((unsigned long long)x);
+                    }
                 };
 
                 bool ok = true;
@@ -3034,6 +3116,10 @@ static bool build_target_allow_list(const Loaded &loaded,
                 std::unordered_map<int, size_t> jc_pos;
                 std::vector<PredEntry> pred_entries;
                 std::unordered_map<int, size_t> pred_pos;
+
+                size_t mask_bytes = 0;
+
+                auto t_mask0 = Clock::now();
 
                 // First pass: collect target columns per join-class/predicate and validate shape.
                 for (size_t ci = 0; ci < nclauses && ok; ci++) {
@@ -3051,7 +3137,9 @@ static bool build_target_allow_list(const Loaded &loaded,
                         const std::vector<int32_t> *col = cg.col_data[0];
                         if (it == jc_pos.end()) {
                             int cid = cg.class_id;
-                            int dom = (cid >= 0 && cid < (int)loaded.class_domain.size()) ? loaded.class_domain[(size_t)cid] : 0;
+                            int dom = (cid >= 0 && cid < (int)loaded.class_domain.size())
+                                          ? loaded.class_domain[(size_t)cid]
+                                          : 0;
                             if (dom <= 0) {
                                 ok = false;
                                 break;
@@ -3105,7 +3193,7 @@ static bool build_target_allow_list(const Loaded &loaded,
                 // Second pass: build per-token clause masks.
                 if (ok) {
                     for (size_t ci = 0; ci < nclauses; ci++) {
-                        const uint64_t bit = uint64_t(1) << ci;
+                        const WordT bit = (WordT(1) << ci);
                         const ClauseTablePlan *ttp = join_evals[ci].target_tp;
                         if (!ttp) continue;
 
@@ -3122,9 +3210,11 @@ static bool build_target_allow_list(const Loaded &loaded,
                             if (bs.is_all())
                                 continue;  // no restriction for this clause on this join-class.
 
-                            e.default_mask &= ~bit;
-                            if (e.by_tok.empty())
+                            e.default_mask = (WordT)(e.default_mask & (WordT)(~bit));
+                            if (e.by_tok.empty()) {
                                 e.by_tok.assign(e.domain, 0);
+                                mask_bytes += e.domain * sizeof(WordT);
+                            }
 
                             for (size_t wi = 0; wi < bs.words.size(); wi++) {
                                 uint64_t w = bs.words[wi];
@@ -3133,7 +3223,7 @@ static bool build_target_allow_list(const Loaded &loaded,
                                     int bpos = __builtin_ctzll(w);
                                     size_t tok = wi * 64u + (size_t)bpos;
                                     if (tok < e.by_tok.size())
-                                        e.by_tok[tok] |= bit;
+                                        e.by_tok[tok] = (WordT)(e.by_tok[tok] | bit);
                                     w ^= lsb;
                                 }
                             }
@@ -3162,9 +3252,11 @@ static bool build_target_allow_list(const Loaded &loaded,
                             if (bs.is_all())
                                 continue;
 
-                            e.default_mask &= ~bit;
-                            if (e.by_tok.empty())
+                            e.default_mask = (WordT)(e.default_mask & (WordT)(~bit));
+                            if (e.by_tok.empty()) {
                                 e.by_tok.assign(e.domain, 0);
+                                mask_bytes += e.domain * sizeof(WordT);
+                            }
 
                             for (size_t wi = 0; wi < bs.words.size(); wi++) {
                                 uint64_t w = bs.words[wi];
@@ -3173,7 +3265,7 @@ static bool build_target_allow_list(const Loaded &loaded,
                                     int bpos = __builtin_ctzll(w);
                                     size_t tok = wi * 64u + (size_t)bpos;
                                     if (tok < e.by_tok.size())
-                                        e.by_tok[tok] |= bit;
+                                        e.by_tok[tok] = (WordT)(e.by_tok[tok] | bit);
                                     w ^= lsb;
                                 }
                             }
@@ -3181,66 +3273,392 @@ static bool build_target_allow_list(const Loaded &loaded,
                     }
                 }
 
-                if (ok) {
-                    // Fast per-row OR-of-clauses via bitmask propagation.
-                    used_mask = true;
-                    for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
-                        if (target_rbits && !rid_bit_test(target_rbits, rid))
-                            continue;
-                        if (rid_bit_test(final_bits.data(), rid))
-                            continue;
+                if (!ok)
+                    return false;
 
-                        uint64_t mask = all_mask;
-                        for (const auto &e : jc_entries) {
-                            if (e.default_mask == all_mask && e.by_tok.empty())
-                                continue;
-                            if (!e.col_data || rid >= e.col_data->size()) {
-                                mask = 0;
-                                break;
-                            }
-                            int32_t tok = (*e.col_data)[rid];
-                            if (tok < 0 || (size_t)tok >= e.domain) {
-                                mask = 0;
-                                break;
-                            }
-                            uint64_t m = e.default_mask;
-                            if (!e.by_tok.empty())
-                                m |= e.by_tok[(size_t)tok];
-                            mask &= m;
-                            if (!mask)
-                                break;
+                for (auto &e : jc_entries) {
+                    e.restrict_count = popcnt((WordT)(all_mask & (WordT)(~e.default_mask)));
+                }
+                for (auto &e : pred_entries) {
+                    e.restrict_count = popcnt((WordT)(all_mask & (WordT)(~e.default_mask)));
+                }
+
+                std::sort(jc_entries.begin(), jc_entries.end(),
+                          [](const JCEntry &a, const JCEntry &b) { return a.restrict_count > b.restrict_count; });
+                std::sort(pred_entries.begin(), pred_entries.end(),
+                          [](const PredEntry &a, const PredEntry &b) { return a.restrict_count > b.restrict_count; });
+
+                auto t_mask1 = Clock::now();
+                profile->project_mask_ms += Ms(t_mask1 - t_mask0).count();
+                profile->project_mask_bytes += mask_bytes;
+
+                // Fast per-row OR-of-clauses via bitmask propagation.
+                auto t_row0 = Clock::now();
+                for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
+                    if (target_rbits && !rid_bit_test(target_rbits, rid))
+                        continue;
+                    if (rid_bit_test(final_bits.data(), rid))
+                        continue;
+
+                    WordT mask = all_mask;
+                    for (const auto &e : jc_entries) {
+                        if (e.default_mask == all_mask && e.by_tok.empty())
+                            continue;
+                        if (!e.col_data || rid >= e.col_data->size()) {
+                            mask = 0;
+                            break;
                         }
+                        int32_t tok = (*e.col_data)[rid];
+                        if (tok < 0 || (size_t)tok >= e.domain) {
+                            mask = 0;
+                            break;
+                        }
+                        WordT m = e.default_mask;
+                        if (!e.by_tok.empty())
+                            m = (WordT)(m | e.by_tok[(size_t)tok]);
+                        mask = (WordT)(mask & m);
                         if (!mask)
-                            continue;
+                            break;
+                    }
+                    if (!mask)
+                        continue;
 
-                        for (const auto &e : pred_entries) {
-                            if (e.default_mask == all_mask && e.by_tok.empty())
-                                continue;
-                            if (!e.col_data || rid >= e.col_data->size()) {
-                                mask = 0;
+                    for (const auto &e : pred_entries) {
+                        if (e.default_mask == all_mask && e.by_tok.empty())
+                            continue;
+                        if (!e.col_data || rid >= e.col_data->size()) {
+                            mask = 0;
+                            break;
+                        }
+                        int32_t tok = (*e.col_data)[rid];
+                        if (tok < 0 || (size_t)tok >= e.domain) {
+                            mask = 0;
+                            break;
+                        }
+                        WordT m = e.default_mask;
+                        if (!e.by_tok.empty())
+                            m = (WordT)(m | e.by_tok[(size_t)tok]);
+                        mask = (WordT)(mask & m);
+                        if (!mask)
+                            break;
+                    }
+
+                    if (mask)
+                        rid_bit_set(final_bits.data(), rid);
+                }
+                profile->project_row_ms += Ms(Clock::now() - t_row0).count();
+                return true;
+            };
+
+            auto run_mask_multiword = [&]() -> bool {
+                if (nclauses <= 64)
+                    return false;
+                const size_t W = (nclauses + 63u) / 64u;
+                if (W == 0)
+                    return false;
+
+                std::vector<uint64_t> all_mask(W, ~uint64_t(0));
+                if ((nclauses & 63u) != 0u) {
+                    all_mask.back() = (uint64_t(1) << (nclauses & 63u)) - 1u;
+                }
+
+                struct JCEntry {
+                    int class_id = -1;
+                    const std::vector<int32_t> *col_data = nullptr;
+                    size_t domain = 0;
+                    std::vector<uint64_t> default_mask;
+                    std::vector<uint64_t> by_tok_flat;  // [tok*W + w]
+                    int restrict_count = 0;
+                };
+
+                struct PredEntry {
+                    int col_idx = -1;
+                    const std::vector<int32_t> *col_data = nullptr;
+                    size_t domain = 0;
+                    std::vector<uint64_t> default_mask;
+                    std::vector<uint64_t> by_tok_flat;  // [tok*W + w]
+                    int restrict_count = 0;
+                };
+
+                auto popcnt64 = [](uint64_t x) -> int { return __builtin_popcountll((unsigned long long)x); };
+
+                bool ok = true;
+                std::vector<JCEntry> jc_entries;
+                std::unordered_map<int, size_t> jc_pos;
+                std::vector<PredEntry> pred_entries;
+                std::unordered_map<int, size_t> pred_pos;
+
+                size_t mask_bytes = 0;
+
+                auto t_mask0 = Clock::now();
+
+                // First pass: collect target columns per join-class/predicate and validate shape.
+                for (size_t ci = 0; ci < nclauses && ok; ci++) {
+                    const ClauseTablePlan *ttp = join_evals[ci].target_tp;
+                    if (!ttp) {
+                        ok = false;
+                        break;
+                    }
+                    for (const auto &cg : ttp->class_groups) {
+                        if (cg.col_data.size() != 1) {
+                            ok = false;
+                            break;
+                        }
+                        auto it = jc_pos.find(cg.class_id);
+                        const std::vector<int32_t> *col = cg.col_data[0];
+                        if (it == jc_pos.end()) {
+                            int cid = cg.class_id;
+                            int dom = (cid >= 0 && cid < (int)loaded.class_domain.size())
+                                          ? loaded.class_domain[(size_t)cid]
+                                          : 0;
+                            if (dom <= 0) {
+                                ok = false;
                                 break;
                             }
-                            int32_t tok = (*e.col_data)[rid];
-                            if (tok < 0 || (size_t)tok >= e.domain) {
-                                mask = 0;
+                            JCEntry e;
+                            e.class_id = cid;
+                            e.col_data = col;
+                            e.domain = (size_t)dom;
+                            e.default_mask = all_mask;
+                            jc_pos[cid] = jc_entries.size();
+                            jc_entries.push_back(std::move(e));
+                        } else {
+                            if (jc_entries[it->second].col_data != col) {
+                                ok = false;
                                 break;
                             }
-                            uint64_t m = e.default_mask;
-                            if (!e.by_tok.empty())
-                                m |= e.by_tok[(size_t)tok];
-                            mask &= m;
-                            if (!mask)
-                                break;
+                        }
+                    }
+
+                    for (const auto &pred : ttp->predicates) {
+                        if (!pred.col_data) {
+                            ok = false;
+                            break;
                         }
 
-                        if (mask)
-                            rid_bit_set(final_bits.data(), rid);
+                        auto it = pred_pos.find(pred.col_idx);
+                        const std::vector<int32_t> *col = pred.col_data;
+                        size_t dom = pred.allowed.nbits;
+                        if (dom == 0) {
+                            ok = false;
+                            break;
+                        }
+                        if (it == pred_pos.end()) {
+                            PredEntry e;
+                            e.col_idx = pred.col_idx;
+                            e.col_data = col;
+                            e.domain = dom;
+                            e.default_mask = all_mask;
+                            pred_pos[pred.col_idx] = pred_entries.size();
+                            pred_entries.push_back(std::move(e));
+                        } else {
+                            PredEntry &e = pred_entries[it->second];
+                            if (e.col_data != col || e.domain != dom) {
+                                ok = false;
+                                break;
+                            }
+                        }
                     }
                 }
+
+                // Second pass: build per-token clause masks.
+                if (ok) {
+                    for (size_t ci = 0; ci < nclauses; ci++) {
+                        const uint64_t bit = uint64_t(1) << (ci & 63u);
+                        const size_t wpos = ci >> 6;
+                        const ClauseTablePlan *ttp = join_evals[ci].target_tp;
+                        if (!ttp) continue;
+
+                        for (const auto &cg : ttp->class_groups) {
+                            auto it = jc_pos.find(cg.class_id);
+                            if (it == jc_pos.end())
+                                continue;
+                            JCEntry &e = jc_entries[it->second];
+                            if (cg.class_pos < 0 || cg.class_pos >= (int)join_evals[ci].allowed.size()) {
+                                ok = false;
+                                break;
+                            }
+                            const TokenBitset &bs = join_evals[ci].allowed[(size_t)cg.class_pos];
+                            if (bs.is_all())
+                                continue;
+
+                            e.default_mask[wpos] &= ~bit;
+                            if (e.by_tok_flat.empty()) {
+                                e.by_tok_flat.assign(e.domain * W, 0);
+                                mask_bytes += e.domain * W * sizeof(uint64_t);
+                            }
+
+                            for (size_t wi = 0; wi < bs.words.size(); wi++) {
+                                uint64_t w = bs.words[wi];
+                                while (w) {
+                                    uint64_t lsb = w & (~w + 1u);
+                                    int bpos = __builtin_ctzll(w);
+                                    size_t tok = wi * 64u + (size_t)bpos;
+                                    if (tok < e.domain)
+                                        e.by_tok_flat[tok * W + wpos] |= bit;
+                                    w ^= lsb;
+                                }
+                            }
+                        }
+                        if (!ok) break;
+
+                        std::unordered_map<int, TokenBitset> pred_and;
+                        pred_and.reserve(ttp->predicates.size());
+                        for (const auto &pred : ttp->predicates) {
+                            auto itp = pred_and.find(pred.col_idx);
+                            if (itp == pred_and.end()) {
+                                pred_and.emplace(pred.col_idx, pred.allowed);
+                            } else {
+                                itp->second.bit_and(pred.allowed);
+                            }
+                        }
+
+                        for (auto &kv : pred_and) {
+                            auto it = pred_pos.find(kv.first);
+                            if (it == pred_pos.end())
+                                continue;
+                            PredEntry &e = pred_entries[it->second];
+                            const TokenBitset &bs = kv.second;
+                            if (bs.is_all())
+                                continue;
+
+                            e.default_mask[wpos] &= ~bit;
+                            if (e.by_tok_flat.empty()) {
+                                e.by_tok_flat.assign(e.domain * W, 0);
+                                mask_bytes += e.domain * W * sizeof(uint64_t);
+                            }
+
+                            for (size_t wi = 0; wi < bs.words.size(); wi++) {
+                                uint64_t w = bs.words[wi];
+                                while (w) {
+                                    uint64_t lsb = w & (~w + 1u);
+                                    int bpos = __builtin_ctzll(w);
+                                    size_t tok = wi * 64u + (size_t)bpos;
+                                    if (tok < e.domain)
+                                        e.by_tok_flat[tok * W + wpos] |= bit;
+                                    w ^= lsb;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!ok)
+                    return false;
+
+                for (auto &e : jc_entries) {
+                    int rc = 0;
+                    for (size_t wi = 0; wi < W; wi++) {
+                        rc += popcnt64(all_mask[wi] & ~e.default_mask[wi]);
+                    }
+                    e.restrict_count = rc;
+                }
+                for (auto &e : pred_entries) {
+                    int rc = 0;
+                    for (size_t wi = 0; wi < W; wi++) {
+                        rc += popcnt64(all_mask[wi] & ~e.default_mask[wi]);
+                    }
+                    e.restrict_count = rc;
+                }
+
+                std::sort(jc_entries.begin(), jc_entries.end(),
+                          [](const JCEntry &a, const JCEntry &b) { return a.restrict_count > b.restrict_count; });
+                std::sort(pred_entries.begin(), pred_entries.end(),
+                          [](const PredEntry &a, const PredEntry &b) { return a.restrict_count > b.restrict_count; });
+
+                auto t_mask1 = Clock::now();
+                profile->project_mask_ms += Ms(t_mask1 - t_mask0).count();
+                profile->project_mask_bytes += mask_bytes;
+
+                std::vector<uint64_t> mask(W, 0);
+                auto t_row0 = Clock::now();
+
+                for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
+                    if (target_rbits && !rid_bit_test(target_rbits, rid))
+                        continue;
+                    if (rid_bit_test(final_bits.data(), rid))
+                        continue;
+
+                    uint64_t any = 0;
+                    for (size_t wi = 0; wi < W; wi++) {
+                        mask[wi] = all_mask[wi];
+                        any |= mask[wi];
+                    }
+                    for (const auto &e : jc_entries) {
+                        if (e.restrict_count == 0 && e.by_tok_flat.empty())
+                            continue;
+                        if (!e.col_data || rid >= e.col_data->size()) {
+                            any = 0;
+                            break;
+                        }
+                        int32_t tok = (*e.col_data)[rid];
+                        if (tok < 0 || (size_t)tok >= e.domain) {
+                            any = 0;
+                            break;
+                        }
+                        any = 0;
+                        const size_t base = (size_t)tok * W;
+                        for (size_t wi = 0; wi < W; wi++) {
+                            uint64_t m = e.default_mask[wi];
+                            if (!e.by_tok_flat.empty())
+                                m |= e.by_tok_flat[base + wi];
+                            mask[wi] &= m;
+                            any |= mask[wi];
+                        }
+                        if (!any)
+                            break;
+                    }
+                    if (!any)
+                        continue;
+
+                    for (const auto &e : pred_entries) {
+                        if (e.restrict_count == 0 && e.by_tok_flat.empty())
+                            continue;
+                        if (!e.col_data || rid >= e.col_data->size()) {
+                            any = 0;
+                            break;
+                        }
+                        int32_t tok = (*e.col_data)[rid];
+                        if (tok < 0 || (size_t)tok >= e.domain) {
+                            any = 0;
+                            break;
+                        }
+                        any = 0;
+                        const size_t base = (size_t)tok * W;
+                        for (size_t wi = 0; wi < W; wi++) {
+                            uint64_t m = e.default_mask[wi];
+                            if (!e.by_tok_flat.empty())
+                                m |= e.by_tok_flat[base + wi];
+                            mask[wi] &= m;
+                            any |= mask[wi];
+                        }
+                        if (!any)
+                            break;
+                    }
+
+                    if (any)
+                        rid_bit_set(final_bits.data(), rid);
+                }
+
+                profile->project_row_ms += Ms(Clock::now() - t_row0).count();
+                return true;
+            };
+
+            if (nclauses <= 8) {
+                used_mask = run_mask_singleword(uint8_t(0));
+            } else if (nclauses <= 16) {
+                used_mask = run_mask_singleword(uint16_t(0));
+            } else if (nclauses <= 32) {
+                used_mask = run_mask_singleword(uint32_t(0));
+            } else if (nclauses <= 64) {
+                used_mask = run_mask_singleword(uint64_t(0));
+            } else {
+                used_mask = run_mask_multiword();
             }
 
             if (!used_mask) {
                 // Fallback: per-row scan all clauses (still single pass over target).
+                auto t_row0 = Clock::now();
                 for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
                     if (target_rbits && !rid_bit_test(target_rbits, rid))
                         continue;
@@ -3255,10 +3673,17 @@ static bool build_target_allow_list(const Loaded &loaded,
                         }
                     }
                 }
+                profile->project_row_ms += Ms(Clock::now() - t_row0).count();
             }
 
             profile->project_ms += Ms(Clock::now() - t_proj0).count();
         }
+    }
+
+    std::vector<uint8_t> *bits_for_decode = &final_bits;
+    if (out_rid_bits) {
+        *out_rid_bits = std::move(final_bits);
+        bits_for_decode = out_rid_bits;
     }
 
     auto t_decode0 = Clock::now();
@@ -3267,7 +3692,7 @@ static bool build_target_allow_list(const Loaded &loaded,
     size_t nbytes = 0;
     uint32 allowed_rows = 0;
     if (!build_block_words_from_rid_bits(target_ti,
-                                         final_bits,
+                                         *bits_for_decode,
                                          &words,
                                          &blocks,
                                          &nbytes,
@@ -3302,6 +3727,11 @@ static void fill_run_profile(const BuildProfile &bp, PolicyRunProfileC *out)
     out->atoms_ms = bp.atoms_ms;
     out->propagate_ms = bp.propagate_ms;
     out->project_ms = bp.project_ms;
+    out->project_mask_ms = bp.project_mask_ms;
+    out->project_row_ms = bp.project_row_ms;
+    out->project_mask_bytes = bp.project_mask_bytes;
+    out->project_n_join_evals_max = bp.project_n_join_evals_max;
+    out->project_clause_words_max = bp.project_clause_words_max;
     out->stamp_ms = 0.0;
     out->bin_ms = 0.0;
     out->local_sat_ms = 0.0;
@@ -3333,15 +3763,107 @@ policy_run(const PolicyArtifactC *arts, int art_count, const PolicyEngineInputC 
     if (!loaded.target_order.empty()) {
         h->allow_list.items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC) * loaded.target_order.size());
 
-        int out_count = 0;
-        for (const std::string &target : loaded.target_order) {
-            auto it_tp = loaded.targets.find(target);
+        // IMPORTANT: to match Postgres RLS semantics, policy clauses that reference other
+        // tables must see those tables *already filtered* by their own policies.
+        //
+        // We do a dependency-ordered build where a target table depends on any other
+        // policy-target table referenced in its policy AST.
+        const int N = (int)loaded.target_order.size();
+        std::unordered_map<std::string, int> idx;
+        idx.reserve((size_t)N * 2u);
+        for (int i = 0; i < N; i++)
+            idx.emplace(loaded.target_order[i], i);
+
+        std::vector<int> indegree((size_t)N, 0);
+        std::vector<std::vector<int>> dependents((size_t)N);
+
+        for (int ti = 0; ti < N; ti++) {
+            const std::string &tname = loaded.target_order[ti];
+            auto it_tp = loaded.targets.find(tname);
             if (it_tp == loaded.targets.end())
                 continue;
-            if (!build_target_allow_list(loaded, it_tp->second, &h->allow_list.items[out_count], &profile, nullptr))
+            const TargetPlan &tp = it_tp->second;
+
+            std::unordered_set<int> deps;
+            deps.reserve(8);
+
+            if (!tp.local_formula_enabled) {
+                for (const ClausePlan &cl : tp.clauses) {
+                    if (cl.unsat)
+                        continue;
+                    for (const auto &tbl : cl.tables) {
+                        if (tbl.table == tname)
+                            continue;
+                        if (loaded.targets.find(tbl.table) == loaded.targets.end())
+                            continue;  // referenced table has no policy => unrestricted
+                        auto it_dep = idx.find(tbl.table);
+                        if (it_dep == idx.end())
+                            continue;
+                        int di = it_dep->second;
+                        if (di == ti)
+                            continue;
+                        deps.insert(di);
+                    }
+                }
+            }
+
+            for (int di : deps) {
+                dependents[(size_t)di].push_back(ti);
+                indegree[(size_t)ti]++;
+            }
+        }
+
+        std::deque<int> q;
+        for (int i = 0; i < N; i++) {
+            if (indegree[(size_t)i] == 0)
+                q.push_back(i);
+        }
+
+        std::vector<int> order;
+        order.reserve((size_t)N);
+        while (!q.empty()) {
+            int u = q.front();
+            q.pop_front();
+            order.push_back(u);
+            for (int v : dependents[(size_t)u]) {
+                int &deg = indegree[(size_t)v];
+                deg--;
+                if (deg == 0)
+                    q.push_back(v);
+            }
+        }
+        if ((int)order.size() != N) {
+            ereport(ERROR,
+                    (errmsg("policy: dependency cycle across policy targets (RLS recursion)"),
+                     errdetail("target_count=%d", N)));
+        }
+
+        std::unordered_map<std::string, std::vector<uint8_t>> rid_bits_by_table;
+        rid_bits_by_table.reserve((size_t)N * 2u);
+        std::unordered_map<std::string, const uint8 *> restrict_bits;
+        restrict_bits.reserve((size_t)N * 2u);
+
+        int out_count = 0;
+        for (int oi = 0; oi < N; oi++) {
+            const std::string &tname = loaded.target_order[order[(size_t)oi]];
+            auto it_tp = loaded.targets.find(tname);
+            if (it_tp == loaded.targets.end())
+                continue;
+
+            auto &rid_bits = rid_bits_by_table[tname];
+            if (!build_target_allow_list(loaded,
+                                         it_tp->second,
+                                         &h->allow_list.items[out_count],
+                                         &profile,
+                                         &restrict_bits,
+                                         &rid_bits)) {
                 return nullptr;
+            }
+
+            restrict_bits[tname] = rid_bits.empty() ? nullptr : rid_bits.data();
             out_count++;
         }
+
         h->allow_list.count = out_count;
     }
 

@@ -78,6 +78,11 @@ typedef struct PolicyRunProfileC {
     double atoms_ms;
     double propagate_ms;
     double project_ms;
+    double project_mask_ms;
+    double project_row_ms;
+    size_t project_mask_bytes;
+    int project_n_join_evals_max;
+    int project_clause_words_max;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
@@ -1153,6 +1158,11 @@ typedef struct PolicyQueryState
     double atoms_ms;
     double propagate_ms;
     double project_ms;
+    double project_mask_ms;
+    double project_row_ms;
+    size_t project_mask_bytes;
+    int project_n_join_evals_max;
+    int project_clause_words_max;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
@@ -1557,6 +1567,7 @@ cf_log_query_metrics(PolicyQueryState *qs)
         return;
     elog(NOTICE,
          "policy_profile: eval_ms=%.3f artifact_load_ms=%.3f artifact_parse_ms=%.3f atoms_ms=%.3f propagate_ms=%.3f project_ms=%.3f "
+         "project_mask_ms=%.3f project_row_ms=%.3f project_mask_bytes=%zu project_n_join_evals_max=%d project_clause_words_max=%d "
          "stamp_ms=%.3f bin_ms=%.3f local_sat_ms=%.3f fill_ms=%.3f prop_ms=%.3f prop_iters=%d "
          "decode_ms=%.3f policy_total_ms=%.3f ctid_map_ms=%.3f filter_ms=%.3f "
          "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f "
@@ -1571,6 +1582,11 @@ cf_log_query_metrics(PolicyQueryState *qs)
          qs->atoms_ms,
          qs->propagate_ms,
          qs->project_ms,
+         qs->project_mask_ms,
+         qs->project_row_ms,
+         qs->project_mask_bytes,
+         qs->project_n_join_evals_max,
+         qs->project_clause_words_max,
          qs->stamp_ms,
          qs->bin_ms,
          qs->local_sat_ms,
@@ -2252,6 +2268,13 @@ cf_build_query_state(EState *estate, const char *query_str)
             qs->atoms_ms += pp->atoms_ms;
             qs->propagate_ms += pp->propagate_ms;
             qs->project_ms += pp->project_ms;
+            qs->project_mask_ms += pp->project_mask_ms;
+            qs->project_row_ms += pp->project_row_ms;
+            qs->project_mask_bytes += pp->project_mask_bytes;
+            if (pp->project_n_join_evals_max > qs->project_n_join_evals_max)
+                qs->project_n_join_evals_max = pp->project_n_join_evals_max;
+            if (pp->project_clause_words_max > qs->project_clause_words_max)
+                qs->project_clause_words_max = pp->project_clause_words_max;
             qs->stamp_ms += pp->stamp_ms;
             qs->bin_ms += pp->bin_ms;
             qs->local_sat_ms += pp->local_sat_ms;
