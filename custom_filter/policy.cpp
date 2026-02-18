@@ -1,305 +1,46 @@
-#include <vector>
-#include <cstring>
-#include <string>
-#include <cstdint>
-#include <chrono>
 #include <algorithm>
-#include <unordered_map>
-#include <unordered_set>
+#include <chrono>
+#include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <functional>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 extern "C" {
 #include "postgres.h"
-#include "fmgr.h"
-#include "utils/elog.h"
-#include "utils/palloc.h"
 #include "executor/spi.h"
+#include "fmgr.h"
 #include "utils/builtins.h"
+#include "utils/elog.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
+#include "utils/palloc.h"
 }
+
 #include "policy_evaluator.h"
 #include "policy_spec.h"
-#include <limits>
-#include <cvc5/cvc5.h>
 
-using CtidKey = std::uint64_t;
 using Clock = std::chrono::steady_clock;
 using Ms = std::chrono::duration<double, std::milli>;
 
-#define CF_TRACE_LOG(fmt, ...) \
-    do { \
-        if (cf_trace_enabled()) \
+#define CF_TRACE_LOG(fmt, ...)                \
+    do {                                      \
+        if (cf_trace_enabled())               \
             elog(NOTICE, fmt, ##__VA_ARGS__); \
     } while (0)
 
-static bytea *
-cf_fetch_file_bytea(const char *name)
-{
-    StringInfoData sql;
-    initStringInfo(&sql);
-    appendStringInfo(&sql, "SELECT file FROM public.files WHERE name = %s",
-                     quote_literal_cstr(name));
-    CF_TRACE_LOG( "policy_stamp: spi: %s", sql.data);
-    int ret = SPI_execute(sql.data, true, 0);
-    if (ret != SPI_OK_SELECT || SPI_processed != 1)
-        return nullptr;
-    bool isnull = false;
-    Datum d = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
-    if (isnull) return nullptr;
-    bytea *src = DatumGetByteaP(d);
-    bytea *copy = (bytea *)palloc(VARSIZE(src));
-    memcpy(copy, src, VARSIZE(src));
-    return copy;
-}
-
-static std::string
-cf_bytea_to_string(bytea *b)
-{
-    if (!b) return "";
-    int len = VARSIZE(b) - VARHDRSZ;
-    if (len <= 0) return "";
-    return std::string(VARDATA(b), VARDATA(b) + len);
-}
-
-static inline CtidKey
-make_ctid_key(int blk, int off)
-{
-    return (CtidKey(std::uint32_t(blk)) << 32) | std::uint32_t(off);
-}
-
-static inline bool
-allow_bit(const uint8 *bits, uint32 rid)
-{
-    if (!bits) return true;
-    return (bits[rid >> 3] & (uint8)(1u << (rid & 7))) != 0;
-}
-
-namespace {
-
-static std::vector<std::string> split_lines(const std::string &s)
-{
-    std::vector<std::string> out;
-    size_t start = 0;
-    while (start < s.size()) {
-        size_t end = s.find('\n', start);
-        if (end == std::string::npos) end = s.size();
-        if (end > start)
-            out.push_back(s.substr(start, end - start));
-        start = end + 1;
-    }
-    return out;
-}
-
-static std::vector<std::string> split_tab(const std::string &s)
-{
-    std::vector<std::string> out;
-    size_t start = 0;
-    while (start <= s.size()) {
-        size_t end = s.find('\t', start);
-        if (end == std::string::npos) end = s.size();
-        out.push_back(s.substr(start, end - start));
-        start = end + 1;
-        if (end == s.size()) break;
-    }
-    return out;
-}
-
-static std::set<int> parse_ast_vars(const std::string &s)
-{
-    std::set<int> out;
-    for (size_t i = 0; i < s.size(); i++) {
-        if (s[i] == 'y') {
-            size_t j = i + 1;
-            int v = 0;
-            bool any = false;
-            while (j < s.size() && std::isdigit((unsigned char)s[j])) {
-                v = v * 10 + (s[j] - '0');
-                any = true;
-                j++;
-            }
-            if (any) out.insert(v);
-        }
-    }
-    return out;
-}
-
-static std::vector<std::string> parse_dict_values(bytea *b)
-{
-    std::vector<std::string> out;
-    if (!b) return out;
-    char *ptr = VARDATA(b);
-    int len = VARSIZE(b) - VARHDRSZ;
-    int off = 0;
-    while (off + 4 <= len) {
-        int32 slen = 0;
-        memcpy(&slen, ptr + off, 4);
-        off += 4;
-        if (slen < 0 || off + slen > len) break;
-        out.emplace_back(ptr + off, ptr + off + slen);
-        off += slen;
-    }
-    return out;
-}
-
-static bool has_code_base_v2_header(const void *data, size_t len)
-{
-    if (!data || len < 12) return false;
-    const unsigned char *p = static_cast<const unsigned char *>(data);
-    return p[0] == 'C' && p[1] == 'B' && p[2] == '0' && p[3] == '2';
-}
-
-static bool has_code_base_v3_manifest(const void *data, size_t len)
-{
-    if (!data || len < 20) return false;
-    const unsigned char *p = static_cast<const unsigned char *>(data);
-    return p[0] == 'C' && p[1] == 'B' && p[2] == '0' && p[3] == '3';
-}
-
-static bool parse_code_base_v3_manifest(const void *data,
-                                       size_t len,
-                                       uint32 *out_total_rows,
-                                       uint32 *out_chunk_rows,
-                                       int *out_ntoks,
-                                       int *out_chunk_count)
-{
-    if (!data || !out_total_rows || !out_chunk_rows || !out_ntoks || !out_chunk_count)
-        return false;
-    if (!has_code_base_v3_manifest(data, len))
-        return false;
-    if (len < 20) return false;
-
-    const unsigned char *p = static_cast<const unsigned char *>(data);
-    int32_t total_raw = 0;
-    int32_t chunk_rows_raw = 0;
-    int32_t ntoks_raw = 0;
-    int32_t chunks_raw = 0;
-    std::memcpy(&total_raw, p + 4, sizeof(int32_t));
-    std::memcpy(&chunk_rows_raw, p + 8, sizeof(int32_t));
-    std::memcpy(&ntoks_raw, p + 12, sizeof(int32_t));
-    std::memcpy(&chunks_raw, p + 16, sizeof(int32_t));
-    if (total_raw < 0 || chunk_rows_raw < 0 || ntoks_raw < 0 || chunks_raw < 0)
-        return false;
-
-    uint32 total = (uint32) total_raw;
-    uint32 chunk_rows = (uint32) chunk_rows_raw;
-    int ntoks = (int) ntoks_raw;
-    int chunks = (int) chunks_raw;
-    if (total == 0) {
-        /* Empty table: allow chunk_rows/chunks to be 0. */
-        *out_total_rows = 0;
-        *out_chunk_rows = chunk_rows;
-        *out_ntoks = ntoks;
-        *out_chunk_count = chunks;
-        return true;
-    }
-    if (chunk_rows == 0)
-        return false;
-    int expect = (int)((total + chunk_rows - 1) / chunk_rows);
-    if (chunks != expect)
-        return false;
-    if (ntoks > 4096)
-        return false;
-    *out_total_rows = total;
-    *out_chunk_rows = chunk_rows;
-    *out_ntoks = ntoks;
-    *out_chunk_count = chunks;
-    return true;
-}
-
-static bool decode_code_base_v2(const void *data,
-                                size_t len,
-                                std::vector<int32_t> *out_code,
-                                int *out_ntoks,
-                                uint32 *out_nrows)
-{
-    static constexpr size_t kCb02MaxNrowsHard = 200000000;  // hard corruption guard
-    static constexpr int kCb02MaxNtoksHard = 4096;          // far above expected TPC-H widths
-    if (!data || !out_code || !out_ntoks || !out_nrows) return false;
-    if (!has_code_base_v2_header(data, len)) return false;
-    if (len < 12) return false;
-
-    const unsigned char *p = static_cast<const unsigned char *>(data);
-    int32_t nrows_raw = 0;
-    int32_t payload_len_raw = 0;
-    std::memcpy(&nrows_raw, p + 4, sizeof(int32_t));
-    std::memcpy(&payload_len_raw, p + 8, sizeof(int32_t));
-    if (nrows_raw < 0 || payload_len_raw < 0) return false;
-
-    size_t nrows = static_cast<size_t>(nrows_raw);
-    size_t payload_len = static_cast<size_t>(payload_len_raw);
-    if (nrows > kCb02MaxNrowsHard) return false;
-    size_t payload_off = 12;
-    if (payload_off + payload_len != len) return false;
-    size_t off = payload_off;
-    size_t end = payload_off + payload_len;
-
-    out_code->clear();
-    if (nrows > 0) out_code->reserve(nrows * 2);
-    int ntoks = -1;
-    for (size_t rid = 0; rid < nrows; rid++) {
-        if (off + sizeof(uint16_t) > end) return false;
-        uint16_t nt = 0;
-        std::memcpy(&nt, p + off, sizeof(uint16_t));
-        off += sizeof(uint16_t);
-        if ((int) nt > kCb02MaxNtoksHard) return false;
-        if (ntoks < 0) ntoks = static_cast<int>(nt);
-        else if (ntoks != static_cast<int>(nt)) return false;
-        size_t toks_bytes = static_cast<size_t>(nt) * sizeof(int32_t);
-        if (off + toks_bytes > end) return false;
-        if (rid > static_cast<size_t>(std::numeric_limits<int32_t>::max())) return false;
-        out_code->push_back(static_cast<int32_t>(rid));
-        size_t old = out_code->size();
-        out_code->resize(old + static_cast<size_t>(nt));
-        if (toks_bytes > 0)
-            std::memcpy(out_code->data() + old, p + off, toks_bytes);
-        off += toks_bytes;
-    }
-    if (off != end) return false;
-    if (ntoks < 0) ntoks = 0;
-    *out_ntoks = ntoks;
-    *out_nrows = static_cast<uint32>(nrows);
-    return true;
-}
-
-static void append_top_counts(const std::vector<uint64_t> &counts,
-                              const std::vector<std::string> &sig_bits,
-                              int topn)
-{
-    std::vector<int> idx(counts.size());
-    for (size_t i = 0; i < counts.size(); i++) idx[i] = (int)i;
-    std::sort(idx.begin(), idx.end(), [&](int a, int b) {
-        return counts[a] > counts[b];
-    });
-    for (int i = 0; i < topn && i < (int)idx.size(); i++) {
-        int id = idx[i];
-        CF_TRACE_LOG( "policy_stamp: class[%d] sig=%s count=%lu",
-             id, sig_bits[id].c_str(), (unsigned long)counts[id]);
-    }
-}
-} // namespace
-
-typedef struct PolicyRunProfileC {
-    double artifact_parse_ms;
-    double atoms_ms;
-    double presence_ms;
-    double project_ms;
-    double stamp_ms;
-    double bin_ms;
-    double local_sat_ms;
-    double fill_ms;
-    double prop_ms;
-    int prop_iters;
-    double decode_ms;
-    double policy_total_ms;
-} PolicyRunProfileC;
-
-namespace api = cvc5;
-
-
 extern "C" {
+
 typedef struct PolicyArtifactC {
     const char *name;
     const void *data;
@@ -317,146 +58,510 @@ typedef struct PolicyAllowListC {
     int count;
     PolicyTableAllowC *items;
 } PolicyAllowListC;
-}
+
+typedef struct PolicyRunProfileC {
+    double artifact_parse_ms;
+    double atoms_ms;
+    double propagate_ms;
+    double project_ms;
+    double stamp_ms;
+    double bin_ms;
+    double local_sat_ms;
+    double fill_ms;
+    double prop_ms;
+    int prop_iters;
+    double decode_ms;
+    double policy_total_ms;
+} PolicyRunProfileC;
+
+} // extern "C"
 
 namespace {
 
-/* Fixed per-block bitmap layout: offsets are 1-based in CTIDs, so we map off -> (off-1). */
-#define CF_MAX_OFF 512u
-#define CF_WORDS_PER_BLOCK ((CF_MAX_OFF + 63u) / 64u)
+static constexpr uint32 kMaxOffsetNumber = 512;
+static constexpr uint32 kWordsPerBlock = (kMaxOffsetNumber + 63u) / 64u;
 
-static inline void
-cf_block_words_set(uint64 *words, uint32 blocks, int32 blk, int32 off)
+using CtidKey = std::uint64_t;
+
+static inline CtidKey make_ctid_key(int32 blk, int32 off)
 {
-    if (!words || blocks == 0)
-        return;
-    if (blk < 0 || off < 1)
-        return;
-    uint32 blk_u = (uint32) blk;
-    uint32 off_u = (uint32) off;
-    if (blk_u >= blocks || off_u > CF_MAX_OFF)
-        return;
-    uint32 off0 = off_u - 1u;
-    size_t word_idx = (size_t) (off0 >> 6);
-    size_t flat = (size_t) blk_u * (size_t) CF_WORDS_PER_BLOCK + word_idx;
-    words[flat] |= (uint64)(1ULL << (off0 & 63u));
+    return (CtidKey((uint32)blk) << 32) | uint32(off);
 }
 
-static inline bool
-cf_block_words_test(const uint64 *words, uint32 blocks, int32 blk, int32 off)
+static inline bool rid_bit_test(const uint8 *bits, uint32 rid)
 {
-    if (!words || blocks == 0)
-        return false;
-    if (blk < 0 || off < 1)
-        return false;
-    uint32 blk_u = (uint32) blk;
-    uint32 off_u = (uint32) off;
-    if (blk_u >= blocks || off_u > CF_MAX_OFF)
-        return false;
-    uint32 off0 = off_u - 1u;
-    size_t word_idx = (size_t) (off0 >> 6);
-    size_t flat = (size_t) blk_u * (size_t) CF_WORDS_PER_BLOCK + word_idx;
-    uint64 mask = (uint64)(1ULL << (off0 & 63u));
-    return (words[flat] & mask) != 0;
+    if (!bits) return false;
+    return (bits[rid >> 3] & (uint8)(1u << (rid & 7u))) != 0;
 }
 
-static inline void
-cf_block_words_clear(uint64 *words, uint32 blocks, int32 blk, int32 off)
+static inline void rid_bit_set(uint8 *bits, uint32 rid)
 {
-    if (!words || blocks == 0)
-        return;
-    if (blk < 0 || off < 1)
-        return;
-    uint32 blk_u = (uint32) blk;
-    uint32 off_u = (uint32) off;
-    if (blk_u >= blocks || off_u > CF_MAX_OFF)
-        return;
-    uint32 off0 = off_u - 1u;
-    size_t word_idx = (size_t) (off0 >> 6);
-    size_t flat = (size_t) blk_u * (size_t) CF_WORDS_PER_BLOCK + word_idx;
-    uint64 mask = (uint64)(1ULL << (off0 & 63u));
-    words[flat] &= ~mask;
+    bits[rid >> 3] |= (uint8)(1u << (rid & 7u));
 }
 
-static inline uint64
-cf_popcount_block_words(const uint64 *words, uint32 blocks)
+static bytea *
+cf_fetch_file_bytea(const char *name)
 {
-    if (!words || blocks == 0)
-        return 0;
-    size_t nwords = (size_t) blocks * (size_t) CF_WORDS_PER_BLOCK;
-    uint64 cnt = 0;
-    for (size_t i = 0; i < nwords; i++)
-        cnt += (uint64) __builtin_popcountll((unsigned long long) words[i]);
-    return cnt;
+    StringInfoData sql;
+    initStringInfo(&sql);
+    appendStringInfo(&sql,
+                     "SELECT file FROM public.files WHERE name = %s",
+                     quote_literal_cstr(name));
+    int ret = SPI_execute(sql.data, true, 0);
+    if (ret != SPI_OK_SELECT || SPI_processed != 1)
+        return nullptr;
+    bool isnull = false;
+    Datum d = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1, &isnull);
+    if (isnull)
+        return nullptr;
+    bytea *src = DatumGetByteaP(d);
+    bytea *copy = (bytea *)palloc(VARSIZE(src));
+    memcpy(copy, src, VARSIZE(src));
+    return copy;
 }
 
-struct Loaded;
-
-static bool cf_build_block_words_from_rid_bits(const Loaded &loaded,
-                                              const std::string &table,
-                                              const uint8 *rid_bits,
-                                              uint32 n_rows,
-                                              uint64 **out_words,
-                                              uint32 *out_blocks,
-                                              size_t *out_nbytes);
-
-static std::string trim_ws(const std::string &s) {
-    size_t start = 0;
-    while (start < s.size() && std::isspace(static_cast<unsigned char>(s[start]))) start++;
-    size_t end = s.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(s[end - 1]))) end--;
-    return s.substr(start, end - start);
+static std::string trim_ws(const std::string &s)
+{
+    size_t b = 0;
+    while (b < s.size() && std::isspace((unsigned char)s[b])) b++;
+    size_t e = s.size();
+    while (e > b && std::isspace((unsigned char)s[e - 1])) e--;
+    return s.substr(b, e - b);
 }
 
-static std::string lower_str(const std::string &s) {
-    std::string out = s;
-    std::transform(out.begin(), out.end(), out.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    return out;
-}
-
-static std::string unquote(const std::string &s) {
-    if (s.size() >= 2 && s.front() == '\'' && s.back() == '\'')
-        return s.substr(1, s.size() - 2);
+static std::string lower_str(std::string s)
+{
+    for (char &c : s)
+        c = (char)std::tolower((unsigned char)c);
     return s;
 }
 
-static std::string to_lower_str(const std::string &s) {
-    std::string out = s;
-    std::transform(out.begin(), out.end(), out.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+static std::vector<std::string> split_lines(const std::string &s)
+{
+    std::vector<std::string> out;
+    size_t start = 0;
+    while (start < s.size()) {
+        size_t end = s.find('\n', start);
+        if (end == std::string::npos) end = s.size();
+        if (end > start)
+            out.push_back(s.substr(start, end - start));
+        start = end + 1;
+    }
     return out;
 }
 
-static bool env_flag_enabled(const char *name) {
-    const char *v = getenv(name);
-    if (!v) return false;
-    std::string s = to_lower_str(trim_ws(v));
-    return s == "1" || s == "true" || s == "on" || s == "yes";
+struct TokenBitset {
+    size_t nbits = 0;
+    std::vector<uint64_t> words;
+
+    TokenBitset() = default;
+    explicit TokenBitset(size_t bits) { reset(bits); }
+
+    void reset(size_t bits)
+    {
+        nbits = bits;
+        words.assign((nbits + 63u) / 64u, 0);
+    }
+
+    void clear_all()
+    {
+        std::fill(words.begin(), words.end(), 0);
+    }
+
+    void fill_all()
+    {
+        std::fill(words.begin(), words.end(), ~uint64_t(0));
+        trim_tail();
+    }
+
+    bool any() const
+    {
+        for (uint64_t w : words) {
+            if (w != 0) return true;
+        }
+        return false;
+    }
+
+    void set(size_t bit)
+    {
+        if (bit >= nbits) return;
+        words[bit >> 6] |= (uint64_t(1) << (bit & 63u));
+    }
+
+    bool test(size_t bit) const
+    {
+        if (bit >= nbits) return false;
+        return (words[bit >> 6] & (uint64_t(1) << (bit & 63u))) != 0;
+    }
+
+    bool equals(const TokenBitset &o) const
+    {
+        return nbits == o.nbits && words == o.words;
+    }
+
+    void bit_and(const TokenBitset &o)
+    {
+        size_t n = std::min(words.size(), o.words.size());
+        for (size_t i = 0; i < n; i++)
+            words[i] &= o.words[i];
+        for (size_t i = n; i < words.size(); i++)
+            words[i] = 0;
+    }
+
+    void bit_or(const TokenBitset &o)
+    {
+        size_t n = std::min(words.size(), o.words.size());
+        for (size_t i = 0; i < n; i++)
+            words[i] |= o.words[i];
+        trim_tail();
+    }
+
+    bool intersect_with_changed(const TokenBitset &o)
+    {
+        bool changed = false;
+        size_t n = std::min(words.size(), o.words.size());
+        for (size_t i = 0; i < n; i++) {
+            uint64_t nw = words[i] & o.words[i];
+            if (nw != words[i]) changed = true;
+            words[i] = nw;
+        }
+        for (size_t i = n; i < words.size(); i++) {
+            if (words[i] != 0) changed = true;
+            words[i] = 0;
+        }
+        return changed;
+    }
+
+private:
+    void trim_tail()
+    {
+        if (nbits == 0 || words.empty()) return;
+        size_t rem = nbits & 63u;
+        if (rem == 0) return;
+        uint64_t mask = (uint64_t(1) << rem) - 1u;
+        words.back() &= mask;
+    }
+};
+
+enum class AstType {
+    VAR,
+    AND,
+    OR,
+};
+
+struct BoolAst {
+    AstType type = AstType::VAR;
+    int var_id = -1;
+    BoolAst *left = nullptr;
+    BoolAst *right = nullptr;
+};
+
+struct AstParser {
+    std::string src;
+    size_t pos = 0;
+    std::vector<BoolAst *> nodes;
+
+    explicit AstParser(const std::string &s) : src(s) {}
+
+    ~AstParser()
+    {
+        for (BoolAst *n : nodes)
+            delete n;
+    }
+
+    void skip_ws()
+    {
+        while (pos < src.size() && std::isspace((unsigned char)src[pos])) pos++;
+    }
+
+    bool eat_char(char c)
+    {
+        skip_ws();
+        if (pos < src.size() && src[pos] == c) {
+            pos++;
+            return true;
+        }
+        return false;
+    }
+
+    bool eat_word_ci(const char *w)
+    {
+        skip_ws();
+        size_t n = std::strlen(w);
+        if (pos + n > src.size()) return false;
+        for (size_t i = 0; i < n; i++) {
+            if (std::tolower((unsigned char)src[pos + i]) != std::tolower((unsigned char)w[i]))
+                return false;
+        }
+        size_t after = pos + n;
+        if (after < src.size()) {
+            char c = src[after];
+            if (std::isalnum((unsigned char)c) || c == '_')
+                return false;
+        }
+        pos = after;
+        return true;
+    }
+
+    BoolAst *node(AstType t, int var = -1, BoolAst *l = nullptr, BoolAst *r = nullptr)
+    {
+        BoolAst *n = new BoolAst();
+        n->type = t;
+        n->var_id = var;
+        n->left = l;
+        n->right = r;
+        nodes.push_back(n);
+        return n;
+    }
+
+    BoolAst *parse_var()
+    {
+        skip_ws();
+        if (pos >= src.size() || (src[pos] != 'y' && src[pos] != 'Y'))
+            return nullptr;
+        size_t p = pos + 1;
+        int id = 0;
+        bool any = false;
+        while (p < src.size() && std::isdigit((unsigned char)src[p])) {
+            id = id * 10 + (src[p] - '0');
+            any = true;
+            p++;
+        }
+        if (!any) return nullptr;
+        pos = p;
+        return node(AstType::VAR, id);
+    }
+
+    BoolAst *parse_atom()
+    {
+        skip_ws();
+        if (eat_char('(')) {
+            BoolAst *e = parse_or();
+            if (!eat_char(')'))
+                return nullptr;
+            return e;
+        }
+        return parse_var();
+    }
+
+    BoolAst *parse_and()
+    {
+        BoolAst *lhs = parse_atom();
+        if (!lhs) return nullptr;
+        while (true) {
+            size_t save = pos;
+            if (!eat_word_ci("and")) {
+                pos = save;
+                break;
+            }
+            BoolAst *rhs = parse_atom();
+            if (!rhs) return nullptr;
+            lhs = node(AstType::AND, -1, lhs, rhs);
+        }
+        return lhs;
+    }
+
+    BoolAst *parse_or()
+    {
+        BoolAst *lhs = parse_and();
+        if (!lhs) return nullptr;
+        while (true) {
+            size_t save = pos;
+            if (!eat_word_ci("or")) {
+                pos = save;
+                break;
+            }
+            BoolAst *rhs = parse_and();
+            if (!rhs) return nullptr;
+            lhs = node(AstType::OR, -1, lhs, rhs);
+        }
+        return lhs;
+    }
+};
+
+using DnfTerm = std::vector<int>;
+using DnfList = std::vector<DnfTerm>;
+
+static void normalize_term(DnfTerm *t)
+{
+    std::sort(t->begin(), t->end());
+    t->erase(std::unique(t->begin(), t->end()), t->end());
 }
 
-static bool debug_trace_enabled() {
-    return cf_trace_enabled();
+static DnfList dnf_or(const DnfList &a, const DnfList &b)
+{
+    DnfList out = a;
+    out.insert(out.end(), b.begin(), b.end());
+    return out;
 }
 
-static bool debug_contract_enabled() {
-    return cf_debug_enabled() && !cf_trace_enabled();
+static DnfList dnf_and(const DnfList &a, const DnfList &b, size_t cap)
+{
+    DnfList out;
+    if (a.empty() || b.empty())
+        return out;
+    out.reserve(std::min(cap, a.size() * b.size()));
+    for (const auto &ta : a) {
+        for (const auto &tb : b) {
+            DnfTerm t = ta;
+            t.insert(t.end(), tb.begin(), tb.end());
+            normalize_term(&t);
+            out.push_back(std::move(t));
+            if (out.size() > cap)
+                ereport(ERROR,
+                        (errmsg("policy: DNF expansion exceeded cap=%zu", cap)));
+        }
+    }
+    return out;
 }
 
-static bool contract_mode_enabled() {
-    return cf_contract_enabled();
+static DnfList ast_to_dnf(const BoolAst *node, size_t cap)
+{
+    if (!node) return {};
+    if (node->type == AstType::VAR) {
+        if (node->var_id <= 0) {
+            // y0 is FALSE sentinel from evaluator.
+            return {};
+        }
+        DnfList out;
+        out.push_back({node->var_id});
+        return out;
+    }
+    if (node->type == AstType::OR)
+        return dnf_or(ast_to_dnf(node->left, cap), ast_to_dnf(node->right, cap));
+    return dnf_and(ast_to_dnf(node->left, cap), ast_to_dnf(node->right, cap), cap);
 }
 
 struct ColRef {
     std::string table;
     std::string col;
-    std::string key() const { return table + "." + col; }
+
+    std::string key() const
+    {
+        return table + "." + col;
+    }
 };
 
-enum class AtomKind { JOIN, CONST };
-enum class ConstOp { EQ, NE, LT, LE, GT, GE, IN, LIKE };
+static bool parse_colref(const std::string &s, ColRef *out)
+{
+    if (!out) return false;
+    auto p = s.find('.');
+    if (p == std::string::npos || p == 0 || p + 1 >= s.size())
+        return false;
+    out->table = s.substr(0, p);
+    out->col = s.substr(p + 1);
+    return true;
+}
 
-struct Loaded;
+static bool parse_schema_key(const std::string &key, ColRef *out, int *class_id, bool *is_join)
+{
+    if (!out || !class_id || !is_join)
+        return false;
+    if (key.rfind("join:", 0) == 0) {
+        *is_join = true;
+        std::string rest = key.substr(5);
+        std::string table_col = rest;
+        int cid = -1;
+        auto p = rest.find(" class=");
+        if (p != std::string::npos) {
+            table_col = rest.substr(0, p);
+            cid = std::atoi(rest.substr(p + 7).c_str());
+        }
+        if (!parse_colref(table_col, out))
+            return false;
+        *class_id = cid;
+        return true;
+    }
+    if (key.rfind("const:", 0) == 0) {
+        *is_join = false;
+        std::string rest = key.substr(6);
+        if (!parse_colref(rest, out))
+            return false;
+        *class_id = -1;
+        return true;
+    }
+    return false;
+}
+
+enum class DictType {
+    TEXT,
+    NUMERIC,
+};
+
+static DictType parse_dict_type_str(const std::string &s)
+{
+    std::string t = lower_str(trim_ws(s));
+    if (t.find("int") != std::string::npos) return DictType::NUMERIC;
+    if (t.find("numeric") != std::string::npos) return DictType::NUMERIC;
+    if (t.find("float") != std::string::npos) return DictType::NUMERIC;
+    if (t.find("double") != std::string::npos) return DictType::NUMERIC;
+    if (t.find("decimal") != std::string::npos) return DictType::NUMERIC;
+    return DictType::TEXT;
+}
+
+static bool parse_number(const std::string &s, double *out)
+{
+    if (!out) return false;
+    char *end = nullptr;
+    errno = 0;
+    double v = std::strtod(s.c_str(), &end);
+    if (errno != 0 || end == s.c_str() || *end != '\0')
+        return false;
+    *out = v;
+    return true;
+}
+
+static bool like_match_rec(const std::string &text,
+                           size_t ti,
+                           const std::string &pat,
+                           size_t pi)
+{
+    while (pi < pat.size()) {
+        char p = pat[pi];
+        if (p == '%') {
+            while (pi + 1 < pat.size() && pat[pi + 1] == '%') pi++;
+            if (pi + 1 == pat.size())
+                return true;
+            for (size_t k = ti; k <= text.size(); k++) {
+                if (like_match_rec(text, k, pat, pi + 1))
+                    return true;
+            }
+            return false;
+        }
+        if (p == '_') {
+            if (ti >= text.size()) return false;
+            ti++;
+            pi++;
+            continue;
+        }
+        if (ti >= text.size() || text[ti] != p)
+            return false;
+        ti++;
+        pi++;
+    }
+    return ti == text.size();
+}
+
+static bool like_match(const std::string &text, const std::string &pat)
+{
+    return like_match_rec(text, 0, pat, 0);
+}
+
+enum class AtomKind {
+    JOIN,
+    CONST,
+};
+
+enum class ConstOp {
+    EQ,
+    IN,
+    LIKE,
+    LT,
+    LE,
+    GT,
+    GE,
+    NE,
+};
 
 struct Atom {
     int id = -1;
@@ -468,6557 +573,1566 @@ struct Atom {
     ColRef right;
     ConstOp op = ConstOp::EQ;
     std::vector<std::string> values;
-    std::vector<double> num_values;
-    bool numeric = false;
 };
 
-struct AstNode {
-    enum Type { VAR, AND, OR } type;
-    int var_id = -1;
-    AstNode *left = nullptr;
-    AstNode *right = nullptr;
+struct ArtifactBlob {
+    const uint8_t *data = nullptr;
+    size_t len = 0;
+    bytea *owned = nullptr;
 };
 
-enum Tri { TRI_FALSE = 0, TRI_TRUE = 1, TRI_UNKNOWN = 2 };
+struct ArtifactStore {
+    std::unordered_map<std::string, ArtifactBlob> blobs;
+    std::vector<bytea *> owned;
 
-static Tri tri_and(Tri a, Tri b) {
-    if (a == TRI_FALSE || b == TRI_FALSE) return TRI_FALSE;
-    if (a == TRI_TRUE && b == TRI_TRUE) return TRI_TRUE;
-    return TRI_UNKNOWN;
-}
-
-static Tri tri_or(Tri a, Tri b) {
-    if (a == TRI_TRUE || b == TRI_TRUE) return TRI_TRUE;
-    if (a == TRI_FALSE && b == TRI_FALSE) return TRI_FALSE;
-    return TRI_UNKNOWN;
-}
-
-static Tri eval_ast(const AstNode *node, const std::vector<int> &vals) {
-    if (!node) return TRI_UNKNOWN;
-    if (node->type == AstNode::VAR) {
-        // y0 is used as a sentinel for constant FALSE.
-        if (node->var_id == 0) return TRI_FALSE;
-        if (node->var_id <= 0 || node->var_id >= (int)vals.size()) return TRI_UNKNOWN;
-        int v = vals[node->var_id];
-        if (v < 0) return TRI_UNKNOWN;
-        return v ? TRI_TRUE : TRI_FALSE;
-    }
-    Tri l = eval_ast(node->left, vals);
-    Tri r = eval_ast(node->right, vals);
-    return (node->type == AstNode::AND) ? tri_and(l, r) : tri_or(l, r);
-}
-
-static std::string sql_literal(const std::string &v);
-
-static std::string atom_to_sql(const Atom &a) {
-    if (a.kind == AtomKind::JOIN) {
-        return a.left.key() + " = " + a.right.key();
-    }
-    std::string col = a.left.key();
-    if (a.op == ConstOp::LIKE) {
-        if (a.values.empty()) return col + " LIKE ''";
-        return col + " LIKE " + sql_literal(a.values[0]);
-    }
-    if (a.op == ConstOp::IN) {
-        std::string out = col + " IN (";
-        for (size_t i = 0; i < a.values.size(); i++) {
-            if (i > 0) out += ",";
-            out += sql_literal(a.values[i]);
+    bool get(const std::string &name, ArtifactBlob *out)
+    {
+        auto it = blobs.find(name);
+        if (it != blobs.end()) {
+            if (out) *out = it->second;
+            return true;
         }
-        out += ")";
-        return out;
-    }
-    if (a.op == ConstOp::EQ && !a.values.empty()) {
-        return col + " = " + sql_literal(a.values[0]);
-    }
-    if (a.op == ConstOp::NE && !a.values.empty()) {
-        return col + " <> " + sql_literal(a.values[0]);
-    }
-    if (!a.values.empty()) {
-        std::string op;
-        switch (a.op) {
-            case ConstOp::LT: op = "<"; break;
-            case ConstOp::LE: op = "<="; break;
-            case ConstOp::GT: op = ">"; break;
-            case ConstOp::GE: op = ">="; break;
-            default: op = "="; break;
-        }
-        return col + " " + op + " " + sql_literal(a.values[0]);
-    }
-    return col;
-}
-
-static std::string ast_to_sql(const AstNode *node, const std::map<int, std::string> &atom_sql) {
-    if (!node) return "";
-    if (node->type == AstNode::VAR) {
-        if (node->var_id == 0) return "FALSE";
-        auto it = atom_sql.find(node->var_id);
-        if (it != atom_sql.end()) return it->second;
-        return "TRUE";
-    }
-    std::string l = ast_to_sql(node->left, atom_sql);
-    std::string r = ast_to_sql(node->right, atom_sql);
-    std::string op = (node->type == AstNode::AND) ? " AND " : " OR ";
-    return "(" + l + op + r + ")";
-}
-
-static void collect_ast_vars(const AstNode *node, std::set<int> &vars) {
-    if (!node) return;
-    if (node->type == AstNode::VAR) {
-        if (node->var_id > 0)
-            vars.insert(node->var_id);
-        return;
-    }
-    collect_ast_vars(node->left, vars);
-    collect_ast_vars(node->right, vars);
-}
-
-static AstNode *parse_ast_expr(const std::vector<std::string> &toks, size_t &idx);
-
-static AstNode *parse_ast_atom(const std::vector<std::string> &toks, size_t &idx) {
-    if (idx >= toks.size()) return nullptr;
-    const std::string &tok = toks[idx];
-    if (tok == "(") {
-        idx++;
-        AstNode *node = parse_ast_expr(toks, idx);
-        if (idx < toks.size() && toks[idx] == ")") idx++;
-        return node;
-    }
-    if (!tok.empty() && tok[0] == 'y') {
-        AstNode *node = new AstNode();
-        node->type = AstNode::VAR;
-        node->var_id = std::atoi(tok.c_str() + 1);
-        idx++;
-        return node;
-    }
-    return nullptr;
-}
-
-static AstNode *parse_ast_and(const std::vector<std::string> &toks, size_t &idx) {
-    AstNode *left = parse_ast_atom(toks, idx);
-    while (idx < toks.size() && toks[idx] == "and") {
-        idx++;
-        AstNode *right = parse_ast_atom(toks, idx);
-        AstNode *node = new AstNode();
-        node->type = AstNode::AND;
-        node->left = left;
-        node->right = right;
-        left = node;
-    }
-    return left;
-}
-
-static AstNode *parse_ast_expr(const std::vector<std::string> &toks, size_t &idx) {
-    AstNode *left = parse_ast_and(toks, idx);
-    while (idx < toks.size() && toks[idx] == "or") {
-        idx++;
-        AstNode *right = parse_ast_and(toks, idx);
-        AstNode *node = new AstNode();
-        node->type = AstNode::OR;
-        node->left = left;
-        node->right = right;
-        left = node;
-    }
-    return left;
-}
-
-static AstNode *parse_ast_string(const std::string &ast_str) {
-    std::string lower = lower_str(ast_str);
-    std::vector<std::string> toks;
-    for (size_t i = 0; i < lower.size(); ) {
-        char c = lower[i];
-        if (std::isspace(static_cast<unsigned char>(c))) { i++; continue; }
-        if (c == '(' || c == ')') {
-            toks.push_back(std::string(1, c));
-            i++;
-            continue;
-        }
-        if (c == 'y') {
-            size_t j = i + 1;
-            while (j < lower.size() && std::isdigit(static_cast<unsigned char>(lower[j]))) j++;
-            toks.push_back(lower.substr(i, j - i));
-            i = j;
-            continue;
-        }
-        size_t j = i + 1;
-        while (j < lower.size() && std::isalpha(static_cast<unsigned char>(lower[j]))) j++;
-        toks.push_back(lower.substr(i, j - i));
-        i = j;
-    }
-    size_t idx = 0;
-    return parse_ast_expr(toks, idx);
-}
-
-static bool parse_colref(const std::string &s, ColRef *out) {
-    auto pos = s.find('.');
-    if (pos == std::string::npos) return false;
-    out->table = s.substr(0, pos);
-    out->col = s.substr(pos + 1);
-    return true;
-}
-
-static bool parse_schema_key(const std::string &key, ColRef *out, int *class_id, bool *is_join) {
-    if (is_join) *is_join = false;
-    if (class_id) *class_id = -1;
-    if (key.rfind("join:", 0) == 0) {
-        std::string rest = key.substr(5);
-        std::string tablecol = rest;
-        int cid = -1;
-        size_t pos = rest.find(" class=");
-        if (pos != std::string::npos) {
-            tablecol = rest.substr(0, pos);
-            cid = std::atoi(rest.substr(pos + 7).c_str());
-        }
-        if (!parse_colref(tablecol, out)) return false;
-        if (is_join) *is_join = true;
-        if (class_id) *class_id = cid;
+        bytea *b = cf_fetch_file_bytea(name.c_str());
+        if (!b)
+            return false;
+        owned.push_back(b);
+        ArtifactBlob bb;
+        bb.data = (const uint8_t *)VARDATA(b);
+        bb.len = (size_t)(VARSIZE(b) - VARHDRSZ);
+        bb.owned = b;
+        blobs[name] = bb;
+        if (out) *out = bb;
         return true;
     }
-    if (key.rfind("const:", 0) == 0) {
-        std::string rest = key.substr(6);
-        if (!parse_colref(rest, out)) return false;
-        if (is_join) *is_join = false;
-        if (class_id) *class_id = -1;
-        return true;
-    }
-    return false;
-}
-
-static std::vector<std::string> parse_dict(const char *buf, size_t len) {
-    std::vector<std::string> vals;
-    size_t offset = 0;
-    while (offset + 4 <= len) {
-        int32 l = 0;
-        std::memcpy(&l, buf + offset, 4);
-        offset += 4;
-        if (l < 0 || offset + (size_t)l > len) break;
-        vals.emplace_back(buf + offset, buf + offset + l);
-        offset += l;
-    }
-    return vals;
-}
-
-static std::vector<std::string> parse_schema_lines(const std::string &text) {
-    std::vector<std::string> lines;
-    size_t start = 0;
-    while (start < text.size()) {
-        size_t end = text.find('\n', start);
-        if (end == std::string::npos) end = text.size();
-        std::string line = trim_ws(text.substr(start, end - start));
-        if (!line.empty())
-            lines.push_back(line);
-        if (end >= text.size()) break;
-        start = end + 1;
-    }
-    return lines;
-}
-
-struct CtidArray {
-    const int32_t *data = nullptr;
-    uint32 len = 0; // number of int32 entries
 };
 
-static int32 find_rid_linear(const CtidArray &arr, int32 blk, int32 off) {
-    if (!arr.data || arr.len < 2) return -1;
-    uint32 n = arr.len / 2;
-    for (uint32 r = 0; r < n; r++) {
-        int32 b = arr.data[2 * r];
-        int32 o = arr.data[2 * r + 1];
-        if (b == blk && o == off)
-            return (int32)r;
-    }
-    return -1;
-}
+struct TableData {
+    enum class CodeFormat {
+        NONE,
+        CB03_MANIFEST,
+        CB02_SINGLE,
+        RAW,
+    };
 
-static bool parse_number(const std::string &s, double *out) {
-    char *end = nullptr;
-    double v = std::strtod(s.c_str(), &end);
-    if (!end || end == s.c_str() || *end != '\0') return false;
-    *out = v;
-    return true;
-}
-
-enum class DictType { INT, FLOAT, TEXT, BPCHAR, UNKNOWN };
-
-static DictType parse_dict_type_str(const std::string &s) {
-    std::string v = to_lower_str(trim_ws(s));
-    if (v == "int") return DictType::INT;
-    if (v == "float") return DictType::FLOAT;
-    if (v == "bpchar") return DictType::BPCHAR;
-    if (v == "text") return DictType::TEXT;
-    return DictType::UNKNOWN;
-}
-
-static bool dict_type_numeric(DictType t) {
-    return t == DictType::INT || t == DictType::FLOAT;
-}
-
-static std::string rtrim_spaces(std::string s) {
-    while (!s.empty() && s.back() == ' ')
-        s.pop_back();
-    return s;
-}
-
-static bool is_like_prefix_pattern(const std::string &pat, std::string *prefix_out) {
-    if (pat.size() < 2) return false;
-    if (pat.back() != '%') return false;
-    for (size_t i = 0; i + 1 < pat.size(); i++) {
-        if (pat[i] == '%' || pat[i] == '_') return false;
-    }
-    if (prefix_out) *prefix_out = pat.substr(0, pat.size() - 1);
-    return true;
-}
-
-static bool starts_with(const std::string &s, const std::string &prefix) {
-    return s.size() >= prefix.size() &&
-           std::equal(prefix.begin(), prefix.end(), s.begin());
-}
-
-static bool like_match(const std::string &s, const std::string &pat) {
-    /* Minimal Postgres LIKE matcher for % (any sequence) and _ (single char). */
-    size_t si = 0, pi = 0;
-    size_t star_pi = std::string::npos;
-    size_t star_si = 0;
-
-    while (si < s.size()) {
-        if (pi < pat.size() && (pat[pi] == '_' || pat[pi] == s[si])) {
-            si++;
-            pi++;
-            continue;
-        }
-        if (pi < pat.size() && pat[pi] == '%') {
-            while (pi < pat.size() && pat[pi] == '%')
-                pi++;
-            if (pi == pat.size())
-                return true; /* trailing % matches everything */
-            star_pi = pi;
-            star_si = si;
-            continue;
-        }
-        if (star_pi != std::string::npos) {
-            star_si++;
-            si = star_si;
-            pi = star_pi;
-            continue;
-        }
-        return false;
-    }
-    while (pi < pat.size() && pat[pi] == '%')
-        pi++;
-    return pi == pat.size();
-}
-
-static std::vector<uint8_t> build_allowed_tokens(const std::vector<std::string> &dict_vals,
-                                                 const Atom &atom,
-                                                 DictType dict_type) {
-    std::vector<uint8_t> allowed(dict_vals.size(), 0);
-    if (dict_vals.empty()) return allowed;
-
-    const bool numeric_type = dict_type_numeric(dict_type);
-
-    if (atom.op == ConstOp::LIKE) {
-        if (numeric_type) {
-            ereport(ERROR, (errmsg("policy: LIKE requires text dict for %s",
-                                   atom.left.key().c_str())));
-        }
-        if (atom.values.empty()) {
-            ereport(ERROR, (errmsg("policy: LIKE missing pattern for %s",
-                                   atom.left.key().c_str())));
-        }
-        std::string prefix;
-        if (is_like_prefix_pattern(atom.values[0], &prefix)) {
-            if (prefix.empty()) {
-                std::fill(allowed.begin(), allowed.end(), 1);
-                return allowed;
-            }
-            auto it = std::lower_bound(dict_vals.begin(), dict_vals.end(), prefix);
-            size_t idx = (size_t)(it - dict_vals.begin());
-            while (idx < dict_vals.size() && starts_with(dict_vals[idx], prefix)) {
-                allowed[idx] = 1;
-                idx++;
-            }
-            return allowed;
-        }
-
-        /* General LIKE patterns: scan dict values and match with wildcards. */
-        const std::string &pat = atom.values[0];
-        for (size_t i = 0; i < dict_vals.size(); i++) {
-            allowed[i] = like_match(dict_vals[i], pat) ? 1 : 0;
-        }
-        return allowed;
-    }
-
-    if (atom.op == ConstOp::EQ || atom.op == ConstOp::IN || atom.op == ConstOp::NE) {
-        if (numeric_type) {
-            std::vector<double> qvals;
-            qvals.reserve(atom.values.size());
-            for (const auto &v : atom.values) {
-                double dv = 0.0;
-                if (!parse_number(v, &dv)) {
-                    ereport(ERROR, (errmsg("policy: numeric literal parse failed for %s",
-                                           v.c_str())));
-                }
-                qvals.push_back(dv);
-            }
-            for (size_t i = 0; i < dict_vals.size(); i++) {
-                double dv = 0.0;
-                if (!parse_number(dict_vals[i], &dv)) {
-                    ereport(ERROR, (errmsg("policy: numeric dict parse failed for %s",
-                                           atom.left.key().c_str())));
-                }
-                bool hit = false;
-                for (double q : qvals) {
-                    if (dv == q) { hit = true; break; }
-                }
-                if (atom.op == ConstOp::NE) {
-                    allowed[i] = hit ? 0 : 1;
-                } else {
-                    allowed[i] = hit ? 1 : 0;
-                }
-            }
-        } else {
-            const bool bpchar_type = (dict_type == DictType::BPCHAR);
-            for (size_t i = 0; i < dict_vals.size(); i++) {
-                const std::string dict_cmp = bpchar_type ? rtrim_spaces(dict_vals[i]) : dict_vals[i];
-                bool hit = false;
-                for (const auto &q : atom.values) {
-                    const std::string query_cmp = bpchar_type ? rtrim_spaces(q) : q;
-                    if (dict_cmp == query_cmp) { hit = true; break; }
-                }
-                if (atom.op == ConstOp::NE) {
-                    allowed[i] = hit ? 0 : 1;
-                } else {
-                    allowed[i] = hit ? 1 : 0;
-                }
-            }
-        }
-        return allowed;
-    }
-
-    if (!numeric_type) {
-        ereport(ERROR, (errmsg("policy: range operator requires numeric dict for %s",
-                               atom.left.key().c_str())));
-    }
-    if (atom.values.empty()) {
-        ereport(ERROR, (errmsg("policy: range operator missing literal for %s",
-                               atom.left.key().c_str())));
-    }
-    double q = 0.0;
-    if (!parse_number(atom.values[0], &q)) {
-        ereport(ERROR, (errmsg("policy: numeric literal parse failed for %s",
-                               atom.values[0].c_str())));
-    }
-    std::vector<double> dict_nums;
-    dict_nums.reserve(dict_vals.size());
-    for (const auto &v : dict_vals) {
-        double dv = 0.0;
-        if (!parse_number(v, &dv)) {
-            ereport(ERROR, (errmsg("policy: numeric dict parse failed for %s",
-                                   atom.left.key().c_str())));
-        }
-        dict_nums.push_back(dv);
-    }
-    auto it_lo = std::lower_bound(dict_nums.begin(), dict_nums.end(), q);
-    auto it_hi = std::upper_bound(dict_nums.begin(), dict_nums.end(), q);
-    size_t lo = (size_t)(it_lo - dict_nums.begin());
-    size_t hi = (size_t)(it_hi - dict_nums.begin());
-    switch (atom.op) {
-        case ConstOp::LT:
-            for (size_t i = 0; i < lo; i++) allowed[i] = 1;
-            break;
-        case ConstOp::LE:
-            for (size_t i = 0; i < hi; i++) allowed[i] = 1;
-            break;
-        case ConstOp::GT:
-            for (size_t i = hi; i < dict_vals.size(); i++) allowed[i] = 1;
-            break;
-        case ConstOp::GE:
-            for (size_t i = lo; i < dict_vals.size(); i++) allowed[i] = 1;
-            break;
-        default:
-            break;
-    }
-    return allowed;
-}
-
-struct Bitset {
-    std::vector<uint8_t> bytes;
-    size_t nbits = 0;
-    void ensure(size_t bit) {
-        if (bit + 1 > nbits)
-            nbits = bit + 1;
-        size_t need = (nbits + 7) / 8;
-        if (need > bytes.size()) {
-            // Exponential growth avoids O(n^2) reallocation when tokens are discovered in
-            // increasing order (common for large TPCH domains).
-            size_t new_sz = bytes.empty() ? (size_t)1 : bytes.size();
-            while (new_sz < need)
-                new_sz *= 2;
-            bytes.resize(new_sz, 0);
-        }
-    }
-    void set(size_t bit) {
-        ensure(bit);
-        bytes[bit >> 3] |= (uint8_t)(1u << (bit & 7));
-    }
-    bool test(size_t bit) const {
-        if (bit >= nbits) return false;
-        return (bytes[bit >> 3] & (uint8_t)(1u << (bit & 7))) != 0;
-    }
-};
-
-static size_t bitset_popcount(const Bitset &bs, size_t limit_bits) {
-    size_t cnt = 0;
-    size_t n = std::min(limit_bits, bs.nbits);
-    for (size_t i = 0; i < n; i++) {
-        if (bs.test(i)) cnt++;
-    }
-    return cnt;
-}
-
-template <typename F>
-static void bitset_for_each_set_bit(const Bitset &bs, size_t limit_bits, F fn) {
-    const size_t nbits = std::min(limit_bits, bs.nbits);
-    const size_t nbytes = (nbits + 7) / 8;
-    const size_t avail = std::min(nbytes, bs.bytes.size());
-    for (size_t i = 0; i < avail; i++) {
-        uint8_t b = bs.bytes[i];
-        while (b != 0) {
-            unsigned int v = (unsigned int)b;
-            int lsb = __builtin_ctz(v);
-            size_t bit = i * 8 + (size_t)lsb;
-            if (bit >= nbits) break;
-            fn(bit);
-            b &= (uint8_t)(b - 1);
-        }
-    }
-}
-
-static void bitset_set_all(Bitset &bs, size_t nbits) {
-    bs.nbits = nbits;
-    size_t bytes = (nbits + 7) / 8;
-    bs.bytes.assign(bytes, 0xFF);
-    if (nbits % 8) {
-        uint8_t mask = (uint8_t)((1u << (nbits % 8)) - 1u);
-        bs.bytes.back() &= mask;
-    }
-}
-
-static bool bitset_equals(const Bitset &a, const Bitset &b, size_t limit_bits) {
-    size_t nbits = std::min(limit_bits, std::min(a.nbits, b.nbits));
-    size_t nbytes = (nbits + 7) / 8;
-    for (size_t i = 0; i < nbytes; i++) {
-        uint8_t mask = 0xFF;
-        if (i + 1 == nbytes && (nbits % 8) != 0)
-            mask = (uint8_t)((1u << (nbits % 8)) - 1u);
-        uint8_t av = (i < a.bytes.size()) ? (a.bytes[i] & mask) : 0;
-        uint8_t bv = (i < b.bytes.size()) ? (b.bytes[i] & mask) : 0;
-        if (av != bv) return false;
-    }
-    return true;
-}
-
-static bool bitset_intersect(Bitset &dst, const Bitset &src) {
-    bool changed = false;
-    size_t n = dst.bytes.size();
-    size_t m = src.bytes.size();
-    size_t nmin = std::min(n, m);
-    for (size_t i = 0; i < nmin; i++) {
-        uint8_t before = dst.bytes[i];
-        dst.bytes[i] &= src.bytes[i];
-        if (dst.bytes[i] != before) changed = true;
-    }
-    for (size_t i = nmin; i < n; i++) {
-        if (dst.bytes[i] != 0) {
-            dst.bytes[i] = 0;
-            changed = true;
-        }
-    }
-    return changed;
-}
-
-static std::string bitset_first_tokens(const Bitset &bs, size_t limit) {
-    std::string out;
-    size_t count = 0;
-    for (size_t i = 0; i < bs.nbits && count < limit; i++) {
-        if (bs.test(i)) {
-            if (!out.empty()) out += ",";
-            out += std::to_string(i);
-            count++;
-        }
-    }
-    if (out.empty()) out = "<none>";
-    return out;
-}
-
-static std::string sql_escape(const std::string &s) {
-    std::string out;
-    out.reserve(s.size() + 8);
-    for (char c : s) {
-        if (c == '\'') out += "''";
-        else out.push_back(c);
-    }
-    return out;
-}
-
-static std::string sql_literal(const std::string &v) {
-    double dv = 0.0;
-    if (parse_number(v, &dv)) return v;
-    return "'" + sql_escape(v) + "'";
-}
-
-struct TableInfo {
     std::string name;
-    const int32_t *code = nullptr;
-    size_t code_len = 0;
-    std::vector<int32_t> code_owned;
-    int cb02_ntoks = -1;
-    uint32 cb02_nrows = 0;
-    /* Chunked CB03 code_base manifest (code chunks fetched lazily from public.files). */
-    bool cb03_chunked = false;
+
+    std::vector<std::string> meta_cols;            // table.col list in code order
+    std::unordered_map<std::string, int> col_idx;  // table.col -> index
+
+    std::vector<int32_t> ctid_blk;
+    std::vector<int32_t> ctid_off;
+
+    CodeFormat code_format = CodeFormat::NONE;
+    ArtifactBlob code_base;
     uint32 cb03_total_rows = 0;
     uint32 cb03_chunk_rows = 0;
-    int cb03_chunk_count = 0;
     int cb03_ntoks = -1;
-    mutable int cb03_cache_chunk = -1;
-    mutable uint32 cb03_cache_base_rid = 0;
-    mutable uint32 cb03_cache_nrows = 0;
-    mutable std::vector<int32_t> cb03_cache_code;
-    uint32 n_rows = 0;
-    std::map<std::string, int> schema_offset;
-    int stride = 0;
-    std::vector<int> join_class_ids;
-    std::vector<int> join_token_idx;
-    struct JoinAtomInfo {
-        int atom_id;
-        int class_id;
-        int token_idx;
-        std::string other_table;
-    };
-    std::vector<JoinAtomInfo> join_atoms;
-    std::vector<int> const_atom_ids;
-    std::vector<int> const_token_idx;
+    int cb03_chunk_count = 0;
 
-    const int32_t *row_ptr(uint32 rid) const {
-        if (rid >= n_rows)
-            return nullptr;
-        if (!cb03_chunked) {
-            if (!code || stride <= 0)
-                return nullptr;
-            return code + (size_t)rid * (size_t)stride;
-        }
-        if (stride <= 0 || cb03_chunk_rows == 0 || cb03_chunk_count <= 0)
-            return nullptr;
-        int chunk = (int)(rid / cb03_chunk_rows);
-        if (chunk < 0 || chunk >= cb03_chunk_count)
-            return nullptr;
-        if (chunk != cb03_cache_chunk) {
-            std::string fname = name + "_code_chunk_" + std::to_string(chunk);
-            bytea *b = cf_fetch_file_bytea(fname.c_str());
-            if (!b)
-                ereport(ERROR, (errmsg("policy: missing code chunk file %s", fname.c_str())));
-            const void *data = (const void *) VARDATA(b);
-            size_t len = (size_t) VARSIZE(b) - VARHDRSZ;
-            std::vector<int32_t> decoded;
-            int ntoks = 0;
-            uint32 nrows = 0;
-            if (!decode_code_base_v2(data, len, &decoded, &ntoks, &nrows))
-                ereport(ERROR,
-                        (errmsg("policy: invalid CB02 chunk %s bytes=%zu", fname.c_str(), len)));
-            if (ntoks != (stride - 1))
-                ereport(ERROR,
-                        (errmsg("policy: chunk ntoks mismatch file=%s ntoks=%d stride=%d", fname.c_str(), ntoks, stride)));
-            uint32 base = (uint32)chunk * cb03_chunk_rows;
-            for (uint32 r = 0; r < nrows; r++) {
-                size_t off = (size_t)r * (size_t)stride;
-                if (off < decoded.size())
-                    decoded[off] = decoded[off] + (int32_t)base;
-            }
-            cb03_cache_code.swap(decoded);
-            cb03_cache_chunk = chunk;
-            cb03_cache_base_rid = base;
-            cb03_cache_nrows = nrows;
-            pfree(b);
-        }
-        uint32 local = rid - cb03_cache_base_rid;
-        if (local >= cb03_cache_nrows)
-            return nullptr;
-        size_t off = (size_t)local * (size_t)stride;
-        if (off + (size_t)stride > cb03_cache_code.size())
-            return nullptr;
-        return cb03_cache_code.data() + off;
-    }
+    uint32 nrows = 0;
+    int ntoks = 0;
+
+    std::set<int> needed_cols;
+    std::vector<std::vector<int32_t>> decoded_cols;  // indexed by meta col index
+};
+
+struct ClausePredicate {
+    int atom_id = -1;
+    int col_idx = -1;
+    TokenBitset allowed;
+    const std::vector<int32_t> *col_data = nullptr;
+};
+
+struct ClauseClassGroup {
+    int class_id = -1;
+    int class_pos = -1;
+    std::vector<int> col_idxs;
+    std::vector<const std::vector<int32_t> *> col_data;
+};
+
+struct ClauseTablePlan {
+    std::string table;
+    std::vector<ClauseClassGroup> class_groups;
+    std::vector<ClausePredicate> predicates;
+};
+
+struct ClausePlan {
+    std::string target;
+    std::vector<int> atom_ids;
+    std::vector<ClauseTablePlan> tables;
+    std::vector<int> join_classes;
+    bool target_present = false;
+    bool unsat = false;
+    bool acyclic_hint = false;
+};
+
+struct TargetPlan {
+    std::string target;
+    std::vector<ClausePlan> clauses;
 };
 
 struct Loaded {
-    std::map<std::string, TableInfo> tables;
-    std::map<std::string, CtidArray> ctid_map;
-    std::map<std::string, std::vector<std::string>> dicts;
-    std::map<std::string, DictType> dict_types;
-    std::set<std::string> target_set;
-    std::map<std::string, AstNode*> target_ast;
-    std::map<std::string, AstNode*> target_perm_ast;
-    std::map<std::string, AstNode*> target_rest_ast;
-    std::map<std::string, std::set<int>> target_vars;
-    std::map<std::string, std::set<int>> target_join_classes;
-    bool has_multi_join = false;
-    std::vector<Atom> atoms;
-    std::vector<Atom*> atom_by_id;
-    std::map<std::string, int> join_class_by_col;
+    ArtifactStore artifacts;
+
+    std::unordered_map<std::string, TableData> tables;
+    std::unordered_map<std::string, std::vector<std::string>> dicts;
+    std::unordered_map<std::string, DictType> dict_types;
+
+    std::unordered_map<int, Atom> atoms_by_id;
+
+    std::unordered_map<std::string, int> join_class_by_col;
     std::map<int, std::vector<std::string>> join_class_cols;
-    int class_count = 0;
+
+    std::vector<std::string> target_order;
+    std::unordered_map<std::string, TargetPlan> targets;
+
+    std::vector<int> class_domain;  // max_token + 1
 };
 
-static bool
-cf_build_block_words_from_rid_bits(const Loaded &loaded,
-                                  const std::string &table,
-                                  const uint8 *rid_bits,
-                                  uint32 n_rows,
-                                  uint64 **out_words,
-                                  uint32 *out_blocks,
-                                  size_t *out_nbytes)
+struct BuildProfile {
+    double artifact_parse_ms = 0.0;
+    double atoms_ms = 0.0;
+    double propagate_ms = 0.0;
+    double decode_ms = 0.0;
+    int prop_iters = 0;
+    double total_ms = 0.0;
+};
+
+static bool has_magic(const ArtifactBlob &b, const char *magic, size_t n)
 {
-    if (out_words) *out_words = nullptr;
-    if (out_blocks) *out_blocks = 0;
-    if (out_nbytes) *out_nbytes = 0;
-    if (n_rows == 0)
-        return true;
+    return b.data && b.len >= n && std::memcmp(b.data, magic, n) == 0;
+}
 
-    auto it_ctid = loaded.ctid_map.find(table);
-    if (it_ctid == loaded.ctid_map.end() || !it_ctid->second.data || it_ctid->second.len < 2)
-        ereport(ERROR, (errmsg("policy: missing ctid map for table %s", table.c_str())));
-    const CtidArray &arr = it_ctid->second;
-    if ((arr.len % 2u) != 0u)
-        ereport(ERROR, (errmsg("policy: malformed ctid map for table %s len=%u", table.c_str(), (unsigned) arr.len)));
-    uint32 ctid_rows = arr.len / 2u;
-    if (ctid_rows != n_rows)
-        ereport(ERROR,
-                (errmsg("policy: ctid rows mismatch for table %s ctid_rows=%u n_rows=%u",
-                        table.c_str(), (unsigned) ctid_rows, (unsigned) n_rows)));
-
-    int32 max_blk = -1;
-    for (uint32 r = 0; r < n_rows; r++) {
-        int32 b = arr.data[2 * r];
-        if (b > max_blk) max_blk = b;
-    }
-    if (max_blk < 0)
-        max_blk = 0;
-    uint32 blocks = (uint32) max_blk + 1u;
-    size_t nwords = (size_t) blocks * (size_t) CF_WORDS_PER_BLOCK;
-    uint64 *words = (uint64 *) palloc0(nwords * sizeof(uint64));
-
-    for (uint32 r = 0; r < n_rows; r++) {
-        if (rid_bits && ((rid_bits[r >> 3] & (uint8)(1u << (r & 7))) == 0))
-            continue;
-        int32 blk = arr.data[2 * r];
-        int32 off = arr.data[2 * r + 1];
-        cf_block_words_set(words, blocks, blk, off);
-    }
-
-    if (out_words) *out_words = words;
-    if (out_blocks) *out_blocks = blocks;
-    if (out_nbytes) *out_nbytes = nwords * sizeof(uint64);
+static bool parse_cb03_manifest(const ArtifactBlob &b,
+                                uint32 *out_total,
+                                uint32 *out_chunk_rows,
+                                int *out_ntoks,
+                                int *out_chunk_count)
+{
+    if (!out_total || !out_chunk_rows || !out_ntoks || !out_chunk_count)
+        return false;
+    if (!has_magic(b, "CB03", 4) || b.len < 20)
+        return false;
+    int32_t total_raw = 0;
+    int32_t chunk_rows_raw = 0;
+    int32_t ntoks_raw = 0;
+    int32_t chunks_raw = 0;
+    std::memcpy(&total_raw, b.data + 4, sizeof(int32_t));
+    std::memcpy(&chunk_rows_raw, b.data + 8, sizeof(int32_t));
+    std::memcpy(&ntoks_raw, b.data + 12, sizeof(int32_t));
+    std::memcpy(&chunks_raw, b.data + 16, sizeof(int32_t));
+    if (total_raw < 0 || chunk_rows_raw < 0 || ntoks_raw < 0 || chunks_raw < 0)
+        return false;
+    *out_total = (uint32)total_raw;
+    *out_chunk_rows = (uint32)chunk_rows_raw;
+    *out_ntoks = (int)ntoks_raw;
+    *out_chunk_count = (int)chunks_raw;
     return true;
 }
 
-static DictType dict_type_for_key(const Loaded &loaded, const std::string &key) {
-    auto it = loaded.dict_types.find(key);
-    if (it != loaded.dict_types.end()) return it->second;
-    return DictType::UNKNOWN;
-}
-
-struct AstInfo {
-    std::set<std::string> tables;
-    bool has_join = false;
-};
-
-static AstInfo collect_ast_info(const Loaded &loaded, const AstNode *node) {
-    AstInfo info;
-    if (!node) return info;
-    if (node->type == AstNode::VAR) {
-        int id = node->var_id;
-        if (id > 0 && id < (int)loaded.atom_by_id.size()) {
-            const Atom *ap = loaded.atom_by_id[id];
-            if (ap) {
-                if (ap->kind == AtomKind::JOIN) {
-                    info.has_join = true;
-                    info.tables.insert(ap->left.table);
-                    info.tables.insert(ap->right.table);
-                } else {
-                    info.tables.insert(ap->left.table);
-                }
-            }
-        }
-        return info;
-    }
-    AstInfo l = collect_ast_info(loaded, node->left);
-    AstInfo r = collect_ast_info(loaded, node->right);
-    info.has_join = l.has_join || r.has_join;
-    info.tables = l.tables;
-    info.tables.insert(r.tables.begin(), r.tables.end());
-    return info;
-}
-
-struct DerivedVar {
-    int id = -1;
-    std::string table;
-    AstNode *ast = nullptr;
-    std::set<int> vars;
-};
-
-static AstNode *clone_ast(const AstNode *node) {
-    if (!node) return nullptr;
-    AstNode *n = new AstNode();
-    n->type = node->type;
-    n->var_id = node->var_id;
-    n->left = clone_ast(node->left);
-    n->right = clone_ast(node->right);
-    return n;
-}
-
-static AstNode *extract_local_subtrees(const Loaded &loaded,
-                                       const AstNode *node,
-                                       const std::string &target,
-                                       std::vector<DerivedVar> &out,
-                                       int &next_id,
-                                       bool parent_extracted = false)
+static bool decode_cb02_append(const ArtifactBlob &b,
+                               int expect_ntoks,
+                               std::function<void(uint32, const uint8_t *, int)> on_row,
+                               uint32 rid_base,
+                               uint32 *out_rows,
+                               int *out_ntoks)
 {
-    if (!node) return nullptr;
-    AstInfo info = collect_ast_info(loaded, node);
-    if (!parent_extracted && !info.has_join && info.tables.size() == 1) {
-        const std::string &tbl = *info.tables.begin();
-        if (tbl != target) {
-            DerivedVar dv;
-            dv.id = next_id++;
-            dv.table = tbl;
-            dv.ast = clone_ast(node);
-            collect_ast_vars(node, dv.vars);
-            out.push_back(dv);
-            AstNode *var = new AstNode();
-            var->type = AstNode::VAR;
-            var->var_id = dv.id;
-            return var;
-        }
-    }
-    if (node->type == AstNode::VAR) {
-        AstNode *n = new AstNode();
-        n->type = AstNode::VAR;
-        n->var_id = node->var_id;
-        return n;
-    }
-    AstNode *n = new AstNode();
-    n->type = node->type;
-    n->left = extract_local_subtrees(loaded, node->left, target, out, next_id, parent_extracted);
-    n->right = extract_local_subtrees(loaded, node->right, target, out, next_id, parent_extracted);
-    return n;
-}
-
-struct Hubs {
-    std::vector<std::map<std::string, Bitset>> present_by_class;
-    std::map<int, std::vector<uint8_t>> const_allowed;
-    std::vector<size_t> max_tok;
-};
-
-// NOTE: We intentionally avoid a "sig_by_row: vector<string>" pipeline here.
-// With millions of rows, one heap allocation per row causes massive RSS and
-// allocator overhead. The active implementation does streaming signature
-// binning and only stores one signature per *bin* (flat byte slab), plus a
-// row_to_bin map.
-
-static bool load_phase(const PolicyArtifactC *arts, int art_count,
-                       const PolicyEngineInputC *in, Loaded *out)
-{
-    if (!arts || art_count <= 0 || !in || !out)
+    if (!has_magic(b, "CB02", 4) || b.len < 12)
         return false;
-    const bool contract = debug_contract_enabled();
-    const bool contract_mode = contract_mode_enabled();
+    int32_t nrows_raw = 0;
+    int32_t payload_len_raw = 0;
+    std::memcpy(&nrows_raw, b.data + 4, sizeof(int32_t));
+    std::memcpy(&payload_len_raw, b.data + 8, sizeof(int32_t));
+    if (nrows_raw < 0 || payload_len_raw < 0)
+        return false;
+    uint32 nrows = (uint32)nrows_raw;
+    size_t payload_len = (size_t)payload_len_raw;
+    if (12 + payload_len != b.len)
+        return false;
 
-    for (int i = 0; i < in->target_count; i++) {
-        if (!in->target_tables || !in->target_tables[i]) continue;
-        std::string t = in->target_tables[i];
-        out->target_set.insert(t);
-        const char *astr = (in->target_asts && in->target_asts[i]) ? in->target_asts[i] : "";
-        const char *pstr = (in->target_perm_asts && in->target_perm_asts[i]) ? in->target_perm_asts[i] : "";
-        const char *rstr = (in->target_rest_asts && in->target_rest_asts[i]) ? in->target_rest_asts[i] : "";
-        if (astr && astr[0] != '\0') {
-            AstNode *node = parse_ast_string(astr);
-            out->target_ast[t] = node;
-            collect_ast_vars(node, out->target_vars[t]);
-        } else {
-            out->target_ast[t] = nullptr;
-        }
-        if (pstr && pstr[0] != '\0') {
-            out->target_perm_ast[t] = parse_ast_string(pstr);
-        } else {
-            out->target_perm_ast[t] = nullptr;
-        }
-        if (rstr && rstr[0] != '\0') {
-            out->target_rest_ast[t] = parse_ast_string(rstr);
-        } else {
-            out->target_rest_ast[t] = nullptr;
-        }
+    const uint8_t *p = b.data + 12;
+    const uint8_t *end = p + payload_len;
+    int ntoks_seen = -1;
+
+    for (uint32 r = 0; r < nrows; r++) {
+        if (p + sizeof(uint16_t) > end)
+            return false;
+        uint16_t nt = 0;
+        std::memcpy(&nt, p, sizeof(uint16_t));
+        p += sizeof(uint16_t);
+        if (ntoks_seen < 0)
+            ntoks_seen = (int)nt;
+        else if (ntoks_seen != (int)nt)
+            return false;
+        if (expect_ntoks >= 0 && (int)nt != expect_ntoks)
+            return false;
+        size_t bytes = (size_t)nt * sizeof(int32_t);
+        if (p + bytes > end)
+            return false;
+        on_row(rid_base + r, p, (int)nt);
+        p += bytes;
     }
 
-    out->atoms.reserve(in->atom_count);
+    if (p != end)
+        return false;
+
+    if (out_rows) *out_rows = nrows;
+    if (out_ntoks) *out_ntoks = ntoks_seen;
+    return true;
+}
+
+static std::vector<std::string> parse_dict_values(const ArtifactBlob &b)
+{
+    std::vector<std::string> out;
+    if (!b.data || b.len == 0)
+        return out;
+    const char *ptr = (const char *)b.data;
+    int len = (int)b.len;
+    int off = 0;
+    while (off + 4 <= len) {
+        int32 slen = 0;
+        std::memcpy(&slen, ptr + off, 4);
+        off += 4;
+        if (slen < 0 || off + slen > len)
+            break;
+        out.emplace_back(ptr + off, ptr + off + slen);
+        off += slen;
+    }
+    return out;
+}
+
+static bool load_atoms(const PolicyEngineInputC *in, Loaded *out)
+{
+    if (!in || !out)
+        return false;
+
+    auto t0 = Clock::now();
     for (int i = 0; i < in->atom_count; i++) {
         const PolicyAtomC *pa = &in->atoms[i];
-        if (!pa->lhs_schema_key) continue;
-        Atom atom;
-        atom.id = pa->atom_id;
-        atom.join_class_id = pa->join_class_id;
-        atom.lhs_schema_key = pa->lhs_schema_key ? pa->lhs_schema_key : "";
-        atom.rhs_schema_key = pa->rhs_schema_key ? pa->rhs_schema_key : "";
+        if (!pa || !pa->lhs_schema_key)
+            continue;
+
+        Atom a;
+        a.id = pa->atom_id;
+        a.join_class_id = pa->join_class_id;
+        a.lhs_schema_key = pa->lhs_schema_key ? pa->lhs_schema_key : "";
+        a.rhs_schema_key = pa->rhs_schema_key ? pa->rhs_schema_key : "";
+
         if (pa->kind == POLICY_ATOM_JOIN_EQ) {
-            atom.kind = AtomKind::JOIN;
+            a.kind = AtomKind::JOIN;
             ColRef lref, rref;
             int cid = -1;
             bool is_join = false;
-            if (!parse_schema_key(atom.lhs_schema_key, &lref, &cid, &is_join))
+            if (!parse_schema_key(a.lhs_schema_key, &lref, &cid, &is_join) || !is_join)
                 return false;
-            if (!parse_schema_key(atom.rhs_schema_key, &rref, &cid, &is_join))
+            if (!parse_schema_key(a.rhs_schema_key, &rref, &cid, &is_join) || !is_join)
                 return false;
-            atom.left = lref;
-            atom.right = rref;
+            a.left = lref;
+            a.right = rref;
+            if (a.join_class_id < 0)
+                a.join_class_id = cid;
         } else if (pa->kind == POLICY_ATOM_COL_CONST) {
-            atom.kind = AtomKind::CONST;
+            a.kind = AtomKind::CONST;
             ColRef lref;
             int cid = -1;
             bool is_join = false;
-            if (!parse_schema_key(atom.lhs_schema_key, &lref, &cid, &is_join))
+            if (!parse_schema_key(a.lhs_schema_key, &lref, &cid, &is_join))
                 return false;
-            atom.left = lref;
-            if (pa->op == POLICY_OP_EQ) atom.op = ConstOp::EQ;
-            else if (pa->op == POLICY_OP_NE) atom.op = ConstOp::NE;
-            else if (pa->op == POLICY_OP_IN) atom.op = ConstOp::IN;
-            else if (pa->op == POLICY_OP_LIKE) atom.op = ConstOp::LIKE;
-            else if (pa->op == POLICY_OP_LT) atom.op = ConstOp::LT;
-            else if (pa->op == POLICY_OP_LE) atom.op = ConstOp::LE;
-            else if (pa->op == POLICY_OP_GT) atom.op = ConstOp::GT;
-            else if (pa->op == POLICY_OP_GE) atom.op = ConstOp::GE;
+            a.left = lref;
+
+            switch (pa->op) {
+                case POLICY_OP_EQ: a.op = ConstOp::EQ; break;
+                case POLICY_OP_IN: a.op = ConstOp::IN; break;
+                case POLICY_OP_LIKE: a.op = ConstOp::LIKE; break;
+                case POLICY_OP_LT: a.op = ConstOp::LT; break;
+                case POLICY_OP_LE: a.op = ConstOp::LE; break;
+                case POLICY_OP_GT: a.op = ConstOp::GT; break;
+                case POLICY_OP_GE: a.op = ConstOp::GE; break;
+                case POLICY_OP_NE: a.op = ConstOp::NE; break;
+                default: a.op = ConstOp::EQ; break;
+            }
             for (int v = 0; v < pa->const_count; v++) {
                 if (pa->const_values && pa->const_values[v])
-                    atom.values.push_back(pa->const_values[v]);
+                    a.values.push_back(pa->const_values[v]);
             }
         } else {
             continue;
         }
-        out->atoms.push_back(atom);
+
+        out->atoms_by_id[a.id] = std::move(a);
     }
 
-    for (auto &a : out->atoms) {
-        if (a.kind == AtomKind::JOIN) {
-            if (a.join_class_id < 0)
-                return false;
+    auto t1 = Clock::now();
+    CF_TRACE_LOG("policy: atom_parse_ms=%.3f", Ms(t1 - t0).count());
+    return true;
+}
+
+static bool load_artifact_metadata(const PolicyArtifactC *arts, int art_count, Loaded *out)
+{
+    if (!arts || art_count <= 0 || !out)
+        return false;
+
+    for (int i = 0; i < art_count; i++) {
+        if (!arts[i].name || !arts[i].data)
+            continue;
+        ArtifactBlob bb;
+        bb.data = (const uint8_t *)arts[i].data;
+        bb.len = arts[i].len;
+        bb.owned = nullptr;
+        out->artifacts.blobs[arts[i].name] = bb;
+    }
+
+    ArtifactBlob join_classes_blob;
+    if (out->artifacts.get("meta/join_classes", &join_classes_blob) && join_classes_blob.data) {
+        std::string txt((const char *)join_classes_blob.data, join_classes_blob.len);
+        auto lines = split_lines(txt);
+        for (const std::string &line : lines) {
+            auto cpos = line.find("class=");
+            auto cols_pos = line.find("cols=");
+            if (cpos == std::string::npos || cols_pos == std::string::npos)
+                continue;
+            int cid = std::atoi(line.c_str() + cpos + 6);
+            std::string list = line.substr(cols_pos + 5);
+            std::stringstream ss(list);
+            std::string item;
+            while (std::getline(ss, item, ',')) {
+                item = trim_ws(item);
+                if (item.empty()) continue;
+                out->join_class_cols[cid].push_back(item);
+                out->join_class_by_col[item] = cid;
+            }
+        }
+    }
+
+    for (const auto &kv : out->atoms_by_id) {
+        const Atom &a = kv.second;
+        if (a.kind == AtomKind::JOIN && a.join_class_id >= 0) {
             out->join_class_by_col[a.left.key()] = a.join_class_id;
             out->join_class_by_col[a.right.key()] = a.join_class_id;
-        } else if (a.join_class_id >= 0) {
+            out->join_class_cols[a.join_class_id].push_back(a.left.key());
+            out->join_class_cols[a.join_class_id].push_back(a.right.key());
+        } else if (a.kind == AtomKind::CONST && a.join_class_id >= 0) {
             out->join_class_by_col[a.left.key()] = a.join_class_id;
-        }
-    }
-    for (const auto &kv : out->join_class_by_col) {
-        if (kv.second + 1 > out->class_count)
-            out->class_count = kv.second + 1;
-    }
-    if (out->class_count == 0 && !out->atoms.empty())
-        out->class_count = 1;
-
-    bool has_join_atoms = false;
-    for (const auto &a : out->atoms) {
-        if (a.kind == AtomKind::JOIN) {
-            has_join_atoms = true;
-            break;
+            out->join_class_cols[a.join_class_id].push_back(a.left.key());
         }
     }
 
-    std::map<std::string, std::set<std::string>> table_join_cols;
-    std::map<std::string, std::set<std::string>> table_const_cols;
-    for (auto &a : out->atoms) {
-        if (a.kind == AtomKind::JOIN) {
-            table_join_cols[a.left.table].insert(a.left.key());
-            table_join_cols[a.right.table].insert(a.right.key());
-        } else {
-            table_const_cols[a.left.table].insert(a.left.key());
-            if (a.join_class_id >= 0)
-                table_join_cols[a.left.table].insert(a.left.key());
-        }
+    for (auto &kv : out->join_class_cols) {
+        auto &v = kv.second;
+        std::sort(v.begin(), v.end());
+        v.erase(std::unique(v.begin(), v.end()), v.end());
     }
 
-    std::map<std::string, std::string> schema_text;
-    std::map<std::string, int> stride_map;
-    std::map<std::string, std::vector<std::string>> cols_map;
-    const std::string schema_suffix = "_code_schema";
-    const std::string stride_suffix = "_code_stride";
-    const size_t schema_len = schema_suffix.size();
-    const size_t stride_len = stride_suffix.size();
-    bool saw_join_classes = false;
-    size_t join_classes_bytes = 0;
-    for (int i = 0; i < art_count; i++) {
-        const char *art_name = arts[i].name ? arts[i].name : "(null)";
-        if (contract)
-            CF_TRACE_LOG( "policy_contract: artifact name=%s bytes=%zu",
-                 art_name, (size_t)arts[i].len);
-        if (!arts[i].name || !arts[i].data) continue;
-        std::string name = arts[i].name;
-        if (name == "meta/join_classes") {
-            saw_join_classes = true;
-            join_classes_bytes = arts[i].len;
-            std::string jc_txt((const char *)arts[i].data, arts[i].len);
-            auto lines = split_lines(jc_txt);
-            for (const auto &line : lines) {
-                size_t cpos = line.find("class=");
-                size_t cols = line.find("cols=");
-                if (cpos == std::string::npos || cols == std::string::npos)
-                    continue;
-                int cid = std::atoi(line.c_str() + cpos + 6);
-                std::string list = line.substr(cols + 5);
-                std::stringstream ss(list);
-                std::string item;
-                while (std::getline(ss, item, ',')) {
-                    while (!item.empty() && std::isspace((unsigned char)item.front()))
-                        item.erase(item.begin());
-                    while (!item.empty() && std::isspace((unsigned char)item.back()))
-                        item.pop_back();
-                    if (!item.empty())
-                        out->join_class_cols[cid].push_back(item);
-                }
+    for (const auto &kv : out->artifacts.blobs) {
+        const std::string &name = kv.first;
+        const ArtifactBlob &bb = kv.second;
+
+        if (name.rfind("meta/cols/", 0) == 0) {
+            std::string table = name.substr(std::strlen("meta/cols/"));
+            TableData &ti = out->tables[table];
+            ti.name = table;
+            std::string txt((const char *)bb.data, bb.len);
+            ti.meta_cols = split_lines(txt);
+            ti.col_idx.clear();
+            for (size_t i = 0; i < ti.meta_cols.size(); i++) {
+                ti.col_idx[ti.meta_cols[i]] = (int)i;
             }
             continue;
         }
-        if (name.rfind("meta/cols/", 0) == 0) {
-            std::string table = name.substr(strlen("meta/cols/"));
-            cols_map[table] = parse_schema_lines(std::string((const char *)arts[i].data, arts[i].len));
-        } else if (name.size() > 10 && name.substr(name.size() - 10) == "_code_base") {
-            std::string table = name.substr(0, name.size() - 10);
-            TableInfo &ti = out->tables[table];
+
+        if (name.rfind("dict/", 0) == 0) {
+            std::string rest = name.substr(std::strlen("dict/"));
+            auto p = rest.find('/');
+            if (p == std::string::npos) continue;
+            std::string key = rest.substr(0, p) + "." + rest.substr(p + 1);
+            out->dicts[key] = parse_dict_values(bb);
+            continue;
+        }
+
+        if (name.rfind("meta/dict_type/", 0) == 0) {
+            std::string rest = name.substr(std::strlen("meta/dict_type/"));
+            auto p = rest.find('/');
+            if (p == std::string::npos) continue;
+            std::string key = rest.substr(0, p) + "." + rest.substr(p + 1);
+            std::string val((const char *)bb.data, bb.len);
+            out->dict_types[key] = parse_dict_type_str(val);
+            continue;
+        }
+
+        if (name.size() > 5 && name.substr(name.size() - 5) == "_ctid") {
+            std::string table = name.substr(0, name.size() - 5);
+            TableData &ti = out->tables[table];
             ti.name = table;
-            if (has_code_base_v2_header(arts[i].data, arts[i].len)) {
-                std::vector<int32_t> decoded;
-                int ntoks = 0;
-                uint32 nrows = 0;
-                if (!decode_code_base_v2(arts[i].data, arts[i].len, &decoded, &ntoks, &nrows))
-                    ereport(ERROR,
-                            (errmsg("policy: invalid CB02 code_base artifact table=%s bytes=%zu",
-                                    table.c_str(), (size_t)arts[i].len)));
-                ti.code_owned.swap(decoded);
-                ti.code = ti.code_owned.empty() ? nullptr : ti.code_owned.data();
-                ti.code_len = ti.code_owned.size();
-                ti.cb02_ntoks = ntoks;
-                ti.cb02_nrows = nrows;
-            } else if (has_code_base_v3_manifest(arts[i].data, arts[i].len)) {
-                uint32 total = 0;
-                uint32 chunk_rows = 0;
-                int ntoks = 0;
-                int chunks = 0;
-                if (!parse_code_base_v3_manifest(arts[i].data, arts[i].len, &total, &chunk_rows, &ntoks, &chunks))
-                    ereport(ERROR,
-                            (errmsg("policy: invalid CB03 code_base manifest table=%s bytes=%zu",
-                                    table.c_str(), (size_t)arts[i].len)));
-                ti.cb03_chunked = true;
+            size_t n = bb.len / sizeof(int32_t);
+            if ((n % 2u) != 0u)
+                ereport(ERROR,
+                        (errmsg("policy: invalid ctid artifact %s length=%zu", name.c_str(), bb.len)));
+            ti.ctid_blk.resize(n / 2u);
+            ti.ctid_off.resize(n / 2u);
+            const int32_t *arr = (const int32_t *)bb.data;
+            for (size_t i = 0; i < n / 2u; i++) {
+                ti.ctid_blk[i] = arr[2 * i];
+                ti.ctid_off[i] = arr[2 * i + 1];
+            }
+            continue;
+        }
+
+        if (name.size() > 10 && name.substr(name.size() - 10) == "_code_base") {
+            std::string table = name.substr(0, name.size() - 10);
+            TableData &ti = out->tables[table];
+            ti.name = table;
+            ti.code_base = bb;
+
+            uint32 total = 0;
+            uint32 chunk_rows = 0;
+            int ntoks = -1;
+            int chunks = 0;
+            if (parse_cb03_manifest(bb, &total, &chunk_rows, &ntoks, &chunks)) {
+                ti.code_format = TableData::CodeFormat::CB03_MANIFEST;
                 ti.cb03_total_rows = total;
                 ti.cb03_chunk_rows = chunk_rows;
-                ti.cb03_chunk_count = chunks;
                 ti.cb03_ntoks = ntoks;
-                /* Reuse cb02_* fields for downstream consistency checks (ntoks/rows invariants). */
-                ti.cb02_ntoks = ntoks;
-                ti.cb02_nrows = total;
+                ti.cb03_chunk_count = chunks;
+            } else if (has_magic(bb, "CB02", 4)) {
+                ti.code_format = TableData::CodeFormat::CB02_SINGLE;
             } else {
-                ti.code = (const int32_t *)arts[i].data;
-                ti.code_len = arts[i].len / sizeof(int32_t);
+                ti.code_format = TableData::CodeFormat::RAW;
             }
-        } else if (name.size() > 5 && name.substr(name.size() - 5) == "_code") {
-            std::string table = name.substr(0, name.size() - 5);
-            TableInfo &ti = out->tables[table];
-            ti.name = table;
-            ti.code = (const int32_t *)arts[i].data;
-            ti.code_len = arts[i].len / sizeof(int32_t);
-        } else if (name.size() > 5 && name.substr(name.size() - 5) == "_ctid") {
-            std::string table = name.substr(0, name.size() - 5);
-            CtidArray arr;
-            arr.data = (const int32_t *)arts[i].data;
-            arr.len = (uint32)(arts[i].len / sizeof(int32_t));
-            out->ctid_map[table] = arr;
-        } else if (name.size() > schema_len && name.substr(name.size() - schema_len) == schema_suffix) {
-            std::string table = name.substr(0, name.size() - schema_len);
-            schema_text[table] = std::string((const char *)arts[i].data, arts[i].len);
-        } else if (name.size() > stride_len && name.substr(name.size() - stride_len) == stride_suffix) {
-            std::string table = name.substr(0, name.size() - stride_len);
-            if (arts[i].len < (size_t)sizeof(int32_t))
-                return false;
-            int32_t s = 0;
-            std::memcpy(&s, arts[i].data, sizeof(int32_t));
-            stride_map[table] = (int)s;
-        } else if (name.rfind("meta/dict_type/", 0) == 0) {
-            std::string rest = name.substr(strlen("meta/dict_type/"));
-            auto pos = rest.find('/');
-            if (pos == std::string::npos) continue;
-            std::string table = rest.substr(0, pos);
-            std::string col = rest.substr(pos + 1);
-            std::string key = table + "." + col;
-            std::string val((const char *)arts[i].data, arts[i].len);
-            out->dict_types[key] = parse_dict_type_str(val);
-        } else if (name.rfind("dict/", 0) == 0) {
-            std::string rest = name.substr(strlen("dict/"));
-            auto pos = rest.find('/');
-            if (pos == std::string::npos) continue;
-            std::string table = rest.substr(0, pos);
-            std::string col = rest.substr(pos + 1);
-            std::string key = table + "." + col;
-            out->dicts[key] = parse_dict((const char *)arts[i].data, arts[i].len);
-        } else if (name.size() > 5 && name.substr(name.size() - 5) == "_dict") {
-            std::string base = name.substr(0, name.size() - 5);
-            auto pos = base.find('_');
-            if (pos == std::string::npos) continue;
-            std::string table = base.substr(0, pos);
-            std::string col = base.substr(pos + 1);
-            std::string key = table + "." + col;
-            out->dicts[key] = parse_dict((const char *)arts[i].data, arts[i].len);
+            continue;
         }
-    }
 
-    std::map<std::string, int> meta_class_by_col;
-    if (contract) {
-        for (const auto &kv : out->join_class_cols) {
-            int cid = kv.first;
-            for (const auto &col : kv.second) {
-                auto ins = meta_class_by_col.emplace(col, cid);
-                if (!ins.second && ins.first->second != cid) {
-                    ereport(ERROR, (errmsg("policy_contract: meta/join_classes duplicate col %s in classes %d and %d",
-                                           col.c_str(), ins.first->second, cid)));
-                }
-            }
-        }
-        if (has_join_atoms) {
-            if (!saw_join_classes)
-                ereport(ERROR, (errmsg("policy_contract: missing meta/join_classes artifact")));
-            if (join_classes_bytes == 0 || meta_class_by_col.empty())
-                ereport(ERROR, (errmsg("policy_contract: meta/join_classes empty (bytes=%zu)",
-                                       join_classes_bytes)));
-        }
-        for (const auto &a : out->atoms) {
-            if (a.kind == AtomKind::JOIN) {
-                auto itl = meta_class_by_col.find(a.left.key());
-                auto itr = meta_class_by_col.find(a.right.key());
-                if (itl == meta_class_by_col.end() || itr == meta_class_by_col.end()) {
-                    ereport(ERROR, (errmsg("policy_contract: join atom y%d missing in meta/join_classes (lhs=%s rhs=%s)",
-                                           a.id, a.left.key().c_str(), a.right.key().c_str())));
-                }
-                if (itl->second != itr->second) {
-                    ereport(ERROR, (errmsg("policy_contract: join atom y%d meta class mismatch lhs=%d rhs=%d (lhs=%s rhs=%s)",
-                                           a.id, itl->second, itr->second,
-                                           a.left.key().c_str(), a.right.key().c_str())));
-                }
-                if (a.join_class_id != itl->second) {
-                    ereport(ERROR, (errmsg("policy_contract: join atom y%d class mismatch atom=%d meta=%d (lhs=%s rhs=%s)",
-                                           a.id, a.join_class_id, itl->second,
-                                           a.left.key().c_str(), a.right.key().c_str())));
-                }
-            } else if (a.join_class_id >= 0) {
-                auto itl = meta_class_by_col.find(a.left.key());
-                if (itl == meta_class_by_col.end()) {
-                    ereport(ERROR, (errmsg("policy_contract: const atom y%d missing in meta/join_classes (col=%s)",
-                                           a.id, a.left.key().c_str())));
-                }
-                if (a.join_class_id != itl->second) {
-                    ereport(ERROR, (errmsg("policy_contract: const atom y%d class mismatch atom=%d meta=%d (col=%s)",
-                                           a.id, a.join_class_id, itl->second, a.left.key().c_str())));
-                }
-            }
+        if (name.size() > 5 && name.substr(name.size() - 5) == "_code") {
+            std::string table = name.substr(0, name.size() - 5);
+            TableData &ti = out->tables[table];
+            ti.name = table;
+            ti.code_base = bb;
+            ti.code_format = TableData::CodeFormat::RAW;
+            continue;
         }
     }
 
     for (auto &kv : out->tables) {
-        TableInfo &ti = kv.second;
-        std::vector<std::string> join_cols(table_join_cols[ti.name].begin(),
-                                           table_join_cols[ti.name].end());
-        std::vector<std::string> const_cols(table_const_cols[ti.name].begin(),
-                                            table_const_cols[ti.name].end());
-        std::sort(join_cols.begin(), join_cols.end());
-        std::sort(const_cols.begin(), const_cols.end());
-
-        auto cit = cols_map.find(ti.name);
-        if (cit != cols_map.end()) {
-            const auto &cols = cit->second;
-            ti.stride = (int)cols.size() + 1;
-            if (ti.stride <= 0)
-                return false;
-            ti.schema_offset["rid"] = 0;
-            for (size_t i = 0; i < cols.size(); i++) {
-                const std::string &c = cols[i];
-                ti.schema_offset["const:" + c] = (int)i + 1;
-                auto itc = out->join_class_by_col.find(c);
-                if (itc != out->join_class_by_col.end()) {
-                    std::string key = "join:" + c + " class=" + std::to_string(itc->second);
-                    ti.schema_offset[key] = (int)i + 1;
-                }
-            }
-        } else {
-            auto sit = schema_text.find(ti.name);
-            if (sit == schema_text.end())
-                return false;
-            auto stit = stride_map.find(ti.name);
-            if (stit == stride_map.end())
-                return false;
-            ti.stride = stit->second;
-            if (ti.stride <= 0)
-                return false;
-            std::vector<std::string> lines = parse_schema_lines(sit->second);
-            if ((int)lines.size() != ti.stride)
-                return false;
-            for (size_t i = 0; i < lines.size(); i++)
-                ti.schema_offset[lines[i]] = (int)i;
+        TableData &ti = kv.second;
+        if (!ti.ctid_blk.empty()) {
+            ti.nrows = (uint32)ti.ctid_blk.size();
         }
-
-        if (ti.cb03_chunked) {
-            ti.n_rows = ti.cb03_total_rows;
-            ti.code_len = (size_t)ti.n_rows * (size_t)ti.stride;
-            if (ti.cb03_ntoks >= 0 && ti.cb03_ntoks != (ti.stride - 1))
-                return false;
-        } else {
-            if (ti.code_len % (size_t)ti.stride != 0)
-                return false;
-            ti.n_rows = (uint32)(ti.code_len / (size_t)ti.stride);
-        }
-        if (ti.cb02_ntoks >= 0) {
-            if (ti.stride < 1) return false;
-            if (ti.cb02_ntoks != (ti.stride - 1))
-                return false;
-            if (ti.cb02_nrows != ti.n_rows)
-                return false;
-            auto it_ctid = out->ctid_map.find(ti.name);
-            if (it_ctid != out->ctid_map.end()) {
-                if ((it_ctid->second.len % 2u) != 0u)
-                    return false;
-                uint32 ctid_rows = it_ctid->second.len / 2u;
-                if (ctid_rows > 0) {
-                    uint64 limit = (uint64) ctid_rows * 2u;
-                    if ((uint64) ti.cb02_nrows > limit)
-                        ereport(ERROR,
-                                (errmsg("policy: invalid CB02 nrows for table %s cb02_nrows=%u ctid_rows=%u",
-                                        ti.name.c_str(), (unsigned) ti.cb02_nrows, (unsigned) ctid_rows)));
-                }
-            }
-        }
-
-        for (const auto &c : join_cols) {
-            int cid = out->join_class_by_col[c];
-            std::string key = "join:" + c + " class=" + std::to_string(cid);
-            auto it = ti.schema_offset.find(key);
-            if (it == ti.schema_offset.end())
-                return false;
-            ti.join_class_ids.push_back(cid);
-            ti.join_token_idx.push_back(it->second);
-        }
-        for (auto &a : out->atoms) {
-            if (a.kind != AtomKind::JOIN)
-                continue;
-            if (a.left.table == ti.name) {
-                TableInfo::JoinAtomInfo info;
-                info.atom_id = a.id;
-                info.class_id = a.join_class_id;
-                auto it = ti.schema_offset.find(a.lhs_schema_key);
-                if (it == ti.schema_offset.end())
-                    return false;
-                info.token_idx = it->second;
-                info.other_table = a.right.table;
-                ti.join_atoms.push_back(info);
-            } else if (a.right.table == ti.name) {
-                TableInfo::JoinAtomInfo info;
-                info.atom_id = a.id;
-                info.class_id = a.join_class_id;
-                auto it = ti.schema_offset.find(a.rhs_schema_key);
-                if (it == ti.schema_offset.end())
-                    return false;
-                info.token_idx = it->second;
-                info.other_table = a.left.table;
-                ti.join_atoms.push_back(info);
-            }
-        }
-        for (auto &a : out->atoms) {
-            if (a.kind != AtomKind::CONST) continue;
-            if (a.left.table != ti.name) continue;
-            ti.const_atom_ids.push_back(a.id);
-            auto it = ti.schema_offset.find(a.lhs_schema_key);
-            if (it == ti.schema_offset.end())
-                return false;
-            ti.const_token_idx.push_back(it->second);
-        }
-    }
-
-    int max_id = 0;
-    for (auto &a : out->atoms)
-        if (a.id > max_id) max_id = a.id;
-    out->atom_by_id.assign(max_id + 1, nullptr);
-    for (auto &a : out->atoms) {
-        if (a.id > 0 && a.id < (int)out->atom_by_id.size())
-            out->atom_by_id[a.id] = &a;
-    }
-
-    for (const auto &kv : out->target_vars) {
-        const std::string &tname = kv.first;
-        const std::set<int> &vars = kv.second;
-        std::set<int> jc;
-        for (int aid : vars) {
-            if (aid <= 0 || aid >= (int)out->atom_by_id.size())
-                continue;
-            const Atom *ap = out->atom_by_id[aid];
-            if (!ap) continue;
-            if (ap->kind == AtomKind::JOIN && ap->join_class_id >= 0)
-                jc.insert(ap->join_class_id);
-        }
-        out->target_join_classes[tname] = jc;
-        if (jc.size() > 1) {
-            std::string list;
-            for (int cid : jc) {
-                if (!list.empty()) list += ", ";
-                list += std::to_string(cid);
-            }
-            out->has_multi_join = true;
-            if (contract_mode) {
-                CF_TRACE_LOG( "policy_contract: multi-join target=%s classes=[%s]",
-                     tname.c_str(), list.c_str());
-            }
-        }
-    }
-
-    if (contract) {
-        for (const auto &kv : out->join_class_cols) {
-            std::string cols;
-            for (size_t i = 0; i < kv.second.size(); i++) {
-                if (i > 0) cols += ", ";
-                cols += kv.second[i];
-            }
-            CF_TRACE_LOG( "policy_contract: join_class=%d cols=[%s]", kv.first, cols.c_str());
-        }
-        for (const auto &kv : out->tables) {
-            const TableInfo &ti = kv.second;
-            auto cit = cols_map.find(ti.name);
-            if (cit != cols_map.end()) {
-                std::string cols;
-                for (size_t i = 0; i < cit->second.size(); i++) {
-                    if (i > 0) cols += ", ";
-                    cols += cit->second[i];
-                }
-                CF_TRACE_LOG( "policy_contract: meta/cols/%s=[%s]", ti.name.c_str(), cols.c_str());
-            }
-            CF_TRACE_LOG( "policy_contract: %s_code_base stride=%d rows=%u",
-                 ti.name.c_str(), ti.stride, ti.n_rows);
-        }
-        std::set<std::string> printed_offsets;
-        for (const auto &a : out->atoms) {
-            if (a.kind == AtomKind::JOIN) {
-                std::string k1 = a.left.key();
-                std::string k2 = a.right.key();
-                const TableInfo &lt = out->tables[a.left.table];
-                const TableInfo &rt = out->tables[a.right.table];
-                std::string o1 = a.lhs_schema_key;
-                std::string o2 = a.rhs_schema_key;
-                if (printed_offsets.insert(o1).second) {
-                    auto it = lt.schema_offset.find(o1);
-                    if (it != lt.schema_offset.end())
-                        CF_TRACE_LOG( "policy_contract: offset %s = %d stride=%d",
-                             o1.c_str(), it->second, lt.stride);
-                }
-                if (printed_offsets.insert(o2).second) {
-                    auto it = rt.schema_offset.find(o2);
-                    if (it != rt.schema_offset.end())
-                        CF_TRACE_LOG( "policy_contract: offset %s = %d stride=%d",
-                             o2.c_str(), it->second, rt.stride);
-                }
-            } else {
-                const TableInfo &lt = out->tables[a.left.table];
-                std::string key = a.lhs_schema_key;
-                if (printed_offsets.insert(key).second) {
-                    auto it = lt.schema_offset.find(key);
-                    if (it != lt.schema_offset.end())
-                        CF_TRACE_LOG( "policy_contract: offset %s = %d stride=%d",
-                             key.c_str(), it->second, lt.stride);
-                }
-            }
-        }
-        for (const auto &a : out->atoms) {
-            if (a.kind == AtomKind::JOIN) {
-                int meta_lhs = -1;
-                int meta_rhs = -1;
-                auto itl = meta_class_by_col.find(a.left.key());
-                if (itl != meta_class_by_col.end()) meta_lhs = itl->second;
-                auto itr = meta_class_by_col.find(a.right.key());
-                if (itr != meta_class_by_col.end()) meta_rhs = itr->second;
-                std::string class_cols;
-                auto itc = out->join_class_cols.find(meta_lhs);
-                if (itc != out->join_class_cols.end()) {
-                    for (size_t i = 0; i < itc->second.size(); i++) {
-                        if (i > 0) class_cols += ", ";
-                        class_cols += itc->second[i];
-                    }
-                }
-                CF_TRACE_LOG( "policy_contract: atom y%d type=JOIN_EQ lhs=%s rhs=%s join_class=%d meta_lhs=%d meta_rhs=%d class_cols=[%s]",
-                     a.id, a.left.key().c_str(), a.right.key().c_str(), a.join_class_id,
-                     meta_lhs, meta_rhs, class_cols.c_str());
-            } else {
-                std::string dict_name = "dict/" + a.left.table + "/" + a.left.col;
-                std::string vals;
-                std::string toks;
-                const char *eval = "exact";
-                if (a.op == ConstOp::LIKE) eval = "prefix_evaluated";
-                else if (a.op == ConstOp::LT || a.op == ConstOp::LE ||
-                         a.op == ConstOp::GT || a.op == ConstOp::GE) {
-                    eval = "range_evaluated";
-                } else if (a.op == ConstOp::NE) {
-                    eval = "neq_evaluated";
-                }
-                bool requires_dict = true;
-                auto it = out->dicts.find(a.left.key());
-                bool dict_present = (it != out->dicts.end());
-                if (requires_dict && !dict_present) {
-                    ereport(ERROR, (errmsg("policy_contract: missing dict for atom y%d col=%s op=%d",
-                                           a.id, a.left.key().c_str(), (int)a.op)));
-                }
-                bool numeric = true;
-                std::vector<double> num_values;
-                for (const auto &v : a.values) {
-                    double dv = 0.0;
-                    if (!parse_number(v, &dv)) {
-                        numeric = false;
-                        break;
-                    }
-                    num_values.push_back(dv);
-                }
-                if (!numeric) num_values.clear();
-                for (size_t i = 0; i < a.values.size(); i++) {
-                    if (i > 0) vals += ",";
-                    vals += a.values[i];
-                    int tid = -1;
-                    if (dict_present && (a.op == ConstOp::EQ || a.op == ConstOp::IN || a.op == ConstOp::NE)) {
-                        if (numeric && i < num_values.size()) {
-                            for (size_t j = 0; j < it->second.size(); j++) {
-                                double dv = 0.0;
-                                if (parse_number(it->second[j], &dv) && dv == num_values[i]) {
-                                    tid = (int)j;
-                                    break;
-                                }
-                            }
-                        } else {
-                            for (size_t j = 0; j < it->second.size(); j++) {
-                                if (it->second[j] == a.values[i]) { tid = (int)j; break; }
-                            }
-                        }
-                        if (tid < 0 && (a.op == ConstOp::EQ || a.op == ConstOp::IN)) {
-                            ereport(ERROR, (errmsg("policy_contract: atom y%d literal %s not found in dict %s",
-                                                   a.id, a.values[i].c_str(), dict_name.c_str())));
-                        }
-                    }
-                    if (i > 0) toks += ",";
-                    toks += std::to_string(tid);
-                }
-                CF_TRACE_LOG( "policy_contract: atom y%d type=COL_CONST col=%s op=%d join_class=%d dict=%s dict_present=%d eval=%s vals=[%s] toks=[%s]",
-                     a.id, a.left.key().c_str(), (int)a.op, a.join_class_id,
-                     dict_name.c_str(), dict_present ? 1 : 0, eval, vals.c_str(), toks.c_str());
-            }
-        }
-        for (const auto &kv : out->target_ast) {
-            std::map<int, std::string> atom_sql;
-            for (const auto &a : out->atoms) {
-                atom_sql[a.id] = atom_to_sql(a);
-            }
-            std::string expr = ast_to_sql(kv.second, atom_sql);
-            CF_TRACE_LOG( "policy_contract: AST(%s)=%s", kv.first.c_str(), expr.c_str());
-        }
-    }
-
-    return true;
-}
-
-static bool hub_phase(const Loaded &loaded, Hubs *hubs)
-{
-    if (!hubs) return false;
-    hubs->present_by_class.assign(loaded.class_count, {});
-    hubs->max_tok.assign(loaded.class_count, 0);
-
-    std::set<std::string> dict_printed;
-    for (auto &a : loaded.atoms) {
-        if (a.kind != AtomKind::CONST) continue;
-        auto it = loaded.dicts.find(a.left.key());
-        if (it == loaded.dicts.end())
-            return false;
-        DictType dtype = dict_type_for_key(loaded, a.left.key());
-        hubs->const_allowed[a.id] = build_allowed_tokens(it->second, a, dtype);
-        if (dict_printed.insert(a.left.key()).second) {
-            CF_TRACE_LOG( "policy: dict %s size=%zu", a.left.key().c_str(), it->second.size());
-        }
-        if (!a.values.empty()) {
-            std::string toks;
-            for (size_t i = 0; i < a.values.size(); i++) {
-                int tid = -1;
-                for (size_t j = 0; j < it->second.size(); j++) {
-                    if (it->second[j] == a.values[i]) { tid = (int)j; break; }
-                }
-                if (!toks.empty()) toks += ",";
-                toks += std::to_string(tid);
-            }
-            CF_TRACE_LOG( "policy: const %s tokens=[%s]",
-                 a.left.key().c_str(), toks.c_str());
-        }
-    }
-
-    for (auto &kv : loaded.tables) {
-        const TableInfo &ti = kv.second;
-        int stride = ti.stride;
-        if (stride <= 1 || ti.n_rows == 0) continue;
-
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
-            for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
-                int idx = ti.join_token_idx[j];
-                int32 tok = row[idx];
-                if (tok >= 0) {
-                    int cid = ti.join_class_ids[j];
-                    hubs->present_by_class[cid][ti.name].set((size_t)tok);
-                    if ((size_t)tok > hubs->max_tok[cid])
-                        hubs->max_tok[cid] = (size_t)tok;
-                }
-            }
-        }
-    }
-
-    return true;
-}
-
-static bool build_allow_all(const Loaded &loaded, PolicyAllowListC *out)
-{
-    if (!out) return false;
-    int target_count = 0;
-    for (const auto &kv : loaded.tables) {
-        if (loaded.target_set.count(kv.first) > 0)
-            target_count++;
-    }
-    out->count = 0;
-    out->items = target_count > 0
-                     ? (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC) * target_count)
-                     : nullptr;
-    for (const auto &kv : loaded.tables) {
-        const TableInfo &ti = kv.second;
-        if (ti.n_rows == 0) continue;
-        if (loaded.target_set.count(ti.name) == 0)
-            continue;
-        out->items[out->count].table = pstrdup(ti.name.c_str());
-        uint64 *words = nullptr;
-        uint32 blocks = 0;
-        size_t nbytes = 0;
-        (void) cf_build_block_words_from_rid_bits(loaded, ti.name, nullptr, ti.n_rows, &words, &blocks, &nbytes);
-        out->items[out->count].block_words = words;
-        out->items[out->count].blocks = blocks;
-        out->items[out->count].n_rows = ti.n_rows;
-        out->count++;
-        CF_TRACE_LOG( "policy: allow_%s count = %u / %u",
-             ti.name.c_str(), ti.n_rows, ti.n_rows);
-    }
-    return true;
-}
-
-static void run_multi_join_contract(const Loaded &loaded)
-{
-    for (const auto &tkv : loaded.target_join_classes) {
-        const std::string &target = tkv.first;
-        const std::set<int> &classes = tkv.second;
-        if (classes.size() <= 1)
-            continue;
-
-        StringInfoData clist;
-        initStringInfo(&clist);
-        for (int cid : classes) {
-            if (clist.len > 0) appendStringInfoString(&clist, ", ");
-            appendStringInfo(&clist, "%d", cid);
-        }
-        CF_TRACE_LOG( "policy_contract: multi_join target=%s join_classes=[%s]",
-             target.c_str(), clist.data);
-
-        std::map<int, std::set<std::string>> class_tables;
-        std::map<std::string, std::set<int>> table_classes;
-
-        auto it_vars = loaded.target_vars.find(target);
-        if (it_vars != loaded.target_vars.end()) {
-            for (int aid : it_vars->second) {
-                if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-                    continue;
-                const Atom *ap = loaded.atom_by_id[aid];
-                if (!ap || ap->kind != AtomKind::JOIN)
-                    continue;
-                int cid = ap->join_class_id;
-                if (cid < 0 || classes.count(cid) == 0)
-                    continue;
-                class_tables[cid].insert(ap->left.table);
-                class_tables[cid].insert(ap->right.table);
-                table_classes[ap->left.table].insert(cid);
-                table_classes[ap->right.table].insert(cid);
-            }
-        }
-
-        for (const auto &kv : class_tables) {
-            int cid = kv.first;
-            if (kv.second.size() != 2) {
-                std::string tables;
-                for (const auto &tname : kv.second) {
-                    if (!tables.empty()) tables += ", ";
-                    tables += tname;
-                }
+        if (ti.code_format == TableData::CodeFormat::CB03_MANIFEST) {
+            if (ti.nrows == 0)
+                ti.nrows = ti.cb03_total_rows;
+            if (ti.cb03_total_rows != ti.nrows) {
                 ereport(ERROR,
-                        (errmsg("policy_contract: multi_join class=%d has %zu tables [%s]; only binary join classes supported in Step-2A",
-                                cid, kv.second.size(), tables.c_str())));
+                        (errmsg("policy: row mismatch table=%s manifest_rows=%u ctid_rows=%u",
+                                ti.name.c_str(), ti.cb03_total_rows, ti.nrows)));
+            }
+            ti.ntoks = ti.cb03_ntoks;
+        }
+        if (ti.ntoks < 0 && !ti.meta_cols.empty())
+            ti.ntoks = (int)ti.meta_cols.size();
+        if (!ti.meta_cols.empty() && ti.ntoks >= 0 && (int)ti.meta_cols.size() != ti.ntoks) {
+            ereport(ERROR,
+                    (errmsg("policy: ntoks/meta mismatch table=%s ntoks=%d meta_cols=%zu",
+                            ti.name.c_str(), ti.ntoks, ti.meta_cols.size())));
+        }
+        ti.decoded_cols.assign(ti.meta_cols.size(), {});
+    }
+
+    return true;
+}
+
+static bool eval_const_match(ConstOp op,
+                             const std::string &dict_val,
+                             const std::vector<std::string> &const_vals,
+                             DictType dtype)
+{
+    if (op == ConstOp::EQ || op == ConstOp::IN || op == ConstOp::NE) {
+        bool found = false;
+        for (const auto &v : const_vals) {
+            if (dict_val == v) {
+                found = true;
+                break;
             }
         }
+        if (op == ConstOp::NE)
+            return !found;
+        return found;
+    }
 
-        std::map<std::string, std::vector<int>> table_class_list;
-        for (const auto &kv : table_classes) {
-            std::vector<int> v(kv.second.begin(), kv.second.end());
-            std::sort(v.begin(), v.end());
-            table_class_list[kv.first] = std::move(v);
+    if (op == ConstOp::LIKE) {
+        for (const auto &p : const_vals) {
+            if (like_match(dict_val, p))
+                return true;
         }
+        return false;
+    }
 
-        std::map<std::string, std::map<int, int>> table_class_idx;
-        for (const auto &kv : table_class_list) {
-            const std::string &tname = kv.first;
-            auto it_t = loaded.tables.find(tname);
-            if (it_t == loaded.tables.end())
-                continue;
-            const TableInfo &ti = it_t->second;
-            for (int cid : kv.second) {
-                int idx = -1;
-                for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
-                    if (ti.join_class_ids[j] == cid) {
-                        idx = ti.join_token_idx[j];
-                        break;
-                    }
-                }
-                if (idx < 0) {
-                    ereport(ERROR,
-                            (errmsg("policy_contract: multi_join missing join token index for table=%s class=%d",
-                                    tname.c_str(), cid)));
-                }
-                table_class_idx[tname][cid] = idx;
+    std::string rhs = const_vals.empty() ? "" : const_vals.front();
+    if (dtype == DictType::NUMERIC) {
+        double l = 0.0;
+        double r = 0.0;
+        if (parse_number(dict_val, &l) && parse_number(rhs, &r)) {
+            switch (op) {
+                case ConstOp::LT: return l < r;
+                case ConstOp::LE: return l <= r;
+                case ConstOp::GT: return l > r;
+                case ConstOp::GE: return l >= r;
+                default: return false;
             }
         }
+    }
 
-        std::map<int, size_t> domain_size;
-        for (int cid : classes) {
-            int max_tok = -1;
-            auto it = class_tables.find(cid);
-            if (it == class_tables.end())
-                continue;
-            for (const auto &tname : it->second) {
-                auto it_t = loaded.tables.find(tname);
-                if (it_t == loaded.tables.end())
-                    continue;
-                const TableInfo &ti = it_t->second;
-                int idx = -1;
-                auto it_idx = table_class_idx[tname].find(cid);
-                if (it_idx != table_class_idx[tname].end())
-                    idx = it_idx->second;
-                if (idx < 0) continue;
-                for (uint32 r = 0; r < ti.n_rows; r++) {
-                    const int32_t *row = ti.row_ptr(r);
-                    if (!row) continue;
-                    int32 tok = row[idx];
-                    if (tok > max_tok) max_tok = tok;
-                }
-            }
-            if (max_tok >= 0)
-                domain_size[cid] = (size_t)max_tok + 1;
-            else
-                domain_size[cid] = 0;
-        }
-
-        std::map<int, Bitset> allowed;
-        for (int cid : classes) {
-            bitset_set_all(allowed[cid], domain_size[cid]);
-        }
-
-        std::map<int, std::vector<uint8_t>> const_allowed;
-        if (it_vars != loaded.target_vars.end()) {
-            for (int aid : it_vars->second) {
-                if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-                    continue;
-                const Atom *ap = loaded.atom_by_id[aid];
-                if (!ap || ap->kind != AtomKind::CONST)
-                    continue;
-                auto it_dict = loaded.dicts.find(ap->left.key());
-                if (it_dict == loaded.dicts.end()) {
-                    ereport(ERROR,
-                            (errmsg("policy_contract: multi_join missing dict for const atom y%d col=%s",
-                                    aid, ap->left.key().c_str())));
-                }
-                DictType dtype = dict_type_for_key(loaded, ap->left.key());
-                const_allowed[aid] = build_allowed_tokens(it_dict->second, *ap, dtype);
-            }
-        }
-
-        std::map<std::string, std::vector<uint8_t>> local_ok;
-        std::map<std::string, uint32> local_ok_count;
-        const AstNode *ast = nullptr;
-        auto it_ast = loaded.target_ast.find(target);
-        if (it_ast != loaded.target_ast.end())
-            ast = it_ast->second;
-
-        for (const auto &tckv : table_class_list) {
-            const std::string &tname = tckv.first;
-            auto it_t = loaded.tables.find(tname);
-            if (it_t == loaded.tables.end())
-                continue;
-            const TableInfo &ti = it_t->second;
-            std::vector<int> const_ids;
-            std::vector<int> const_idx;
-            if (it_vars != loaded.target_vars.end()) {
-                for (size_t i = 0; i < ti.const_atom_ids.size(); i++) {
-                    int aid = ti.const_atom_ids[i];
-                    if (it_vars->second.count(aid) == 0)
-                        continue;
-                    const Atom *ap = (aid > 0 && aid < (int)loaded.atom_by_id.size()) ? loaded.atom_by_id[aid] : nullptr;
-                    if (!ap || ap->kind != AtomKind::CONST)
-                        continue;
-                    const_ids.push_back(aid);
-                    const_idx.push_back(ti.const_token_idx[i]);
-                }
-            }
-
-            if (const_ids.empty()) {
-                local_ok_count[tname] = ti.n_rows;
-                continue;
-            }
-
-            std::vector<uint8_t> ok(ti.n_rows, 0);
-            std::vector<int> vals(loaded.atom_by_id.size(), 1);
-            uint32 cnt = 0;
-            for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.row_ptr(r);
-                if (!row) continue;
-                for (size_t k = 0; k < const_ids.size(); k++) {
-                    int aid = const_ids[k];
-                    int idx = const_idx[k];
-                    int32 tok = row[idx];
-                    bool allow = false;
-                    auto it_allow = const_allowed.find(aid);
-                    if (tok >= 0 && it_allow != const_allowed.end()) {
-                        const auto &al = it_allow->second;
-                        if ((size_t)tok < al.size() && al[(size_t)tok])
-                            allow = true;
-                    }
-                    vals[aid] = allow ? 1 : 0;
-                }
-                Tri res = ast ? eval_ast(ast, vals) : TRI_TRUE;
-                bool row_ok = (res == TRI_TRUE);
-                if (row_ok) cnt++;
-                ok[r] = row_ok ? 1 : 0;
-                for (int aid : const_ids)
-                    vals[aid] = 1;
-            }
-            local_ok_count[tname] = cnt;
-            local_ok[tname] = std::move(ok);
-        }
-
-        for (const auto &kv : local_ok_count) {
-            auto it_t = loaded.tables.find(kv.first);
-            uint32 total = it_t != loaded.tables.end() ? it_t->second.n_rows : 0;
-            CF_TRACE_LOG( "policy_contract: multi_join local_ok %s = %u / %u",
-                 kv.first.c_str(), kv.second, total);
-        }
-
-        int iterations = 0;
-        bool changed = true;
-        const int max_iter = 32;
-        while (changed && iterations < max_iter) {
-            changed = false;
-            iterations++;
-            for (int cid : classes) {
-                size_t D = domain_size[cid];
-                if (D == 0) continue;
-                auto it_tables = class_tables.find(cid);
-                if (it_tables == class_tables.end() || it_tables->second.empty())
-                    continue;
-                Bitset new_allowed;
-                bool first = true;
-                for (const auto &tname : it_tables->second) {
-                    auto it_t = loaded.tables.find(tname);
-                    if (it_t == loaded.tables.end())
-                        continue;
-                    const TableInfo &ti = it_t->second;
-                    int idxJ = -1;
-                    auto it_idx = table_class_idx[tname].find(cid);
-                    if (it_idx != table_class_idx[tname].end())
-                        idxJ = it_idx->second;
-                    if (idxJ < 0)
-                        continue;
-                    Bitset support;
-                    support.nbits = D;
-                    support.bytes.assign((D + 7) / 8, 0);
-                    auto it_ok = local_ok.find(tname);
-                    const std::vector<uint8_t> *ok_rows = (it_ok != local_ok.end()) ? &it_ok->second : nullptr;
-                    for (uint32 r = 0; r < ti.n_rows; r++) {
-                        if (ok_rows && !(*ok_rows)[r])
-                            continue;
-                        const int32_t *row = ti.row_ptr(r);
-                        if (!row) continue;
-                        bool row_ok = true;
-                        for (int ocid : table_class_list[tname]) {
-                            if (ocid == cid)
-                                continue;
-                            int idxK = -1;
-                            auto it_k = table_class_idx[tname].find(ocid);
-                            if (it_k != table_class_idx[tname].end())
-                                idxK = it_k->second;
-                            if (idxK < 0) continue;
-                            int32 tokK = row[idxK];
-                            if (tokK < 0 || !allowed[ocid].test((size_t)tokK)) {
-                                row_ok = false;
-                                break;
-                            }
-                        }
-                        if (!row_ok)
-                            continue;
-                        int32 tokJ = row[idxJ];
-                        if (tokJ >= 0)
-                            support.set((size_t)tokJ);
-                    }
-                    if (first) {
-                        new_allowed = support;
-                        first = false;
-                    } else {
-                        bitset_intersect(new_allowed, support);
-                    }
-                }
-                if (bitset_intersect(allowed[cid], new_allowed))
-                    changed = true;
-            }
-        }
-
-        for (int cid : classes) {
-            size_t D = domain_size[cid];
-            size_t pop = bitset_popcount(allowed[cid], D);
-            CF_TRACE_LOG( "policy_contract: multi_join class=%d allowed=%zu / %zu tokens=[%s]",
-                 cid, pop, D, bitset_first_tokens(allowed[cid], 8).c_str());
-        }
-        CF_TRACE_LOG( "policy_contract: multi_join iterations=%d", iterations);
-        if (iterations >= max_iter)
-            CF_TRACE_LOG( "policy_contract: multi_join hit max iterations=%d", max_iter);
+    switch (op) {
+        case ConstOp::LT: return dict_val < rhs;
+        case ConstOp::LE: return dict_val <= rhs;
+        case ConstOp::GT: return dict_val > rhs;
+        case ConstOp::GE: return dict_val >= rhs;
+        default: return false;
     }
 }
 
-struct AstCheckResult {
-    bool valid = true;
-    bool has_join = false;
-    std::set<std::string> const_tables;
-    std::string reason;
-};
-
-struct TableCache {
-    std::unordered_map<std::string, std::vector<uint8_t>> atom_row_truth;
-    std::unordered_map<std::string, std::unordered_map<std::string, uint8_t>> decision_cache;
-    struct GlobalSigCache {
-        uint32 n_rows = 0;
-        size_t nbytes = 0;
-        std::vector<std::string> atom_keys;
-        std::vector<int> token_idx;
-        std::unordered_map<std::string, std::vector<uint8_t>> allowed_by_key;
-        std::unordered_map<std::string, int> atom_index;
-        std::vector<int> row_to_bin;
-        // bin signatures stored densely as n_bins * nbytes bytes (no per-row / per-bin heap objects)
-        std::vector<uint8_t> bin_sig_flat;
-        std::vector<uint32_t> hist;
-        double ms_stamp = 0.0;
-        double ms_bin = 0.0;
-        bool ready = false;
-    } global;
-};
-
-struct LocalOkCache {
-    MemoryContext ctx = nullptr;
-    std::unordered_map<std::string, TableCache> tables;
-    std::unordered_map<std::string, int> scan_counts;
-    struct QueryProfileAgg {
-        bool valid = false;
-        std::string query;
-        int k = 0;
-        double total_ms = 0.0;
-        double local_ms = 0.0;
-        double prop_ms = 0.0;
-        double decode_ms = 0.0;
-        int sat_calls = 0;
-        int cache_hits = 0;
-        int closure_tables = 0;
-        int filtered_targets = 0;
-    } agg;
-    MemoryContextCallback cb;
-    bool cb_registered = false;
-};
-
-static LocalOkCache g_local_cache;
-
-struct LocalStat {
-    std::string table;
-    int atoms = 0;
-    size_t bins = 0;
-    int sat_calls = 0;
-    int cache_hits = 0;
-    // Time spent building per-atom allowed-token vectors (often dominates at higher K).
-    double ms_atoms = 0.0;
-    double ms_stamp = 0.0;
-    double ms_bin = 0.0;
-    double ms_eval = 0.0;
-    double ms_fill = 0.0;
-};
-
-struct PropStat {
-    int class_id = -1;
-    size_t tokens_total = 0;
-    size_t tokens_allowed = 0;
-};
-
-struct DecodeStat {
-    std::string table;
-    uint32 rows_total = 0;
-    uint32 rows_allowed = 0;
-    double ms_decode = 0.0;
-};
-
-struct BundleProfile {
-    int bundle_id = 0;
-    std::string target;
-    int k = 0;
-    std::string query;
-    std::vector<LocalStat> local;
-    std::vector<PropStat> prop;
-    std::vector<DecodeStat> decode;
-    // Time spent in atom preparation / allowed-token building outside the stamp/bin/eval/fill loop.
-    double atoms_ms_total = 0.0;
-    // Time spent in join-domain presence/signature work (e.g., domain sizing, message precomputation).
-    double presence_ms_total = 0.0;
-    // Time spent materializing final allow-bits (e.g., row-level chase / decode stage for multi-join).
-    double project_ms_total = 0.0;
-    double local_ms_total = 0.0;
-    double prop_ms_total = 0.0;
-    int prop_iterations = 0;
-    double decode_ms_total = 0.0;
-    double total_ms = 0.0;
-};
-
-static void flush_query_profile();
-
-static void ensure_local_cache_ctx() {
-    MemoryContext cur = CurrentMemoryContext;
-    if (g_local_cache.ctx != cur) {
-        if (g_local_cache.agg.valid)
-            flush_query_profile();
-        g_local_cache.tables.clear();
-        g_local_cache.scan_counts.clear();
-        g_local_cache.agg = LocalOkCache::QueryProfileAgg{};
-        g_local_cache.ctx = cur;
-        g_local_cache.cb_registered = false;
-    }
-}
-
-static void flush_query_profile() {
-    if (!g_local_cache.agg.valid)
-        return;
-    StringInfoData buf;
-    initStringInfo(&buf);
-    appendStringInfo(&buf,
-                     "policy_profile_query: K=%d query_id=%s total_ms=%.3f local_ms=%.3f prop_ms=%.3f decode_ms=%.3f sat_calls=%d cache_hits=%d closure_tables=%d filtered_targets=%d",
-                     g_local_cache.agg.k,
-                     g_local_cache.agg.query.c_str(),
-                     g_local_cache.agg.total_ms,
-                     g_local_cache.agg.local_ms,
-                     g_local_cache.agg.prop_ms,
-                     g_local_cache.agg.decode_ms,
-                     g_local_cache.agg.sat_calls,
-                     g_local_cache.agg.cache_hits,
-                     g_local_cache.agg.closure_tables,
-                     g_local_cache.agg.filtered_targets);
-    CF_TRACE_LOG( "%s", buf.data);
-    for (const auto &kv : g_local_cache.scan_counts) {
-        CF_TRACE_LOG( "policy: scan_count table=%s count=%d",
-             kv.first.c_str(), kv.second);
-    }
-    g_local_cache.agg = LocalOkCache::QueryProfileAgg{};
-    g_local_cache.scan_counts.clear();
-}
-
-static void query_reset_callback(void *arg) {
-    (void)arg;
-    flush_query_profile();
-}
-
-static void register_query_callback() {
-    if (g_local_cache.cb_registered || !g_local_cache.ctx)
-        return;
-    g_local_cache.cb.func = query_reset_callback;
-    g_local_cache.cb.arg = nullptr;
-    MemoryContextRegisterResetCallback(g_local_cache.ctx, &g_local_cache.cb);
-    g_local_cache.cb_registered = true;
-}
-
-static int profile_k() {
-    const char *v = GetConfigOption("custom_filter.profile_k", true, false);
-    if (!v) return 0;
-    return std::atoi(v);
-}
-
-static std::string profile_query() {
-    const char *v = GetConfigOption("custom_filter.profile_query", true, false);
-    if (!v) return "";
-    return v;
-}
-
-static int next_bundle_id() {
-    static MemoryContext ctx = nullptr;
-    static std::string last_query;
-    static int seq = 0;
-    MemoryContext cur = CurrentMemoryContext;
-    std::string q = profile_query();
-    if (ctx != cur || q != last_query) {
-        ctx = cur;
-        last_query = q;
-        seq = 0;
-    }
-    return ++seq;
-}
-
-static size_t bitset_popcount_intersection(const Bitset &a, const Bitset &b, size_t limit_bits) {
-    size_t nbits = std::min(limit_bits, std::min(a.nbits, b.nbits));
-    size_t cnt = 0;
-    for (size_t i = 0; i < nbits; i++) {
-        if (a.test(i) && b.test(i)) cnt++;
-    }
-    return cnt;
-}
-
-static void log_profile(const BundleProfile &p) {
-    StringInfoData buf;
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "policy_profile_bundle: bundle=%d target=%s K=%d query=%s ",
-                     p.bundle_id, p.target.c_str(), p.k, p.query.c_str());
-    appendStringInfoString(&buf, "local={");
-    for (size_t i = 0; i < p.local.size(); i++) {
-        const auto &ls = p.local[i];
-        if (i > 0) appendStringInfoString(&buf, "|");
-        appendStringInfo(&buf, "%s:atoms=%d,bins=%zu,sat=%d,hits=%d,ms=%.3f/%.3f/%.3f/%.3f",
-                         ls.table.c_str(), ls.atoms, ls.bins, ls.sat_calls, ls.cache_hits,
-                         ls.ms_stamp, ls.ms_bin, ls.ms_eval, ls.ms_fill);
-    }
-    appendStringInfo(&buf, ",total_ms=%.3f} ", p.local_ms_total);
-    appendStringInfoString(&buf, "prop={");
-    appendStringInfo(&buf, "iter=%d,ms=%.3f,classes=[", p.prop_iterations, p.prop_ms_total);
-    for (size_t i = 0; i < p.prop.size(); i++) {
-        const auto &ps = p.prop[i];
-        if (i > 0) appendStringInfoString(&buf, ",");
-        appendStringInfo(&buf, "%d:%zu/%zu", ps.class_id, ps.tokens_allowed, ps.tokens_total);
-    }
-    appendStringInfoString(&buf, "]} ");
-    appendStringInfoString(&buf, "decode={");
-    for (size_t i = 0; i < p.decode.size(); i++) {
-        const auto &ds = p.decode[i];
-        if (i > 0) appendStringInfoString(&buf, "|");
-        appendStringInfo(&buf, "%s:%u/%u,ms=%.3f",
-                         ds.table.c_str(), ds.rows_allowed, ds.rows_total, ds.ms_decode);
-    }
-    appendStringInfo(&buf, ",total_ms=%.3f} ", p.decode_ms_total);
-    appendStringInfo(&buf, "total_ms=%.3f", p.total_ms);
-    CF_TRACE_LOG( "%s", buf.data);
-}
-
-static void update_query_profile(const BundleProfile &p, const Loaded &loaded) {
-    ensure_local_cache_ctx();
-    register_query_callback();
-    auto &agg = g_local_cache.agg;
-    if (!agg.valid) {
-        agg.valid = true;
-        agg.query = profile_query();
-        agg.k = profile_k();
-        agg.closure_tables = (int)loaded.tables.size();
-        agg.filtered_targets = (int)loaded.target_set.size();
-    }
-    agg.total_ms += p.total_ms;
-    agg.local_ms += p.local_ms_total;
-    agg.prop_ms += p.prop_ms_total;
-    agg.decode_ms += p.decode_ms_total;
-    for (const auto &ls : p.local) {
-        agg.sat_calls += ls.sat_calls;
-        agg.cache_hits += ls.cache_hits;
-    }
-}
-
-static std::string const_atom_key(const Atom *ap) {
-    if (!ap) return "";
-    std::string key = ap->lhs_schema_key;
-    key += "|";
-    key += std::to_string((int)ap->op);
-    key += "|";
-    for (size_t i = 0; i < ap->values.size(); i++) {
-        if (i > 0) key += ",";
-        key += ap->values[i];
-    }
-    return key;
-}
-
-static std::string ast_to_string_simple(const AstNode *node) {
-    if (!node) return "";
-    if (node->type == AstNode::VAR) {
-        return "y" + std::to_string(node->var_id);
-    }
-    std::string l = ast_to_string_simple(node->left);
-    std::string r = ast_to_string_simple(node->right);
-    std::string op = (node->type == AstNode::AND) ? " and " : " or ";
-    return "(" + l + op + r + ")";
-}
-
-static std::string build_cache_key(const AstNode *ast,
-                                   const Loaded &loaded,
-                                   const std::vector<int> &const_ids) {
-    std::string key = ast ? ast_to_string_simple(ast) : "<null>";
-    std::vector<std::string> atom_keys;
-    atom_keys.reserve(const_ids.size());
-    for (int aid : const_ids) {
-        const Atom *ap = (aid > 0 && aid < (int)loaded.atom_by_id.size())
-                             ? loaded.atom_by_id[aid]
-                             : nullptr;
-        if (ap && ap->kind == AtomKind::CONST) {
-            atom_keys.push_back(const_atom_key(ap));
+static TokenBitset build_allowed_token_set(const Atom &a,
+                                           const std::vector<std::string> &dict_vals,
+                                           DictType dtype)
+{
+    TokenBitset bits(dict_vals.size());
+    if (a.op == ConstOp::NE)
+        bits.fill_all();
+    for (size_t i = 0; i < dict_vals.size(); i++) {
+        bool ok = eval_const_match(a.op, dict_vals[i], a.values, dtype);
+        if (a.op == ConstOp::NE) {
+            if (!ok)
+                bits.set(i);
+        } else if (ok) {
+            bits.set(i);
         }
     }
-    std::sort(atom_keys.begin(), atom_keys.end());
-    key += "|atoms=";
-    for (size_t i = 0; i < atom_keys.size(); i++) {
-        if (i > 0) key += ";";
-        key += atom_keys[i];
-    }
-    return key;
+    return bits;
 }
 
-static std::string base_sig_for_bits(size_t nbits) {
-    size_t nbytes = (nbits + 7) / 8;
-    std::string s(nbytes, (char)0xFF);
-    if (nbits % 8 != 0 && nbytes > 0) {
-        uint8_t mask = (uint8_t)((1u << (nbits % 8)) - 1u);
-        s[nbytes - 1] = (char)(s[nbytes - 1] & mask);
-    }
-    return s;
-}
+static bool is_clause_acyclic_hint(const ClausePlan &cl)
+{
+    std::unordered_map<int, int> idx;
+    for (int cid : cl.join_classes)
+        idx[cid] = (int)idx.size();
+    int n = (int)idx.size();
+    if (n <= 1)
+        return true;
 
-static inline bool get_sig_bit_idx(const std::string &s, size_t bit) {
-    size_t byte = bit >> 3;
-    if (byte >= s.size()) return false;
-    size_t off = bit & 7;
-    return (s[byte] & (char)(1u << off)) != 0;
-}
-
-static inline void set_sig_bit_idx(std::string &s, size_t bit, bool val) {
-    size_t byte = bit >> 3;
-    if (byte >= s.size()) return;
-    uint8_t mask = (uint8_t)(1u << (bit & 7));
-    if (val) s[byte] = (char)(s[byte] | mask);
-    else s[byte] = (char)(s[byte] & (char)~mask);
-}
-
-static inline bool get_sig_bit_bytes(const uint8_t *sig, size_t nbytes, size_t bit) {
-    size_t byte = bit >> 3;
-    if (!sig || byte >= nbytes) return false;
-    return (sig[byte] & (uint8_t)(1u << (bit & 7))) != 0;
-}
-
-static inline void set_sig_bit_bytes(uint8_t *sig, size_t nbytes, size_t bit, bool val) {
-    size_t byte = bit >> 3;
-    if (!sig || byte >= nbytes) return;
-    uint8_t mask = (uint8_t)(1u << (bit & 7));
-    if (val) sig[byte] |= mask;
-    else sig[byte] &= (uint8_t)~mask;
-}
-
-static inline uint64_t hash_bytes_fnv1a64(const uint8_t *data, size_t len) {
-    const uint64_t FNV_OFFSET = 1469598103934665603ULL;
-    const uint64_t FNV_PRIME = 1099511628211ULL;
-    uint64_t h = FNV_OFFSET;
-    for (size_t i = 0; i < len; i++) {
-        h ^= (uint64_t)data[i];
-        h *= FNV_PRIME;
-    }
-    // Avoid the sentinel 0 just in case a caller uses 0 as "empty".
-    return h ? h : 1ULL;
-}
-
-static inline size_t next_pow2(size_t x) {
-    if (x <= 2) return 2;
-    x--;
-    x |= x >> 1;
-    x |= x >> 2;
-    x |= x >> 4;
-    x |= x >> 8;
-    x |= x >> 16;
-    if (sizeof(size_t) == 8) x |= x >> 32;
-    x++;
-    return x;
-}
-
-struct BinTable {
-    std::vector<int32_t> bin_id;
-    std::vector<uint64_t> hash;
-    size_t mask = 0;
-
-    void init(size_t cap_pow2) {
-        size_t cap = next_pow2(std::max<size_t>(cap_pow2, 2));
-        bin_id.assign(cap, -1);
-        hash.assign(cap, 0);
-        mask = cap - 1;
-    }
-
-    void maybe_grow(size_t n_bins, const std::vector<uint8_t> &bin_sig_flat, size_t nbytes) {
-        if (bin_id.empty()) {
-            init(1024);
+    std::vector<int> parent(n);
+    for (int i = 0; i < n; i++) parent[i] = i;
+    auto findp = [&](int x) {
+        int r = x;
+        while (parent[r] != r) r = parent[r];
+        while (parent[x] != x) {
+            int nx = parent[x];
+            parent[x] = r;
+            x = nx;
         }
-        size_t cap = bin_id.size();
-        // Grow when load factor would exceed ~0.7 after inserting one more bin.
-        if ((n_bins + 1) * 10 < cap * 7) {
-            return;
-        }
-        size_t new_cap = cap * 2;
-        std::vector<int32_t> new_id(new_cap, -1);
-        std::vector<uint64_t> new_hash(new_cap, 0);
-        size_t new_mask = new_cap - 1;
+        return r;
+    };
 
-        for (size_t bid = 0; bid < n_bins; bid++) {
-            const uint8_t *sig = bin_sig_flat.data() + bid * nbytes;
-            uint64_t h = hash_bytes_fnv1a64(sig, nbytes);
-            size_t idx = (size_t)h & new_mask;
-            while (new_id[idx] != -1) {
-                idx = (idx + 1) & new_mask;
-            }
-            new_id[idx] = (int32_t)bid;
-            new_hash[idx] = h;
-        }
+    auto unite = [&](int a, int b) -> bool {
+        int ra = findp(a);
+        int rb = findp(b);
+        if (ra == rb)
+            return false;
+        parent[rb] = ra;
+        return true;
+    };
 
-        bin_id.swap(new_id);
-        hash.swap(new_hash);
-        mask = new_mask;
-    }
-
-    int32_t find_or_insert(uint64_t h,
-                           const uint8_t *sig,
-                           size_t nbytes,
-                           std::vector<uint8_t> &bin_sig_flat,
-                           std::vector<uint32_t> &hist) {
-        maybe_grow(hist.size(), bin_sig_flat, nbytes);
-
-        size_t idx = (size_t)h & mask;
-        for (;;) {
-            int32_t bid = bin_id[idx];
-            if (bid == -1) {
-                int32_t new_id = (int32_t)hist.size();
-                bin_id[idx] = new_id;
-                hash[idx] = h;
-                size_t off = bin_sig_flat.size();
-                bin_sig_flat.resize(off + nbytes);
-                if (nbytes > 0) {
-                    memcpy(bin_sig_flat.data() + off, sig, nbytes);
-                }
-                hist.push_back(0);
-                return new_id;
-            }
-            if (hash[idx] == h) {
-                const uint8_t *existing = bin_sig_flat.data() + (size_t)bid * nbytes;
-                if (memcmp(existing, sig, nbytes) == 0) {
-                    return bid;
-                }
-            }
-            idx = (idx + 1) & mask;
+    for (const auto &tp : cl.tables) {
+        std::set<int> uniq;
+        for (const auto &cg : tp.class_groups)
+            uniq.insert(cg.class_id);
+        if (uniq.size() > 2)
+            return false;
+        if (uniq.size() == 2) {
+            auto it = uniq.begin();
+            int a = idx[*it++];
+            int b = idx[*it];
+            if (!unite(a, b))
+                return false;
         }
     }
-};
-
-static void clear_sig_bit(std::string &s, int atom_id) {
-    if (atom_id <= 0) return;
-    size_t bit = (size_t)(atom_id - 1);
-    size_t byte = bit >> 3;
-    size_t off = bit & 7;
-    if (byte >= s.size()) return;
-    s[byte] = (char)(s[byte] & (char)~(1u << off));
+    return true;
 }
 
-static bool ast_collect_and_vars(const AstNode *node, std::vector<int> &vars) {
-    if (!node) return true;
-    if (node->type == AstNode::VAR) {
-        vars.push_back(node->var_id);
+static bool compile_target_plan(const std::string &target,
+                                const char *ast_str,
+                                Loaded *out,
+                                BuildProfile *profile)
+{
+    if (!out || !profile)
+        return false;
+
+    TargetPlan tp;
+    tp.target = target;
+
+    std::string ast = ast_str ? ast_str : "";
+    ast = trim_ws(ast);
+    if (ast.empty()) {
+        out->targets[target] = std::move(tp);
         return true;
     }
-    if (node->type == AstNode::AND) {
-        return ast_collect_and_vars(node->left, vars) &&
-               ast_collect_and_vars(node->right, vars);
+
+    AstParser parser(ast);
+    BoolAst *root = parser.parse_or();
+    parser.skip_ws();
+    if (!root || parser.pos != parser.src.size()) {
+        ereport(ERROR,
+                (errmsg("policy: failed to parse target AST target=%s ast=%s",
+                        target.c_str(), ast.c_str())));
+    }
+
+    auto dnf_terms = ast_to_dnf(root, 4096);
+
+    auto t_atoms0 = Clock::now();
+    for (const DnfTerm &term : dnf_terms) {
+        ClausePlan cl;
+        cl.target = target;
+        cl.atom_ids = term;
+
+        struct TempTable {
+            std::unordered_map<int, std::vector<std::string>> class_cols;  // class -> list of table.col
+            struct TempPred {
+                int atom_id = -1;
+                std::string col_key;
+                TokenBitset allowed;
+            };
+            std::vector<TempPred> preds;
+        };
+
+        std::unordered_map<std::string, TempTable> tmp_tables;
+        std::set<int> join_classes;
+
+        bool unsat = false;
+
+        for (int aid : term) {
+            auto ita = out->atoms_by_id.find(aid);
+            if (ita == out->atoms_by_id.end()) {
+                unsat = true;
+                break;
+            }
+            const Atom &a = ita->second;
+
+            if (a.kind == AtomKind::JOIN) {
+                if (a.join_class_id < 0) {
+                    unsat = true;
+                    break;
+                }
+                join_classes.insert(a.join_class_id);
+                tmp_tables[a.left.table].class_cols[a.join_class_id].push_back(a.left.key());
+                tmp_tables[a.right.table].class_cols[a.join_class_id].push_back(a.right.key());
+            } else {
+                std::string key = a.left.key();
+                auto itd = out->dicts.find(key);
+                if (itd == out->dicts.end()) {
+                    ereport(ERROR,
+                            (errmsg("policy: missing dict for const atom y%d col=%s",
+                                    a.id, key.c_str())));
+                }
+                DictType dtype = DictType::TEXT;
+                auto itdt = out->dict_types.find(key);
+                if (itdt != out->dict_types.end())
+                    dtype = itdt->second;
+
+                TokenBitset allowed = build_allowed_token_set(a, itd->second, dtype);
+                if (!allowed.any()) {
+                    unsat = true;
+                    break;
+                }
+
+                TempTable::TempPred p;
+                p.atom_id = a.id;
+                p.col_key = key;
+                p.allowed = std::move(allowed);
+                tmp_tables[a.left.table].preds.push_back(std::move(p));
+
+                if (a.join_class_id >= 0) {
+                    join_classes.insert(a.join_class_id);
+                    tmp_tables[a.left.table].class_cols[a.join_class_id].push_back(a.left.key());
+                }
+            }
+        }
+
+        cl.unsat = unsat;
+        if (unsat) {
+            tp.clauses.push_back(std::move(cl));
+            continue;
+        }
+
+        cl.join_classes.assign(join_classes.begin(), join_classes.end());
+
+        std::unordered_map<int, int> class_pos;
+        for (size_t i = 0; i < cl.join_classes.size(); i++)
+            class_pos[cl.join_classes[i]] = (int)i;
+
+        for (auto &tkv : tmp_tables) {
+            const std::string &tname = tkv.first;
+            auto it_table = out->tables.find(tname);
+            if (it_table == out->tables.end()) {
+                ereport(ERROR,
+                        (errmsg("policy: missing table artifacts for %s", tname.c_str())));
+            }
+            TableData &ti = it_table->second;
+            ClauseTablePlan tp_tbl;
+            tp_tbl.table = tname;
+
+            for (auto &ckv : tkv.second.class_cols) {
+                ClauseClassGroup cg;
+                cg.class_id = ckv.first;
+                auto itp = class_pos.find(cg.class_id);
+                if (itp == class_pos.end())
+                    continue;
+                cg.class_pos = itp->second;
+                std::sort(ckv.second.begin(), ckv.second.end());
+                ckv.second.erase(std::unique(ckv.second.begin(), ckv.second.end()), ckv.second.end());
+                for (const auto &col_key : ckv.second) {
+                    auto it_idx = ti.col_idx.find(col_key);
+                    if (it_idx == ti.col_idx.end()) {
+                        ereport(ERROR,
+                                (errmsg("policy: missing column %s in meta/cols/%s",
+                                        col_key.c_str(), tname.c_str())));
+                    }
+                    cg.col_idxs.push_back(it_idx->second);
+                    ti.needed_cols.insert(it_idx->second);
+                }
+                if (!cg.col_idxs.empty())
+                    tp_tbl.class_groups.push_back(std::move(cg));
+            }
+
+            for (auto &pp : tkv.second.preds) {
+                ClausePredicate p;
+                p.atom_id = pp.atom_id;
+                auto it_idx = ti.col_idx.find(pp.col_key);
+                if (it_idx == ti.col_idx.end()) {
+                    ereport(ERROR,
+                            (errmsg("policy: missing predicate column %s in meta/cols/%s",
+                                    pp.col_key.c_str(), tname.c_str())));
+                }
+                p.col_idx = it_idx->second;
+                p.allowed = std::move(pp.allowed);
+                ti.needed_cols.insert(p.col_idx);
+                tp_tbl.predicates.push_back(std::move(p));
+            }
+
+            if (tname == target)
+                cl.target_present = true;
+
+            cl.tables.push_back(std::move(tp_tbl));
+        }
+
+        cl.acyclic_hint = is_clause_acyclic_hint(cl);
+        tp.clauses.push_back(std::move(cl));
+    }
+    auto t_atoms1 = Clock::now();
+    profile->atoms_ms += Ms(t_atoms1 - t_atoms0).count();
+
+    out->targets[target] = std::move(tp);
+    return true;
+}
+
+static bool decode_table_needed_columns(TableData *ti,
+                                        ArtifactStore *store,
+                                        std::vector<int> *class_domain,
+                                        const std::unordered_map<std::string, int> &join_class_by_col)
+{
+    if (!ti || !store || !class_domain)
+        return false;
+
+    if (ti->needed_cols.empty())
+        return true;
+    if (ti->meta_cols.empty()) {
+        ereport(ERROR,
+                (errmsg("policy: missing meta/cols for table %s", ti->name.c_str())));
+    }
+
+    if (ti->nrows == 0) {
+        if (ti->code_format == TableData::CodeFormat::CB03_MANIFEST)
+            ti->nrows = ti->cb03_total_rows;
+        else if (!ti->ctid_blk.empty())
+            ti->nrows = (uint32)ti->ctid_blk.size();
+    }
+
+    if (ti->nrows == 0)
+        return true;
+
+    for (int col_idx : ti->needed_cols) {
+        if (col_idx < 0 || col_idx >= (int)ti->decoded_cols.size())
+            return false;
+        ti->decoded_cols[col_idx].assign(ti->nrows, -1);
+    }
+
+    auto on_row = [&](uint32 rid, const uint8_t *row, int ntoks) {
+        if (rid >= ti->nrows) return;
+        for (int col_idx : ti->needed_cols) {
+            if (col_idx < 0 || col_idx >= ntoks) continue;
+            int32_t tok = -1;
+            std::memcpy(&tok, row + (size_t)col_idx * sizeof(int32_t), sizeof(int32_t));
+            ti->decoded_cols[col_idx][rid] = tok;
+
+            if (tok >= 0 && col_idx < (int)ti->meta_cols.size()) {
+                auto itc = join_class_by_col.find(ti->meta_cols[col_idx]);
+                if (itc != join_class_by_col.end()) {
+                    int cid = itc->second;
+                    if (cid >= 0) {
+                        if (cid >= (int)class_domain->size())
+                            class_domain->resize((size_t)cid + 1u, 0);
+                        if (tok + 1 > (*class_domain)[cid])
+                            (*class_domain)[cid] = tok + 1;
+                    }
+                }
+            }
+        }
+    };
+
+    if (ti->code_format == TableData::CodeFormat::CB03_MANIFEST) {
+        uint32 rid = 0;
+        for (int i = 0; i < ti->cb03_chunk_count; i++) {
+            std::string chunk_name = ti->name + "_code_chunk_" + std::to_string(i);
+            ArtifactBlob chunk;
+            if (!store->get(chunk_name, &chunk)) {
+                ereport(ERROR,
+                        (errmsg("policy: missing code chunk artifact %s", chunk_name.c_str())));
+            }
+            uint32 nrows_chunk = 0;
+            int ntoks_chunk = -1;
+            bool ok = decode_cb02_append(
+                chunk,
+                ti->cb03_ntoks,
+                on_row,
+                rid,
+                &nrows_chunk,
+                &ntoks_chunk);
+            if (!ok) {
+                ereport(ERROR,
+                        (errmsg("policy: invalid CB02 chunk %s", chunk_name.c_str())));
+            }
+            rid += nrows_chunk;
+        }
+        if (rid != ti->nrows) {
+            ereport(ERROR,
+                    (errmsg("policy: decoded rows mismatch table=%s decoded=%u expected=%u",
+                            ti->name.c_str(), rid, ti->nrows)));
+        }
+        return true;
+    }
+
+    if (ti->code_format == TableData::CodeFormat::CB02_SINGLE) {
+        uint32 nrows_chunk = 0;
+        int ntoks_chunk = -1;
+        if (!decode_cb02_append(ti->code_base,
+                                (int)ti->meta_cols.size(),
+                                on_row,
+                                0,
+                                &nrows_chunk,
+                                &ntoks_chunk)) {
+            ereport(ERROR,
+                    (errmsg("policy: invalid CB02 artifact for table %s", ti->name.c_str())));
+        }
+        if (ti->nrows == 0)
+            ti->nrows = nrows_chunk;
+        if (nrows_chunk != ti->nrows) {
+            ereport(ERROR,
+                    (errmsg("policy: decoded rows mismatch table=%s decoded=%u expected=%u",
+                            ti->name.c_str(), nrows_chunk, ti->nrows)));
+        }
+        return true;
+    }
+
+    if (ti->code_format == TableData::CodeFormat::RAW) {
+        if (!ti->code_base.data || ti->code_base.len == 0) {
+            ereport(ERROR,
+                    (errmsg("policy: missing RAW code data for table %s", ti->name.c_str())));
+        }
+        size_t nints = ti->code_base.len / sizeof(int32_t);
+        if (ti->nrows == 0)
+            ereport(ERROR,
+                    (errmsg("policy: RAW code requires known nrows table=%s", ti->name.c_str())));
+        if (ti->nrows == 0)
+            return false;
+        if (nints % ti->nrows != 0) {
+            ereport(ERROR,
+                    (errmsg("policy: invalid RAW code length for table %s", ti->name.c_str())));
+        }
+        size_t stride = nints / ti->nrows;
+        bool has_rid = false;
+        if (stride == ti->meta_cols.size() + 1)
+            has_rid = true;
+        else if (stride != ti->meta_cols.size())
+            ereport(ERROR,
+                    (errmsg("policy: unexpected RAW stride table=%s stride=%zu cols=%zu",
+                            ti->name.c_str(), stride, ti->meta_cols.size())));
+
+        const int32_t *arr = (const int32_t *)ti->code_base.data;
+        for (uint32 rid = 0; rid < ti->nrows; rid++) {
+            const int32_t *row = arr + (size_t)rid * stride;
+            for (int col_idx : ti->needed_cols) {
+                size_t off = has_rid ? (size_t)col_idx + 1u : (size_t)col_idx;
+                int32_t tok = row[off];
+                ti->decoded_cols[col_idx][rid] = tok;
+
+                if (tok >= 0 && col_idx < (int)ti->meta_cols.size()) {
+                    auto itc = join_class_by_col.find(ti->meta_cols[col_idx]);
+                    if (itc != join_class_by_col.end()) {
+                        int cid = itc->second;
+                        if (cid >= 0) {
+                            if (cid >= (int)class_domain->size())
+                                class_domain->resize((size_t)cid + 1u, 0);
+                            if (tok + 1 > (*class_domain)[cid])
+                                (*class_domain)[cid] = tok + 1;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    ereport(ERROR,
+            (errmsg("policy: missing code artifact format for table %s", ti->name.c_str())));
+    return false;
+}
+
+static bool bind_clause_views(ClausePlan *cl, Loaded *loaded)
+{
+    if (!cl || !loaded)
+        return false;
+    for (auto &tp : cl->tables) {
+        auto it = loaded->tables.find(tp.table);
+        if (it == loaded->tables.end())
+            return false;
+        TableData &ti = it->second;
+
+        for (auto &p : tp.predicates) {
+            if (p.col_idx < 0 || p.col_idx >= (int)ti.decoded_cols.size())
+                return false;
+            p.col_data = &ti.decoded_cols[p.col_idx];
+        }
+        for (auto &cg : tp.class_groups) {
+            cg.col_data.clear();
+            for (int col_idx : cg.col_idxs) {
+                if (col_idx < 0 || col_idx >= (int)ti.decoded_cols.size())
+                    return false;
+                cg.col_data.push_back(&ti.decoded_cols[col_idx]);
+            }
+        }
+    }
+    return true;
+}
+
+static bool row_matches_clause_table(const ClauseTablePlan &tp,
+                                     uint32 rid,
+                                     const std::vector<TokenBitset> &allowed,
+                                     std::vector<int32_t> *out_group_tokens,
+                                     const uint8 *restrict_bits = nullptr)
+{
+    if (restrict_bits && !rid_bit_test(restrict_bits, rid))
+        return false;
+
+    for (const auto &pred : tp.predicates) {
+        if (!pred.col_data || rid >= pred.col_data->size())
+            return false;
+        int32_t tok = (*pred.col_data)[rid];
+        if (tok < 0)
+            return false;
+        if (!pred.allowed.test((size_t)tok))
+            return false;
+    }
+
+    if (out_group_tokens)
+        out_group_tokens->assign(tp.class_groups.size(), -1);
+
+    for (size_t g = 0; g < tp.class_groups.size(); g++) {
+        const ClauseClassGroup &cg = tp.class_groups[g];
+        if (cg.class_pos < 0 || cg.class_pos >= (int)allowed.size())
+            return false;
+        if (cg.col_data.empty())
+            return false;
+        int32_t tok = (*cg.col_data[0])[rid];
+        if (tok < 0)
+            return false;
+        for (size_t i = 1; i < cg.col_data.size(); i++) {
+            int32_t tk = (*cg.col_data[i])[rid];
+            if (tk != tok)
+                return false;
+        }
+        if (!allowed[cg.class_pos].test((size_t)tok))
+            return false;
+        if (out_group_tokens)
+            (*out_group_tokens)[g] = tok;
+    }
+
+    return true;
+}
+
+static bool compute_table_support(const ClausePlan &cl,
+                                  const ClauseTablePlan &tp,
+                                  const TableData &ti,
+                                  const std::vector<TokenBitset> &allowed,
+                                  std::vector<TokenBitset> *support,
+                                  const std::unordered_map<std::string, const uint8 *> *restrict_bits,
+                                  bool *table_has_any)
+{
+    if (!support) return false;
+
+    support->clear();
+    support->reserve(tp.class_groups.size());
+    for (const auto &cg : tp.class_groups) {
+        if (cg.class_pos < 0 || cg.class_pos >= (int)cl.join_classes.size())
+            return false;
+        const TokenBitset &al = allowed[cg.class_pos];
+        support->emplace_back(al.nbits);
+    }
+
+    const uint8 *rbits = nullptr;
+    if (restrict_bits) {
+        auto it_rb = restrict_bits->find(tp.table);
+        if (it_rb != restrict_bits->end())
+            rbits = it_rb->second;
+    }
+
+    bool any_row = false;
+    std::vector<int32_t> toks;
+
+    for (uint32 rid = 0; rid < ti.nrows; rid++) {
+        if (!row_matches_clause_table(tp, rid, allowed, &toks, rbits))
+            continue;
+        any_row = true;
+        for (size_t g = 0; g < tp.class_groups.size(); g++) {
+            int32_t tok = toks[g];
+            if (tok >= 0)
+                (*support)[g].set((size_t)tok);
+        }
+    }
+
+    if (table_has_any)
+        *table_has_any = any_row;
+    return true;
+}
+
+static bool propagate_clause(const ClausePlan &cl,
+                             const Loaded &loaded,
+                             std::vector<TokenBitset> *allowed_out,
+                             int *out_iters,
+                             const std::unordered_map<std::string, const uint8 *> *restrict_bits,
+                             double *out_ms)
+{
+    if (!allowed_out || !out_iters || !out_ms)
+        return false;
+
+    auto t0 = Clock::now();
+
+    allowed_out->clear();
+    allowed_out->reserve(cl.join_classes.size());
+    for (int cid : cl.join_classes) {
+        size_t dom = 0;
+        if (cid >= 0 && cid < (int)loaded.class_domain.size())
+            dom = (size_t)loaded.class_domain[cid];
+        TokenBitset b(dom);
+        b.fill_all();
+        allowed_out->push_back(std::move(b));
+    }
+
+    bool changed = false;
+    int iterations = 0;
+
+    auto sweep = [&](bool reverse) -> bool {
+        bool any_change = false;
+        if (!reverse) {
+            for (size_t ti_idx = 0; ti_idx < cl.tables.size(); ti_idx++) {
+                const ClauseTablePlan &tp = cl.tables[ti_idx];
+                auto it_t = loaded.tables.find(tp.table);
+                if (it_t == loaded.tables.end())
+                    return false;
+                const TableData &ti = it_t->second;
+                std::vector<TokenBitset> support;
+                if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
+                    return false;
+                for (size_t g = 0; g < tp.class_groups.size(); g++) {
+                    const ClauseClassGroup &cg = tp.class_groups[g];
+                    if ((*allowed_out)[cg.class_pos].intersect_with_changed(support[g]))
+                        any_change = true;
+                }
+            }
+            return true;
+        }
+
+        for (int ti_idx = (int)cl.tables.size() - 1; ti_idx >= 0; ti_idx--) {
+            const ClauseTablePlan &tp = cl.tables[(size_t)ti_idx];
+            auto it_t = loaded.tables.find(tp.table);
+            if (it_t == loaded.tables.end())
+                return false;
+            const TableData &ti = it_t->second;
+            std::vector<TokenBitset> support;
+            if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
+                return false;
+            for (size_t g = 0; g < tp.class_groups.size(); g++) {
+                const ClauseClassGroup &cg = tp.class_groups[g];
+                if ((*allowed_out)[cg.class_pos].intersect_with_changed(support[g]))
+                    any_change = true;
+            }
+        }
+        return true;
+    };
+
+    if (cl.acyclic_hint) {
+        // Two directional passes (Yannakakis-style fast path for tree-like clauses).
+        changed = false;
+        if (!sweep(false)) return false;
+        if (!sweep(true)) return false;
+        for (const auto &b : *allowed_out) {
+            if (!b.any()) {
+                *out_iters = 1;
+                *out_ms = Ms(Clock::now() - t0).count();
+                return true;
+            }
+        }
+        // Safety: fall back to bounded fixpoint if two-pass still moves domains.
+        iterations = 1;
+    }
+
+    const int cap = cl.acyclic_hint ? 8 : 20;
+    for (;;) {
+        bool any_change = false;
+        if (!sweep(false)) return false;
+        if (!sweep(true)) return false;
+
+        // Re-check by recomputing support and intersecting once more to detect change.
+        for (const auto &tp : cl.tables) {
+            auto it_t = loaded.tables.find(tp.table);
+            if (it_t == loaded.tables.end())
+                return false;
+            const TableData &ti = it_t->second;
+            std::vector<TokenBitset> support;
+            if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
+                return false;
+            for (size_t g = 0; g < tp.class_groups.size(); g++) {
+                const ClauseClassGroup &cg = tp.class_groups[g];
+                if ((*allowed_out)[cg.class_pos].intersect_with_changed(support[g]))
+                    any_change = true;
+            }
+        }
+
+        iterations++;
+
+        bool empty = false;
+        for (const auto &b : *allowed_out) {
+            if (!b.any()) {
+                empty = true;
+                break;
+            }
+        }
+        if (empty || !any_change)
+            break;
+
+        if (iterations >= cap) {
+            ereport(ERROR,
+                    (errmsg("policy: cycle_fixpoint_cap target=%s cap=%d",
+                            cl.target.c_str(), cap)));
+        }
+    }
+
+    *out_iters = std::max(iterations, cl.acyclic_hint ? 1 : 0);
+    *out_ms = Ms(Clock::now() - t0).count();
+    return true;
+}
+
+static bool table_has_witness(const ClausePlan &cl,
+                              const ClauseTablePlan &tp,
+                              const TableData &ti,
+                              const std::vector<TokenBitset> &allowed,
+                              const std::unordered_map<std::string, const uint8 *> *restrict_bits)
+{
+    const uint8 *rbits = nullptr;
+    if (restrict_bits) {
+        auto it_rb = restrict_bits->find(tp.table);
+        if (it_rb != restrict_bits->end())
+            rbits = it_rb->second;
+    }
+    for (uint32 rid = 0; rid < ti.nrows; rid++) {
+        if (row_matches_clause_table(tp, rid, allowed, nullptr, rbits))
+            return true;
     }
     return false;
 }
 
-static void dnf_expand_terms(const AstNode *node,
-                             std::vector<std::vector<int>> &out,
-                             size_t max_terms,
-                             bool &overflow) {
-    if (!node || overflow) return;
-    if (node->type == AstNode::VAR) {
-        out.push_back({node->var_id});
-        return;
-    }
-    if (node->type == AstNode::AND) {
-        std::vector<std::vector<int>> left;
-        std::vector<std::vector<int>> right;
-        dnf_expand_terms(node->left, left, max_terms, overflow);
-        dnf_expand_terms(node->right, right, max_terms, overflow);
-        if (overflow) return;
-        std::vector<std::vector<int>> merged;
-        merged.reserve(left.size() * right.size());
-        for (const auto &l : left) {
-            for (const auto &r : right) {
-                std::vector<int> term;
-                term.reserve(l.size() + r.size());
-                term.insert(term.end(), l.begin(), l.end());
-                term.insert(term.end(), r.begin(), r.end());
-                std::sort(term.begin(), term.end());
-                term.erase(std::unique(term.begin(), term.end()), term.end());
-                merged.push_back(std::move(term));
-                if (merged.size() > max_terms) {
-                    overflow = true;
-                    return;
-                }
-            }
-        }
-        out.swap(merged);
-        return;
-    }
-    if (node->type == AstNode::OR) {
-        std::vector<std::vector<int>> left;
-        std::vector<std::vector<int>> right;
-        dnf_expand_terms(node->left, left, max_terms, overflow);
-        dnf_expand_terms(node->right, right, max_terms, overflow);
-        if (overflow) return;
-        out.reserve(left.size() + right.size());
-        for (auto &t : left) out.push_back(std::move(t));
-        for (auto &t : right) out.push_back(std::move(t));
-        if (out.size() > max_terms) {
-            overflow = true;
-            return;
-        }
-        // Deduplicate identical terms to keep explosion down.
-        std::sort(out.begin(), out.end());
-        out.erase(std::unique(out.begin(), out.end()), out.end());
-        return;
-    }
-    overflow = true;
-}
-
-static AstNode *build_and_ast(const std::vector<int> &vars) {
-    if (vars.empty()) return nullptr;
-    AstNode *root = nullptr;
-    for (int v : vars) {
-        AstNode *leaf = new AstNode();
-        leaf->type = AstNode::VAR;
-        leaf->var_id = v;
-        if (!root) {
-            root = leaf;
-        } else {
-            AstNode *node = new AstNode();
-            node->type = AstNode::AND;
-            node->left = root;
-            node->right = leaf;
-            root = node;
-        }
-    }
-    return root;
-}
-
-static bool eval_bins_sat_flat(const AstNode *ast,
-                               int atom_count,
-                               const std::vector<uint8_t> &bin_sig_flat,
-                               size_t nbytes,
-                               size_t n_bins,
-                               std::vector<uint8_t> *allow_bin,
-                               double *sat_ms,
-                               int *sat_calls) {
-    if (!allow_bin) return false;
-    allow_bin->assign(n_bins, 0);
-    if (sat_calls) *sat_calls = 0;
-    if (!ast) {
-        std::fill(allow_bin->begin(), allow_bin->end(), 1);
-        if (sat_ms) *sat_ms = 0.0;
-        return true;
-    }
-
-    std::vector<int> and_vars;
-    bool pure_and = ast_collect_and_vars(ast, and_vars);
-
-    if (pure_and) {
-        for (size_t b = 0; b < n_bins; b++) {
-            const uint8_t *sig = bin_sig_flat.data() + b * nbytes;
-            bool ok = true;
-            for (int aid : and_vars) {
-                if (aid == 0) { ok = false; break; }
-                if (aid < 0) continue;
-                if (!get_sig_bit_bytes(sig, nbytes, (size_t)(aid - 1))) { ok = false; break; }
-            }
-            (*allow_bin)[b] = ok ? 1 : 0;
-        }
-        if (sat_ms) *sat_ms = 0.0;
-        return true;
-    }
-
-    std::function<bool(const AstNode*, const uint8_t*)> eval_sig =
-        [&](const AstNode *node, const uint8_t *sig) -> bool {
-        if (!node) return true;
-        if (node->type == AstNode::VAR) {
-            int id = node->var_id;
-            if (id == 0) return false;
-            if (id < 0 || id > atom_count) return true;
-            return get_sig_bit_bytes(sig, nbytes, (size_t)(id - 1));
-        }
-        if (node->type == AstNode::AND)
-            return eval_sig(node->left, sig) && eval_sig(node->right, sig);
-        return eval_sig(node->left, sig) || eval_sig(node->right, sig);
-    };
-
-    for (size_t b = 0; b < n_bins; b++) {
-        const uint8_t *sig = bin_sig_flat.data() + b * nbytes;
-        (*allow_bin)[b] = eval_sig(ast, sig) ? 1 : 0;
-    }
-    if (sat_ms) *sat_ms = 0.0;
-    return true;
-}
-
-static bool eval_bins_sat(const AstNode *ast, int atom_count,
-                          const std::vector<std::string> &bin_sig,
-                          std::unordered_map<std::string, uint8_t> *decision_cache,
-                          std::vector<uint8_t> *allow_bin,
-                          double *sat_ms,
-                          int *sat_calls,
-                          int *cache_hits) {
-    if (!allow_bin) return false;
-    allow_bin->assign(bin_sig.size(), 0);
-    if (sat_calls) *sat_calls = 0;
-    if (cache_hits) *cache_hits = 0;
-    if (!ast) {
-        std::fill(allow_bin->begin(), allow_bin->end(), 1);
-        if (sat_ms) *sat_ms = 0.0;
-        return true;
-    }
-
-    std::vector<int> and_vars;
-    bool pure_and = ast_collect_and_vars(ast, and_vars);
-
-    auto sig_bit = [&](const std::string &s, int aid) -> bool {
-        if (aid == 0) return false;
-        if (aid < 0) return true;
-        if (aid > atom_count) return true;
-        size_t bit = (size_t)(aid - 1);
-        size_t byte = bit >> 3;
-        size_t off = bit & 7;
-        if (byte >= s.size()) return true;
-        return (s[byte] & (char)(1u << off)) != 0;
-    };
-
-    if (pure_and) {
-        for (size_t b = 0; b < bin_sig.size(); b++) {
-            const std::string &s = bin_sig[b];
-            if (decision_cache) {
-                auto it = decision_cache->find(s);
-                if (it != decision_cache->end()) {
-                    (*allow_bin)[b] = it->second;
-                    if (cache_hits) (*cache_hits)++;
-                    continue;
-                }
-            }
-            bool ok = true;
-            for (int aid : and_vars) {
-                if (!sig_bit(s, aid)) { ok = false; break; }
-            }
-            (*allow_bin)[b] = ok ? 1 : 0;
-            if (decision_cache) (*decision_cache)[s] = (*allow_bin)[b];
-        }
-        if (sat_ms) *sat_ms = 0.0;
-        return true;
-    }
-
-    std::function<bool(const AstNode*, const std::string&)> eval_sig =
-        [&](const AstNode *node, const std::string &s) -> bool {
-            if (!node) return true;
-            if (node->type == AstNode::VAR)
-                return sig_bit(s, node->var_id);
-            if (node->type == AstNode::AND) {
-                if (!eval_sig(node->left, s)) return false;
-                return eval_sig(node->right, s);
-            }
-            if (eval_sig(node->left, s)) return true;
-            return eval_sig(node->right, s);
-        };
-
-    for (size_t b = 0; b < bin_sig.size(); b++) {
-        const std::string &s = bin_sig[b];
-        if (decision_cache) {
-            auto it = decision_cache->find(s);
-            if (it != decision_cache->end()) {
-                (*allow_bin)[b] = it->second;
-                if (cache_hits) (*cache_hits)++;
-                continue;
-            }
-        }
-        (*allow_bin)[b] = eval_sig(ast, s) ? 1 : 0;
-        if (decision_cache) (*decision_cache)[s] = (*allow_bin)[b];
-    }
-    if (sat_ms) *sat_ms = 0.0;
-    return true;
-}
-
-static bool eval_bins_sat_partial(const AstNode *ast,
-                                  int atom_count,
-                                  const std::vector<int> &atom_ids,
-                                  const std::vector<std::string> &bin_sig,
-                                  std::unordered_map<std::string, uint8_t> *decision_cache,
-                                  std::vector<uint8_t> *allow_bin,
-                                  double *sat_ms,
-                                  int *sat_calls,
-                                  int *cache_hits) {
-    if (!allow_bin) return false;
-    allow_bin->assign(bin_sig.size(), 0);
-    if (sat_calls) *sat_calls = 0;
-    if (cache_hits) *cache_hits = 0;
-    if (!ast) {
-        std::fill(allow_bin->begin(), allow_bin->end(), 1);
-        if (sat_ms) *sat_ms = 0.0;
-        return true;
-    }
-
-    std::vector<int> and_vars;
-    bool pure_and = ast_collect_and_vars(ast, and_vars);
-    auto sig_bit = [&](const std::string &s, size_t idx) -> bool {
-        size_t byte = idx >> 3;
-        if (byte >= s.size()) return false;
-        return (s[byte] & (char)(1u << (idx & 7))) != 0;
-    };
-
-    if (pure_and) {
-        std::unordered_set<int> and_set(and_vars.begin(), and_vars.end());
-        for (size_t b = 0; b < bin_sig.size(); b++) {
-            const std::string &s = bin_sig[b];
-            if (decision_cache) {
-                auto it = decision_cache->find(s);
-                if (it != decision_cache->end()) {
-                    (*allow_bin)[b] = it->second;
-                    if (cache_hits) (*cache_hits)++;
-                    continue;
-                }
-            }
-            bool ok = true;
-            if (and_set.count(0) > 0) {
-                ok = false;
-            } else {
-                for (size_t i = 0; i < atom_ids.size(); i++) {
-                    int aid = atom_ids[i];
-                    if (and_set.count(aid) == 0) continue;
-                    if (!sig_bit(s, i)) { ok = false; break; }
-                }
-            }
-            (*allow_bin)[b] = ok ? 1 : 0;
-            if (decision_cache) (*decision_cache)[s] = (*allow_bin)[b];
-        }
-        if (sat_ms) *sat_ms = 0.0;
-        return true;
-    }
-
-    api::Solver slv;
-    slv.setLogic("SAT");
-    slv.setOption("produce-models", "false");
-    slv.setOption("incremental", "true");
-    api::Sort B = slv.getBooleanSort();
-    std::vector<api::Term> yvars(atom_count + 1);
-    for (int i = 1; i <= atom_count; i++) {
-        yvars[i] = slv.mkConst(B, "y" + std::to_string(i));
-    }
-
-    struct CnfCtx {
-        api::Solver *slv;
-        api::Sort B;
-        std::vector<api::Term> *yvars;
-        int next_id;
-        std::vector<api::Term> clauses;
-    };
-    CnfCtx ctx{&slv, B, &yvars, 0, {}};
-
-    std::function<api::Term(const AstNode*)> build_cnf = [&](const AstNode *node) -> api::Term {
-        if (!node) return ctx.slv->mkBoolean(true);
-        if (node->type == AstNode::VAR) {
-            int id = node->var_id;
-            if (id == 0)
-                return ctx.slv->mkBoolean(false);
-            if (id < 0 || id >= (int)ctx.yvars->size())
-                return ctx.slv->mkBoolean(true);
-            return (*ctx.yvars)[id];
-        }
-        api::Term a = build_cnf(node->left);
-        api::Term b = build_cnf(node->right);
-        api::Term z = ctx.slv->mkConst(ctx.B, "t" + std::to_string(++ctx.next_id));
-        if (node->type == AstNode::AND) {
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), a}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), b}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {a}),
-                                                   ctx.slv->mkTerm(api::Kind::NOT, {b}),
-                                                   z}));
-        } else {
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {a}), z}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {b}), z}));
-            ctx.clauses.push_back(ctx.slv->mkTerm(api::Kind::OR,
-                                                  {ctx.slv->mkTerm(api::Kind::NOT, {z}), a, b}));
-        }
-        return z;
-    };
-
-    api::Term top = build_cnf(ast);
-    for (auto &cl : ctx.clauses)
-        slv.assertFormula(cl);
-    slv.assertFormula(top);
-
-    auto t0 = Clock::now();
-    for (size_t b = 0; b < bin_sig.size(); b++) {
-        const std::string &s = bin_sig[b];
-        if (decision_cache) {
-            auto it = decision_cache->find(s);
-            if (it != decision_cache->end()) {
-                (*allow_bin)[b] = it->second;
-                if (cache_hits) (*cache_hits)++;
-                continue;
-            }
-        }
-        std::vector<api::Term> assumptions;
-        assumptions.reserve(atom_ids.size());
-        for (size_t i = 0; i < atom_ids.size(); i++) {
-            int aid = atom_ids[i];
-            if (aid <= 0 || aid >= (int)yvars.size())
-                continue;
-            bool bit = sig_bit(s, i);
-            api::Term lit = bit ? yvars[aid]
-                                : slv.mkTerm(api::Kind::NOT, {yvars[aid]});
-            assumptions.push_back(lit);
-        }
-        api::Result r = slv.checkSatAssuming(assumptions);
-        if (sat_calls) (*sat_calls)++;
-        if (r.isSat())
-            (*allow_bin)[b] = 1;
-        if (decision_cache) (*decision_cache)[s] = (*allow_bin)[b];
-    }
-    auto t1 = Clock::now();
-    if (sat_ms) *sat_ms = Ms(t1 - t0).count();
-    return true;
-}
-
-static bool build_const_allowed_map(const Loaded &loaded,
-                                    const std::set<int> &vars,
-                                    std::map<int, std::vector<uint8_t>> *out,
-                                    double *out_ms) {
-    if (!out) return false;
-    out->clear();
-    auto t0 = Clock::now();
-    for (int aid : vars) {
-        if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-            continue;
-        const Atom *ap = loaded.atom_by_id[aid];
-        if (!ap || ap->kind != AtomKind::CONST)
-            continue;
-        auto it_dict = loaded.dicts.find(ap->left.key());
-        if (it_dict == loaded.dicts.end()) {
-            ereport(ERROR,
-                    (errmsg("policy: missing dict for const atom y%d col=%s",
-                            aid, ap->left.key().c_str())));
-        }
-        DictType dtype = dict_type_for_key(loaded, ap->left.key());
-        (*out)[aid] = build_allowed_tokens(it_dict->second, *ap, dtype);
-    }
-    auto t1 = Clock::now();
-    if (out_ms) *out_ms += Ms(t1 - t0).count();
-    return true;
-}
-
-struct AtomEvalInfo {
-    std::string key;
-    int token_idx = -1;
-    const std::vector<uint8_t> *allowed = nullptr;
-};
-
-static bool ensure_atom_truths(const TableInfo &ti,
-                               const std::vector<AtomEvalInfo> &atoms,
-                               TableCache &tc) {
-    if (atoms.empty())
-        return true;
-    for (const auto &ai : atoms) {
-        if (!ai.allowed || ai.token_idx < 0)
-            return false;
-        tc.atom_row_truth[ai.key].assign(ti.n_rows, 0);
-    }
-    for (uint32 r = 0; r < ti.n_rows; r++) {
-        const int32_t *row = ti.row_ptr(r);
-        if (!row) continue;
-        for (const auto &ai : atoms) {
-            int32 tok = row[ai.token_idx];
-            bool allow = false;
-            if (tok >= 0 && (size_t)tok < ai.allowed->size() &&
-                (*ai.allowed)[(size_t)tok]) {
-                allow = true;
-            }
-            tc.atom_row_truth[ai.key][r] = allow ? 1 : 0;
-        }
-    }
-    return true;
-}
-
-static void rebuild_global_bins(const TableInfo &ti,
-                                TableCache &tc,
-                                double *ms_stamp,
-                                double *ms_bin) {
-    TableCache::GlobalSigCache &gs = tc.global;
-    size_t G = gs.atom_keys.size();
-    std::string base_sig = base_sig_for_bits(G);
-    gs.nbytes = base_sig.size();
-    gs.n_rows = ti.n_rows;
-    gs.row_to_bin.assign(ti.n_rows, 0);
-    gs.bin_sig_flat.clear();
-    gs.hist.clear();
-    if (ti.n_rows == 0 || gs.nbytes == 0) {
-        gs.ready = true;
-        g_local_cache.scan_counts[ti.name] += 1;
-        if (ms_stamp) *ms_stamp = 0.0;
-        if (ms_bin) *ms_bin = 0.0;
-        return;
-    }
-
-    std::vector<uint8_t> base_bytes(gs.nbytes, 0);
-    memcpy(base_bytes.data(), base_sig.data(), gs.nbytes);
-
-    // Streaming stamp+bin: compute signatures into a reused chunk buffer, then bin immediately.
-    const uint32 CHUNK = 4096;
-    std::vector<uint8_t> sig_chunk;
-    sig_chunk.reserve((size_t)CHUNK * gs.nbytes);
-
-    // Open-addressing table keyed by (hash, signature-bytes) to avoid per-row allocations.
-    BinTable tab;
-    tab.init(std::max<size_t>(1024, (size_t)ti.n_rows / 2));
-
-    double stamp_ms_acc = 0.0;
-    double bin_ms_acc = 0.0;
-
-    for (uint32 start = 0; start < ti.n_rows; start += CHUNK) {
-        uint32 end = start + CHUNK;
-        if (end > ti.n_rows) end = ti.n_rows;
-        uint32 n = end - start;
-        sig_chunk.resize((size_t)n * gs.nbytes);
-
-        auto ts0 = Clock::now();
-        for (uint32 i = 0; i < n; i++) {
-            uint32 r = start + i;
-            uint8_t *sig = sig_chunk.data() + (size_t)i * gs.nbytes;
-            memcpy(sig, base_bytes.data(), gs.nbytes);
-
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
-            for (size_t a = 0; a < G; a++) {
-                int idx = (a < gs.token_idx.size()) ? gs.token_idx[a] : -1;
-                bool allow = false;
-                if (idx >= 0) {
-                    int32 tok = row[idx];
-                    if (tok >= 0) {
-                        const std::string &akey = gs.atom_keys[a];
-                        auto it_allow = gs.allowed_by_key.find(akey);
-                        if (it_allow != gs.allowed_by_key.end()) {
-                            const auto &al = it_allow->second;
-                            if ((size_t)tok < al.size() && al[(size_t)tok])
-                                allow = true;
-                        }
-                    }
-                }
-                if (!allow) {
-                    set_sig_bit_bytes(sig, gs.nbytes, a, false);
-                }
-            }
-        }
-        auto ts1 = Clock::now();
-        stamp_ms_acc += Ms(ts1 - ts0).count();
-
-        auto tb0 = Clock::now();
-        for (uint32 i = 0; i < n; i++) {
-            const uint8_t *sig = sig_chunk.data() + (size_t)i * gs.nbytes;
-            uint64_t h = hash_bytes_fnv1a64(sig, gs.nbytes);
-            int32_t bid = tab.find_or_insert(h, sig, gs.nbytes, gs.bin_sig_flat, gs.hist);
-            gs.row_to_bin[start + i] = (int)bid;
-            gs.hist[(size_t)bid] += 1;
-        }
-        auto tb1 = Clock::now();
-        bin_ms_acc += Ms(tb1 - tb0).count();
-    }
-
-    gs.ready = true;
-    g_local_cache.scan_counts[ti.name] += 1;
-    if (ms_stamp) *ms_stamp = stamp_ms_acc;
-    if (ms_bin) *ms_bin = bin_ms_acc;
-}
-
-static bool compute_local_ok_bins(const Loaded &loaded,
-                                  const std::string &table,
-                                  const AstNode *ast,
-                                  const std::set<int> &target_vars,
-                                  const std::map<int, std::vector<uint8_t>> &const_allowed,
-                                  std::vector<uint8_t> *out_ok,
-                                  uint32 *out_count,
-                                  LocalStat *stat,
-                                  int bundle_id = 0)
+static bool build_rid_bits_for_clause_target(const ClausePlan &cl,
+                                             const Loaded &loaded,
+                                             const std::vector<TokenBitset> &allowed,
+                                             std::vector<uint8_t> *out_bits,
+                                             const std::unordered_map<std::string, const uint8 *> *restrict_bits,
+                                             bool *out_clause_global_ok)
 {
-    if (!out_ok || !out_count) return false;
-    (void)const_allowed;
-    ensure_local_cache_ctx();
-    register_query_callback();
-    auto it_t = loaded.tables.find(table);
-    if (it_t == loaded.tables.end())
+    if (!out_bits || !out_clause_global_ok)
         return false;
-    const TableInfo &ti = it_t->second;
-    TableCache &tc = g_local_cache.tables[table];
-    const bool dump_atom_counts = env_flag_enabled("CF_ATOM_COUNTS") || debug_trace_enabled();
-    std::vector<int> const_ids;
-    std::vector<const Atom*> const_atoms;
-    for (size_t i = 0; i < ti.const_atom_ids.size(); i++) {
-        int aid = ti.const_atom_ids[i];
-        if (target_vars.count(aid) == 0)
-            continue;
-        const Atom *ap = (aid > 0 && aid < (int)loaded.atom_by_id.size())
-                             ? loaded.atom_by_id[aid]
-                             : nullptr;
-        if (!ap || ap->kind != AtomKind::CONST)
-            continue;
-        const_ids.push_back(aid);
-        const_atoms.push_back(ap);
-    }
-    if (const_ids.empty()) {
-        const bool deny_all = (ast && ast->type == AstNode::VAR && ast->var_id == 0);
-        if (deny_all) {
-            out_ok->assign(ti.n_rows, 0);
-            *out_count = 0;
-        } else {
-            out_ok->clear();
-            *out_count = ti.n_rows;
-        }
-        if (dump_atom_counts) {
-            const AstNode *perm_ast = nullptr;
-            auto it_perm = loaded.target_perm_ast.find(table);
-            if (it_perm != loaded.target_perm_ast.end())
-                perm_ast = it_perm->second;
-            const AstNode *rest_ast = nullptr;
-            auto it_rest = loaded.target_rest_ast.find(table);
-            if (it_rest != loaded.target_rest_ast.end())
-                rest_ast = it_rest->second;
-            std::string ast_combined = ast ? ast_to_string_simple(ast) : "";
-            std::string ast_perm = perm_ast ? ast_to_string_simple(perm_ast) : "";
-            std::string ast_rest = rest_ast ? ast_to_string_simple(rest_ast) : "";
-            uint32 perm_cnt = perm_ast ? *out_count : 0;
-            uint32 rest_cnt = rest_ast ? *out_count : ti.n_rows;
-            elog(NOTICE,
-                 "CF_POLICY_SIDE table=%s rows=%u combined_ok=%u perm_ok=%u rest_ok=%u has_perm=%d has_rest=%d",
-                 table.c_str(), ti.n_rows, *out_count, perm_cnt, rest_cnt,
-                 perm_ast ? 1 : 0, rest_ast ? 1 : 0);
-            elog(NOTICE, "CF_POLICY_SIDE_AST table=%s combined=%s perm=%s rest=%s",
-                 table.c_str(), ast_combined.c_str(), ast_perm.c_str(), ast_rest.c_str());
-            elog(NOTICE, "CF_ATOM_COUNTS table=%s rows=%u ok=%u used_vars=%d local_const_vars=0",
-                 table.c_str(), ti.n_rows, *out_count, (int)target_vars.size());
-        }
-        if (stat) {
-            stat->table = table;
-            stat->atoms = 0;
-            stat->bins = 0;
-            stat->sat_calls = 0;
-            stat->cache_hits = 0;
-            stat->ms_atoms = 0.0;
-            stat->ms_stamp = 0.0;
-            stat->ms_bin = 0.0;
-            stat->ms_eval = 0.0;
-            stat->ms_fill = 0.0;
-        }
-        return true;
-    }
 
-    // ensure global atoms + bins for this table
-    double atoms_ms = 0.0;
-    double stamp_ms = 0.0;
-    double bin_ms = 0.0;
-    if (!tc.global.ready) {
-        tc.global.atom_keys.clear();
-        tc.global.atom_index.clear();
-        tc.global.token_idx.clear();
-        tc.global.allowed_by_key.clear();
-        auto t_atoms0 = Clock::now();
-        for (int aid : ti.const_atom_ids) {
-            if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-                continue;
-            const Atom *ap = loaded.atom_by_id[aid];
-            if (!ap || ap->kind != AtomKind::CONST)
-                continue;
-            std::string akey = const_atom_key(ap);
-            if (tc.global.atom_index.find(akey) != tc.global.atom_index.end())
-                continue;
-            auto itoff = ti.schema_offset.find(ap->lhs_schema_key);
-            if (itoff == ti.schema_offset.end())
-                ereport(ERROR,
-                        (errmsg("policy: missing column offset for %s", ap->lhs_schema_key.c_str())));
-            auto it_dict = loaded.dicts.find(ap->left.key());
-            if (it_dict == loaded.dicts.end())
-                ereport(ERROR,
-                        (errmsg("policy: missing dict for const atom y%d col=%s",
-                                ap->id, ap->left.key().c_str())));
-            tc.global.atom_index[akey] = (int)tc.global.atom_keys.size();
-            tc.global.atom_keys.push_back(akey);
-            tc.global.token_idx.push_back(itoff->second);
-            DictType dtype = dict_type_for_key(loaded, ap->left.key());
-            tc.global.allowed_by_key[akey] = build_allowed_tokens(it_dict->second, *ap, dtype);
-        }
-        auto t_atoms1 = Clock::now();
-        atoms_ms = Ms(t_atoms1 - t_atoms0).count();
-        rebuild_global_bins(ti, tc, &stamp_ms, &bin_ms);
-        tc.global.ms_stamp = stamp_ms;
-        tc.global.ms_bin = bin_ms;
-        CF_TRACE_LOG( "policy: global_atoms table=%s count=%zu",
-             table.c_str(), tc.global.atom_keys.size());
-        CF_TRACE_LOG( "policy: global_bins table=%s bins=%zu rows=%u",
-             table.c_str(), tc.global.hist.size(), ti.n_rows);
-    } else {
-        // enforce no new atoms mid-query
-        for (const Atom *ap : const_atoms) {
-            std::string akey = const_atom_key(ap);
-            if (tc.global.atom_index.find(akey) == tc.global.atom_index.end()) {
-                ereport(ERROR,
-                        (errmsg("policy: new atom encountered after global scan table=%s atom=%s",
-                                table.c_str(), akey.c_str())));
-            }
-        }
-        stamp_ms = 0.0;
-        bin_ms = 0.0;
-        atoms_ms = 0.0;
-    }
-    if (stat)
-        stat->ms_atoms += atoms_ms;
+    *out_clause_global_ok = true;
 
-    if (bundle_id > 0) {
-        CF_TRACE_LOG( "policy: bundle_eval target=%s bundle_id=%d uses_atoms=%zu",
-             table.c_str(), bundle_id, const_ids.size());
-    }
+    const ClauseTablePlan *target_tp = nullptr;
+    const TableData *target_ti = nullptr;
 
-    int atom_count = (int)loaded.atom_by_id.size() - 1;
-    std::string base_sig = base_sig_for_bits((size_t)atom_count);
-    std::vector<int> atom_to_global(atom_count + 1, -1);
-    for (const Atom *ap : const_atoms) {
-        std::string akey = const_atom_key(ap);
-        auto it = tc.global.atom_index.find(akey);
-        if (it != tc.global.atom_index.end() && ap->id > 0 && ap->id < (int)atom_to_global.size())
-            atom_to_global[ap->id] = it->second;
-    }
-
-    std::vector<std::string> bin_sig_bundle;
-    const size_t n_bins = tc.global.hist.size();
-    bin_sig_bundle.reserve(n_bins);
-    for (size_t b = 0; b < n_bins; b++) {
-        const uint8_t *gsig = tc.global.bin_sig_flat.data() + b * tc.global.nbytes;
-        std::string s = base_sig;
-        for (int aid : const_ids) {
-            int gidx = (aid >= 0 && aid < (int)atom_to_global.size()) ? atom_to_global[aid] : -1;
-            if (gidx < 0) continue;
-            bool bit = get_sig_bit_bytes(gsig, tc.global.nbytes, (size_t)gidx);
-            set_sig_bit_idx(s, (size_t)(aid - 1), bit);
-        }
-        bin_sig_bundle.push_back(std::move(s));
-    }
-
-    const AstNode *perm_ast = nullptr;
-    auto it_perm = loaded.target_perm_ast.find(table);
-    if (it_perm != loaded.target_perm_ast.end())
-        perm_ast = it_perm->second;
-    const AstNode *rest_ast = nullptr;
-    auto it_rest = loaded.target_rest_ast.find(table);
-    if (it_rest != loaded.target_rest_ast.end())
-        rest_ast = it_rest->second;
-
-    std::vector<uint8_t> allow_bin;
-    double sat_ms = 0.0;
-    int sat_calls = 0;
-    int cache_hits = 0;
-    std::string cache_key = build_cache_key(ast, loaded, const_ids);
-    auto &dec_cache = tc.decision_cache[cache_key];
-    if (!eval_bins_sat(ast, atom_count, bin_sig_bundle, &dec_cache, &allow_bin,
-                       &sat_ms, &sat_calls, &cache_hits))
-        return false;
-    auto t4 = Clock::now();
-
-    out_ok->assign(ti.n_rows, 0);
-    uint32 cnt = 0;
-    auto count_rows_for_allow_bin = [&](const std::vector<uint8_t> &bins) -> uint32 {
-        uint32 out_cnt = 0;
-        for (uint32 rr = 0; rr < ti.n_rows; rr++) {
-            int bb = tc.global.row_to_bin[rr];
-            if (bb >= 0 && bb < (int)bins.size() && bins[(size_t)bb])
-                out_cnt++;
-        }
-        return out_cnt;
-    };
-    for (uint32 r = 0; r < ti.n_rows; r++) {
-        int b = tc.global.row_to_bin[r];
-        bool ok = (b >= 0 && b < (int)allow_bin.size() && allow_bin[(size_t)b]);
-        if (ok) {
-            (*out_ok)[r] = 1;
-            cnt++;
-        }
-    }
-
-    uint32 perm_cnt = 0;
-    uint32 rest_cnt = ti.n_rows;
-    bool perm_present = (perm_ast != nullptr);
-    bool rest_present = (rest_ast != nullptr);
-    if (perm_present) {
-        std::vector<uint8_t> allow_perm;
-        double perm_sat_ms = 0.0;
-        int perm_sat_calls = 0;
-        int perm_cache_hits = 0;
-        std::string perm_cache_key = std::string("perm|") + build_cache_key(perm_ast, loaded, const_ids);
-        auto &perm_cache = tc.decision_cache[perm_cache_key];
-        if (!eval_bins_sat(perm_ast, atom_count, bin_sig_bundle, &perm_cache, &allow_perm,
-                           &perm_sat_ms, &perm_sat_calls, &perm_cache_hits))
-            return false;
-        perm_cnt = count_rows_for_allow_bin(allow_perm);
-    }
-    if (rest_present) {
-        std::vector<uint8_t> allow_rest;
-        double rest_sat_ms = 0.0;
-        int rest_sat_calls = 0;
-        int rest_cache_hits = 0;
-        std::string rest_cache_key = std::string("rest|") + build_cache_key(rest_ast, loaded, const_ids);
-        auto &rest_cache = tc.decision_cache[rest_cache_key];
-        if (!eval_bins_sat(rest_ast, atom_count, bin_sig_bundle, &rest_cache, &allow_rest,
-                           &rest_sat_ms, &rest_sat_calls, &rest_cache_hits))
-            return false;
-        rest_cnt = count_rows_for_allow_bin(allow_rest);
-    }
-
-    std::map<int, uint64_t> atom_true_counts;
-    if (dump_atom_counts) {
-        for (int aid : const_ids)
-            atom_true_counts[aid] = 0;
-        for (size_t b = 0; b < n_bins; b++) {
-            const uint8_t *gsig = tc.global.bin_sig_flat.data() + b * tc.global.nbytes;
-            uint64_t rows_in_bin = (b < tc.global.hist.size()) ? (uint64_t) tc.global.hist[b] : 0;
-            if (rows_in_bin == 0)
-                continue;
-            for (int aid : const_ids) {
-                int gidx = (aid >= 0 && aid < (int)atom_to_global.size()) ? atom_to_global[aid] : -1;
-                if (gidx < 0)
-                    continue;
-                if (get_sig_bit_bytes(gsig, tc.global.nbytes, (size_t)gidx))
-                    atom_true_counts[aid] += rows_in_bin;
-            }
-        }
-    }
-    auto t5 = Clock::now();
-
-    CF_TRACE_LOG( "policy: local_bins table=%s atoms=%zu bins=%zu",
-         table.c_str(), const_ids.size(), n_bins);
-    CF_TRACE_LOG( "policy: local_ms table=%s stamp=%.3f bin=%.3f eval=%.3f fill=%.3f",
-         table.c_str(),
-         stamp_ms,
-         bin_ms,
-         sat_ms,
-         Ms(t5 - t4).count());
-    CF_TRACE_LOG( "policy: local_eval table=%s sat_calls=%d cache_hits=%d",
-         table.c_str(), sat_calls, cache_hits);
-
-    if (dump_atom_counts) {
-        std::string ast_combined = ast ? ast_to_string_simple(ast) : "";
-        std::string ast_perm = perm_ast ? ast_to_string_simple(perm_ast) : "";
-        std::string ast_rest = rest_ast ? ast_to_string_simple(rest_ast) : "";
-        elog(NOTICE,
-             "CF_POLICY_SIDE table=%s rows=%u combined_ok=%u perm_ok=%u rest_ok=%u has_perm=%d has_rest=%d",
-             table.c_str(), ti.n_rows, cnt, perm_cnt, rest_cnt, perm_present ? 1 : 0, rest_present ? 1 : 0);
-        elog(NOTICE, "CF_POLICY_SIDE_AST table=%s combined=%s perm=%s rest=%s",
-             table.c_str(), ast_combined.c_str(), ast_perm.c_str(), ast_rest.c_str());
-        elog(NOTICE, "CF_ATOM_COUNTS table=%s rows=%u ok=%u used_vars=%d local_const_vars=%d",
-             table.c_str(), ti.n_rows, cnt, (int)target_vars.size(), (int)const_ids.size());
-
-        for (const Atom *ap : const_atoms) {
-            if (!ap) continue;
-            uint64_t true_rows = 0;
-            auto it_cnt = atom_true_counts.find(ap->id);
-            if (it_cnt != atom_true_counts.end())
-                true_rows = it_cnt->second;
-            std::string desc = atom_to_sql(*ap);
-            elog(NOTICE, "CF_ATOM table=%s aid=y%d true_rows=%llu desc=%s",
-                 table.c_str(), ap->id, (unsigned long long)true_rows, desc.c_str());
-        }
-    }
-
-    if (stat) {
-        stat->table = table;
-        stat->atoms = (int)const_ids.size();
-        stat->bins = n_bins;
-        stat->sat_calls = sat_calls;
-        stat->cache_hits = cache_hits;
-        stat->ms_stamp = stamp_ms;
-        stat->ms_bin = bin_ms;
-        stat->ms_eval = sat_ms;
-        stat->ms_fill = Ms(t5 - t4).count();
-    }
-
-    *out_count = cnt;
-    return true;
-}
-
-static AstCheckResult ast_check_node(const Loaded &loaded, const AstNode *node)
-{
-    AstCheckResult res;
-    if (!node)
-        return res;
-    if (node->type == AstNode::VAR) {
-        int id = node->var_id;
-        if (id <= 0 || id >= (int)loaded.atom_by_id.size() || !loaded.atom_by_id[id]) {
-            res.valid = false;
-            res.reason = "missing atom for var";
-            return res;
-        }
-        const Atom *ap = loaded.atom_by_id[id];
-        if (ap->kind == AtomKind::JOIN) {
-            res.has_join = true;
-        } else {
-            res.const_tables.insert(ap->left.table);
-        }
-        return res;
-    }
-    AstCheckResult l = ast_check_node(loaded, node->left);
-    AstCheckResult r = ast_check_node(loaded, node->right);
-    if (!l.valid) return l;
-    if (!r.valid) return r;
-    if (node->type == AstNode::OR) {
-        if (l.has_join || r.has_join) {
-            res.valid = false;
-            res.reason = "OR mixes join atoms";
-            return res;
-        }
-        if (l.const_tables.size() != 1 || r.const_tables.size() != 1) {
-            res.valid = false;
-            res.reason = "OR across multiple tables";
-            return res;
-        }
-        const std::string &lt = *l.const_tables.begin();
-        const std::string &rt = *r.const_tables.begin();
-        if (lt != rt) {
-            res.valid = false;
-            res.reason = "OR across different tables";
-            return res;
-        }
-        res.const_tables.insert(lt);
-        return res;
-    }
-    if (node->type == AstNode::AND) {
-        res.has_join = l.has_join || r.has_join;
-        res.const_tables = l.const_tables;
-        res.const_tables.insert(r.const_tables.begin(), r.const_tables.end());
-        return res;
-    }
-    res.valid = false;
-    res.reason = "unsupported AST node";
-    return res;
-}
-
-static bool ast_supported_multi_join(const Loaded &loaded, const AstNode *ast,
-                                     std::string *reason)
-{
-    if (!ast) {
-        if (reason) *reason = "missing AST";
-        return false;
-    }
-    AstCheckResult res = ast_check_node(loaded, ast);
-    if (!res.valid) {
-        if (reason) *reason = res.reason.empty() ? "invalid AST" : res.reason;
-        return false;
-    }
-    return true;
-}
-
-static bool multi_join_enforce_ast(const Loaded &loaded,
-                                   const std::string &target,
-                                   const AstNode *ast,
-                                   const std::set<int> &vars,
-                                   PolicyAllowListC *out,
-                                   BundleProfile *profile,
-                                   bool log_detail,
-                                   std::map<int, Bitset> *out_allowed,
-                                   const std::map<std::string, const uint8*> *restrict_bits)
-{
-    if (!out) return false;
-
-    if (!ast) {
-        ereport(ERROR, (errmsg("policy: missing AST for target %s", target.c_str())));
-    }
-
-    std::map<int, std::set<std::string>> class_tables;
-    for (int aid : vars) {
-        if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-            continue;
-        const Atom *ap = loaded.atom_by_id[aid];
-        if (!ap || ap->kind != AtomKind::JOIN)
-            continue;
-        int cid = ap->join_class_id;
-        if (cid < 0)
-            continue;
-        class_tables[cid].insert(ap->left.table);
-        class_tables[cid].insert(ap->right.table);
-    }
-    if (class_tables.empty()) {
-        const TableInfo &ti = loaded.tables.find(target)->second;
-        std::vector<uint8_t> ok_rows;
-        uint32 cnt = 0;
-        LocalStat lst;
-        if (!compute_local_ok_bins(loaded, target, ast, vars,
-                                   std::map<int, std::vector<uint8_t>>{}, &ok_rows, &cnt,
-                                   &lst, profile ? profile->bundle_id : 0)) {
-            ereport(ERROR,
-                    (errmsg("policy: failed to compute local_ok bins for table %s", target.c_str())));
-        }
-        size_t bytes = (ti.n_rows + 7) / 8;
-        uint8 *bits = (uint8 *)palloc0(bytes);
-        const uint8 *target_restrict = nullptr;
-        if (restrict_bits) {
-            auto it_rb = restrict_bits->find(target);
-            if (it_rb != restrict_bits->end())
-                target_restrict = it_rb->second;
-        }
-        cnt = 0;
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            if (!ok_rows.empty() && !ok_rows[r])
-                continue;
-            if (!allow_bit(target_restrict, r))
-                continue;
-            bits[r >> 3] |= (uint8)(1u << (r & 7));
-            cnt++;
-        }
-        out->count = 0;
-        out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
-        out->items[0].table = pstrdup(target.c_str());
-        uint64 *words = nullptr;
-        uint32 blocks = 0;
-        size_t nbytes = 0;
-        (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti.n_rows, &words, &blocks, &nbytes);
-        out->items[0].block_words = words;
-        out->items[0].blocks = blocks;
-        out->items[0].n_rows = ti.n_rows;
-        out->count = 1;
-        pfree(bits);
-        if (log_detail)
-            CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), cnt, ti.n_rows);
-        if (profile && lst.atoms > 0) {
-            profile->local.push_back(lst);
-            profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
-            profile->atoms_ms_total += lst.ms_atoms;
-        }
-        if (out_allowed) out_allowed->clear();
-        return true;
-    }
-
-    struct Edge {
-        std::string a;
-        std::string b;
-        int cid;
-    };
-    std::vector<Edge> edges;
-    std::set<std::string> nodes;
-    for (const auto &kv : class_tables) {
-        int cid = kv.first;
-        if (kv.second.size() < 2) {
-            std::string tables;
-            for (const auto &t : kv.second) {
-                if (!tables.empty()) tables += ", ";
-                tables += t;
-            }
-            ereport(ERROR,
-                    (errmsg("policy: multi-join class=%d has %zu tables [%s]; expected >= 2",
-                            cid, kv.second.size(), tables.c_str())));
-        }
-        // Join classes represent equality constraints across N tables.
-        // Any spanning tree across the tables is a sound representation.
-        auto it = kv.second.begin();
-        std::string center = *it++;
-        nodes.insert(center);
-        for (; it != kv.second.end(); ++it) {
-            const std::string &other = *it;
-            edges.push_back({center, other, cid});
-            nodes.insert(other);
-        }
-    }
-
-    if (nodes.count(target) == 0) {
-        ereport(ERROR,
-                (errmsg("policy: target %s not present in join graph", target.c_str())));
-    }
-    bool is_tree = (edges.size() == nodes.size() - 1);
-
-    std::map<std::string, std::vector<std::string>> adj;
-    std::map<std::string, std::map<std::string, int>> edge_class;
-    for (const auto &e : edges) {
-        adj[e.a].push_back(e.b);
-        adj[e.b].push_back(e.a);
-        edge_class[e.a][e.b] = e.cid;
-        edge_class[e.b][e.a] = e.cid;
-    }
-
-    std::set<std::string> visited;
-    std::map<std::string, std::string> parent;
-    std::map<std::string, std::vector<std::string>> children;
-    std::vector<std::string> preorder;
-    std::vector<std::string> postorder;
-    if (is_tree) {
-        std::function<void(const std::string&, const std::string&)> dfs =
-            [&](const std::string &t, const std::string &p) {
-                if (visited.count(t))
-                    ereport(ERROR, (errmsg("policy: multi-join graph has a cycle at %s", t.c_str())));
-                visited.insert(t);
-                parent[t] = p;
-                preorder.push_back(t);
-                for (const auto &n : adj[t]) {
-                    if (n == p) continue;
-                    dfs(n, t);
-                    children[t].push_back(n);
-                }
-                postorder.push_back(t);
-            };
-        dfs(target, "");
-        if (visited.size() != nodes.size()) {
-            ereport(ERROR,
-                    (errmsg("policy: multi-join graph disconnected (visited=%zu nodes=%zu)",
-                            visited.size(), nodes.size())));
-        }
-    }
-
-    std::map<std::string, std::map<int, int>> table_class_idx;
-    for (const auto &t : nodes) {
-        auto it_t = loaded.tables.find(t);
+    for (const auto &tp : cl.tables) {
+        auto it_t = loaded.tables.find(tp.table);
         if (it_t == loaded.tables.end())
-            ereport(ERROR, (errmsg("policy: missing table %s in loaded artifacts", t.c_str())));
-        const TableInfo &ti = it_t->second;
-        for (const auto &n : adj[t]) {
-            int cid = edge_class[t][n];
-            int idx = -1;
-            for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
-                if (ti.join_class_ids[j] == cid) {
-                    idx = ti.join_token_idx[j];
-                    break;
-                }
-            }
-            if (idx < 0) {
-                ereport(ERROR,
-                        (errmsg("policy: missing join token index for table=%s class=%d",
-                                t.c_str(), cid)));
-            }
-            table_class_idx[t][cid] = idx;
-        }
-    }
+            return false;
+        const TableData &ti = it_t->second;
 
-    std::map<int, size_t> domain_size;
-    if (is_tree) {
-        auto t_domain_start = Clock::now();
-        for (const auto &e : edges) {
-            int cid = e.cid;
-            int max_tok = -1;
-            for (const auto &t : {e.a, e.b}) {
-                const TableInfo &ti = loaded.tables.find(t)->second;
-                int idx = table_class_idx[t][cid];
-                for (uint32 r = 0; r < ti.n_rows; r++) {
-                    const int32_t *row = ti.row_ptr(r);
-                    if (!row) continue;
-                    int32 tok = row[idx];
-                    if (tok > max_tok) max_tok = tok;
-                }
-            }
-            size_t ds = (max_tok >= 0) ? (size_t)max_tok + 1 : 0;
-            auto it_ds = domain_size.find(cid);
-            if (it_ds == domain_size.end() || ds > it_ds->second)
-                domain_size[cid] = ds;
-        }
-        auto t_domain_end = Clock::now();
-        if (profile) profile->presence_ms_total += Ms(t_domain_end - t_domain_start).count();
-    }
-
-    std::map<int, std::vector<uint8_t>> const_allowed;
-    auto t_atoms_start = Clock::now();
-    for (int aid : vars) {
-        if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-            continue;
-        const Atom *ap = loaded.atom_by_id[aid];
-        if (!ap || ap->kind != AtomKind::CONST)
-            continue;
-        auto it_dict = loaded.dicts.find(ap->left.key());
-        if (it_dict == loaded.dicts.end()) {
-            ereport(ERROR,
-                    (errmsg("policy: missing dict for const atom y%d col=%s",
-                            aid, ap->left.key().c_str())));
-        }
-        DictType dtype = dict_type_for_key(loaded, ap->left.key());
-        const_allowed[aid] = build_allowed_tokens(it_dict->second, *ap, dtype);
-    }
-    auto t_atoms_end = Clock::now();
-    if (profile) profile->atoms_ms_total += Ms(t_atoms_end - t_atoms_start).count();
-
-    std::map<std::string, std::vector<uint8_t>> local_ok;
-    std::map<std::string, uint32> local_ok_count;
-    for (const auto &t : nodes) {
-        const TableInfo &ti = loaded.tables.find(t)->second;
-        std::vector<uint8_t> ok_rows;
-        uint32 cnt = 0;
-        LocalStat lst;
-        if (!compute_local_ok_bins(loaded, t, ast, vars,
-                                   const_allowed, &ok_rows, &cnt, &lst,
-                                   profile ? profile->bundle_id : 0)) {
-            ereport(ERROR,
-                    (errmsg("policy: failed to compute local_ok bins for table %s", t.c_str())));
-        }
-        if (ok_rows.empty()) {
-            local_ok_count[t] = ti.n_rows;
-            continue;
-        }
-        if (log_detail)
-            CF_TRACE_LOG( "policy: local_ok source=bins table=%s", t.c_str());
-        local_ok_count[t] = cnt;
-        local_ok[t] = std::move(ok_rows);
-        if (profile && lst.atoms > 0) {
-            profile->local.push_back(lst);
-            profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
-            profile->atoms_ms_total += lst.ms_atoms;
-        }
-    }
-
-    if (log_detail) {
-        for (const auto &kv : local_ok_count) {
-            const TableInfo &ti = loaded.tables.find(kv.first)->second;
-            CF_TRACE_LOG( "policy: multi_join local_ok %s = %u / %u",
-                 kv.first.c_str(), kv.second, ti.n_rows);
-        }
-    }
-
-    if (!is_tree) {
-        // Cyclic join graph fallback: exact row-level chase using unique token->row maps.
-        //
-        // This path assumes join atoms are all conjunctive (AND) and local predicates are
-        // table-local (the precondition for this function). We compute, for each target row
-        // that passes local_ok, whether the join constraints can be satisfied by chasing
-        // equality tokens across the join graph.
-
-        struct AdjE {
-            int to = -1;
-            int cid = -1;
-            int idx_self = -1;
-            int idx_to = -1;
-        };
-
-        std::vector<std::string> node_list(nodes.begin(), nodes.end());
-        std::unordered_map<std::string, int> node_id;
-        node_id.reserve(node_list.size());
-        for (size_t i = 0; i < node_list.size(); i++)
-            node_id[node_list[i]] = (int)i;
-        auto it_tid = node_id.find(target);
-        if (it_tid == node_id.end())
-            ereport(ERROR, (errmsg("policy: target %s not present in join graph", target.c_str())));
-        int target_id = it_tid->second;
-        const size_t N = node_list.size();
-
-        std::vector<const TableInfo*> ti_by_id(N, nullptr);
-        for (size_t i = 0; i < N; i++) {
-            auto it_t = loaded.tables.find(node_list[i]);
-            if (it_t == loaded.tables.end())
-                ereport(ERROR, (errmsg("policy: missing table %s in loaded artifacts", node_list[i].c_str())));
-            ti_by_id[i] = &it_t->second;
+        if (tp.table == cl.target) {
+            target_tp = &tp;
+            target_ti = &ti;
         }
 
-        std::vector<const std::vector<uint8_t>*> ok_by_id(N, nullptr);
-        for (size_t i = 0; i < N; i++) {
-            auto it_ok = local_ok.find(node_list[i]);
-            if (it_ok != local_ok.end())
-                ok_by_id[i] = &it_ok->second;
-        }
-
-        std::vector<const uint8*> restrict_by_id(N, nullptr);
-        if (restrict_bits) {
-            for (size_t i = 0; i < N; i++) {
-                auto it_rb = restrict_bits->find(node_list[i]);
-                if (it_rb != restrict_bits->end())
-                    restrict_by_id[i] = it_rb->second;
-            }
-        }
-
-        // Build adjacency with token indices for quick per-row lookups.
-        std::vector<std::vector<AdjE>> adj_id(N);
-        adj_id.assign(N, {});
-        for (const auto &e : edges) {
-            int ia = node_id[e.a];
-            int ib = node_id[e.b];
-            int idx_a = table_class_idx[e.a][e.cid];
-            int idx_b = table_class_idx[e.b][e.cid];
-            adj_id[(size_t)ia].push_back({ib, e.cid, idx_a, idx_b});
-            adj_id[(size_t)ib].push_back({ia, e.cid, idx_b, idx_a});
-        }
-
-        // Build unique tok->row maps for non-target tables on incident join classes.
-        ensure_local_cache_ctx();
-        register_query_callback();
-        auto t_row_by_tok_start = Clock::now();
-        std::vector<std::unordered_map<int, std::vector<int32_t>>> row_by_tok(N);
-        for (size_t i = 0; i < N; i++) {
-            if ((int)i == target_id) continue;
-            const TableInfo &ti = *ti_by_id[i];
-
-            // Deduplicate incident join classes for this table and scan once to build all maps.
-            struct MapSpec { int cid; int idx; };
-            std::vector<MapSpec> specs;
-            specs.reserve(adj_id[i].size());
-            std::unordered_set<int> seen;
-            seen.reserve(adj_id[i].size());
-            for (const auto &ae : adj_id[i]) {
-                if (seen.insert(ae.cid).second) {
-                    specs.push_back({ae.cid, ae.idx_self});
-                }
-            }
-            if (specs.empty())
-                continue;
-
-            std::vector<std::vector<int32_t>> maps(specs.size());
-            std::vector<int32_t> max_tok(specs.size(), -1);
-            std::vector<uint8_t> unique(specs.size(), 1);
-
-            // Track join-preprocessing scans separately from local/bin scans.
-            g_local_cache.scan_counts["join:" + node_list[i]] += 1;
-
-            for (uint32 r = 0; r < ti.n_rows; r++) {
-                if (ok_by_id[i] && !(*ok_by_id[i])[r])
-                    continue;
-                if (!allow_bit(restrict_by_id[i], r))
-                    continue;
-                const int32_t *row = ti.row_ptr(r);
-                if (!row) continue;
-
-                for (size_t j = 0; j < specs.size(); j++) {
-                    if (!unique[j])
-                        continue;
-                    int32 tok = row[specs[j].idx];
-                    if (tok < 0)
-                        continue;
-                    if (tok > max_tok[j])
-                        max_tok[j] = tok;
-
-                    auto &vec = maps[j];
-                    size_t utok = (size_t)tok;
-                    if (utok >= vec.size()) {
-                        size_t new_sz = vec.size() ? vec.size() : 1024;
-                        while (new_sz <= utok) new_sz *= 2;
-                        vec.resize(new_sz, -1);
-                    }
-                    if (vec[utok] == -1) {
-                        vec[utok] = (int32_t)r;
-                    } else {
-                        unique[j] = 0;
-                        // Release memory early; this map won't be used.
-                        std::vector<int32_t>().swap(vec);
-                    }
-                }
-            }
-
-            for (size_t j = 0; j < specs.size(); j++) {
-                if (!unique[j])
-                    continue;
-                auto &vec = maps[j];
-                int32_t mt = max_tok[j];
-                if (mt >= 0) {
-                    vec.resize((size_t)mt + 1, -1);
-                } else {
-                    vec.clear();
-                }
-                row_by_tok[i][specs[j].cid] = std::move(vec);
-            }
-        }
-        auto t_row_by_tok_end = Clock::now();
-        if (profile) profile->presence_ms_total += Ms(t_row_by_tok_end - t_row_by_tok_start).count();
-
-        const TableInfo &ti_t = *ti_by_id[(size_t)target_id];
-        size_t bytes = (ti_t.n_rows + 7) / 8;
-        uint8 *bits = (uint8 *)palloc0(bytes);
-        uint32 passed = 0;
-
-        std::vector<int32_t> assigned(N, -1);
-        std::vector<int> q;
-        q.reserve(N);
-
-        auto t_chase_start = Clock::now();
-        for (uint32 r = 0; r < ti_t.n_rows; r++) {
-            if (ok_by_id[(size_t)target_id] && !(*ok_by_id[(size_t)target_id])[r])
-                continue;
-            if (!allow_bit(restrict_by_id[(size_t)target_id], r))
-                continue;
-
-            std::fill(assigned.begin(), assigned.end(), -1);
-            q.clear();
-            assigned[(size_t)target_id] = (int32_t)r;
-            q.push_back(target_id);
-
-            bool ok = true;
-            for (size_t qi = 0; qi < q.size() && ok; qi++) {
-                int cur = q[qi];
-                const TableInfo &ti_cur = *ti_by_id[(size_t)cur];
-                int32 rid_cur = assigned[(size_t)cur];
-                const int32_t *row_cur = (rid_cur >= 0) ? ti_cur.row_ptr((uint32)rid_cur) : nullptr;
-                if (!row_cur) { ok = false; break; }
-                for (const auto &ae : adj_id[(size_t)cur]) {
-                    int to = ae.to;
-                    int32 tok = row_cur[ae.idx_self];
-                    if (tok < 0) { ok = false; break; }
-
-                    int32 rid_to = assigned[(size_t)to];
-                    if (rid_to >= 0) {
-                        const TableInfo &ti_to = *ti_by_id[(size_t)to];
-                        const int32_t *row_to = ti_to.row_ptr((uint32)rid_to);
-                        if (!row_to) { ok = false; break; }
-                        int32 tok2 = row_to[ae.idx_to];
-                        if (tok2 != tok) { ok = false; break; }
-                        continue;
-                    }
-
-                    // Deterministically assign only if the target table has a unique tok->row map for this class.
-                    auto it_m = row_by_tok[(size_t)to].find(ae.cid);
-                    if (it_m == row_by_tok[(size_t)to].end())
-                        continue;  // Defer; may be assigned via another edge.
-                    const auto &map = it_m->second;
-                    if ((size_t)tok >= map.size()) { ok = false; break; }
-                    rid_to = map[(size_t)tok];
-                    if (rid_to < 0) { ok = false; break; }
-                    assigned[(size_t)to] = rid_to;
-                    q.push_back(to);
-                }
-            }
-            if (!ok)
-                continue;
-
-            // Require all tables to be assigned (join atoms are conjunctive).
-            for (size_t i = 0; i < N; i++) {
-                if (assigned[i] < 0) { ok = false; break; }
-            }
-            if (!ok)
-                continue;
-
-            // Final edge check (covers deferred edges).
-            for (const auto &e : edges) {
-                int ia = node_id[e.a];
-                int ib = node_id[e.b];
-                const TableInfo &ta = *ti_by_id[(size_t)ia];
-                const TableInfo &tb = *ti_by_id[(size_t)ib];
-                int idx_a = table_class_idx[e.a][e.cid];
-                int idx_b = table_class_idx[e.b][e.cid];
-                int32 rida = assigned[(size_t)ia];
-                int32 ridb = assigned[(size_t)ib];
-                const int32_t *ra = (rida >= 0) ? ta.row_ptr((uint32)rida) : nullptr;
-                const int32_t *rb = (ridb >= 0) ? tb.row_ptr((uint32)ridb) : nullptr;
-                if (!ra || !rb) { ok = false; break; }
-                int32 toka = ra[idx_a];
-                int32 tokb = rb[idx_b];
-                if (toka < 0 || tokb < 0 || toka != tokb) { ok = false; break; }
-            }
-            if (!ok)
-                continue;
-
-            bits[r >> 3] |= (uint8)(1u << (r & 7));
-            passed++;
-        }
-        auto t_chase_end = Clock::now();
-        double chase_ms = Ms(t_chase_end - t_chase_start).count();
-
-        out->count = 0;
-        out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
-        out->items[0].table = pstrdup(target.c_str());
-        uint64 *words = nullptr;
-        uint32 blocks = 0;
-        size_t nbytes = 0;
-        (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti_t.n_rows, &words, &blocks, &nbytes);
-        out->items[0].block_words = words;
-        out->items[0].blocks = blocks;
-        out->items[0].n_rows = ti_t.n_rows;
-        out->count = 1;
-        pfree(bits);
-        if (log_detail)
-            CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti_t.n_rows);
-        if (out_allowed) out_allowed->clear();
-        if (profile) {
-            DecodeStat ds;
-            ds.table = target;
-            ds.rows_total = ti_t.n_rows;
-            ds.rows_allowed = passed;
-            ds.ms_decode = chase_ms;
-            profile->decode.push_back(ds);
-            profile->decode_ms_total += ds.ms_decode;
-            profile->project_ms_total += ds.ms_decode;
-        }
-        return true;
-    }
-
-    std::map<std::string, std::map<std::string, Bitset>> msg_map;
-    auto compute_msg = [&](const std::string &from, const std::string &to) -> Bitset {
-        int cid = edge_class[from][to];
-        size_t D = domain_size[cid];
-        Bitset msg;
-        msg.nbits = D;
-        msg.bytes.assign((D + 7) / 8, 0);
-        const TableInfo &ti = loaded.tables.find(from)->second;
-        int idx_to = table_class_idx[from][cid];
-        const std::vector<uint8_t> *ok_rows = nullptr;
-        auto it_ok = local_ok.find(from);
-        if (it_ok != local_ok.end())
-            ok_rows = &it_ok->second;
-        const uint8 *from_restrict = nullptr;
-        if (restrict_bits) {
-            auto it_rb = restrict_bits->find(from);
-            if (it_rb != restrict_bits->end())
-                from_restrict = it_rb->second;
-        }
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            if (ok_rows && !(*ok_rows)[r])
-                continue;
-            if (!allow_bit(from_restrict, r))
-                continue;
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
-            bool row_ok = true;
-            for (const auto &n : adj[from]) {
-                if (n == to)
-                    continue;
-                int cid_n = edge_class[from][n];
-                int idx_n = table_class_idx[from][cid_n];
-                int32 tok_n = row[idx_n];
-                auto it_m = msg_map.find(n);
-                if (tok_n < 0 || it_m == msg_map.end() || !it_m->second[from].test((size_t)tok_n)) {
-                    row_ok = false;
-                    break;
-                }
-            }
-            if (!row_ok)
-                continue;
-            int32 tok = row[idx_to];
-            if (tok >= 0)
-                msg.set((size_t)tok);
-        }
-        return msg;
-    };
-
-    auto t_prop_start = Clock::now();
-    for (const auto &t : postorder) {
-        if (t == target) continue;
-        const std::string &p = parent[t];
-        msg_map[t][p] = compute_msg(t, p);
-    }
-    for (const auto &t : preorder) {
-        for (const auto &c : children[t]) {
-            msg_map[t][c] = compute_msg(t, c);
-        }
-    }
-    auto t_prop_end = Clock::now();
-    if (profile) {
-        profile->prop_ms_total = Ms(t_prop_end - t_prop_start).count();
-        profile->prop_iterations = 1;
-    }
-
-    std::map<int, Bitset> allowed_by_class;
-    for (const auto &e : edges) {
-        int cid = e.cid;
-        Bitset allow = msg_map[e.a][e.b];
-        bitset_intersect(allow, msg_map[e.b][e.a]);
-        auto it_allow = allowed_by_class.find(cid);
-        if (it_allow == allowed_by_class.end()) {
-            allowed_by_class[cid] = std::move(allow);
-        } else {
-            bitset_intersect(it_allow->second, allow);
-        }
-    }
-    if (log_detail || profile) {
-        for (const auto &kv : allowed_by_class) {
-            int cid = kv.first;
-            size_t D = domain_size[cid];
-            size_t pop = bitset_popcount(kv.second, D);
-            if (log_detail)
-                CF_TRACE_LOG( "policy: multi_join class=%d allowed=%zu / %zu",
-                     cid, pop, D);
-            if (profile) {
-                PropStat ps;
-                ps.class_id = cid;
-                ps.tokens_total = D;
-                ps.tokens_allowed = pop;
-                profile->prop.push_back(ps);
-            }
-        }
-    }
-
-    const TableInfo &ti = loaded.tables.find(target)->second;
-    size_t bytes = (ti.n_rows + 7) / 8;
-    uint8 *bits = (uint8 *)palloc0(bytes);
-    uint32 passed = 0;
-    const std::vector<uint8_t> *ok_rows = nullptr;
-    auto it_ok = local_ok.find(target);
-    if (it_ok != local_ok.end())
-        ok_rows = &it_ok->second;
-    const uint8 *target_restrict = nullptr;
-    if (restrict_bits) {
-        auto it_rb = restrict_bits->find(target);
-        if (it_rb != restrict_bits->end())
-            target_restrict = it_rb->second;
-    }
-    auto t_decode_start = Clock::now();
-    for (uint32 r = 0; r < ti.n_rows; r++) {
-        if (ok_rows && !(*ok_rows)[r])
-            continue;
-        if (!allow_bit(target_restrict, r))
-            continue;
-        const int32_t *row = ti.row_ptr(r);
-        if (!row) continue;
-        bool row_ok = true;
-        for (const auto &n : adj[target]) {
-            int cid = edge_class[target][n];
-            int idx = table_class_idx[target][cid];
-            int32 tok = row[idx];
-            if (tok < 0 || !msg_map[n][target].test((size_t)tok)) {
-                row_ok = false;
+        if (tp.table != cl.target) {
+            if (!table_has_witness(cl, tp, ti, allowed, restrict_bits)) {
+                *out_clause_global_ok = false;
                 break;
             }
         }
-        if (row_ok) {
-            bits[r >> 3] |= (uint8)(1u << (r & 7));
-            passed++;
-        }
-    }
-    auto t_decode_end = Clock::now();
-
-    out->count = 0;
-    out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
-    out->items[0].table = pstrdup(target.c_str());
-    uint64 *words = nullptr;
-    uint32 blocks = 0;
-    size_t nbytes = 0;
-    (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti.n_rows, &words, &blocks, &nbytes);
-    out->items[0].block_words = words;
-    out->items[0].blocks = blocks;
-    out->items[0].n_rows = ti.n_rows;
-    out->count = 1;
-    pfree(bits);
-    if (log_detail)
-        CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti.n_rows);
-    if (profile) {
-        DecodeStat ds;
-        ds.table = target;
-        ds.rows_total = ti.n_rows;
-        ds.rows_allowed = passed;
-        ds.ms_decode = Ms(t_decode_end - t_decode_start).count();
-        profile->decode.push_back(ds);
-        profile->decode_ms_total += ds.ms_decode;
-        profile->project_ms_total += ds.ms_decode;
     }
 
-    if (out_allowed)
-        *out_allowed = std::move(allowed_by_class);
-    return true;
-}
+    if (!*out_clause_global_ok)
+        return true;
 
-static bool multi_join_token_domain_or(const Loaded &loaded,
-                                       const AstNode *ast,
-                                       const std::set<int> &vars,
-                                       PolicyAllowListC *out,
-                                       BundleProfile *profile,
-                                       bool log_detail) {
-    if (!out) return false;
-    if (!ast) {
-        ereport(ERROR, (errmsg("policy: missing AST for token-domain evaluation")));
-    }
-    if (loaded.target_set.size() != 1) {
-        ereport(ERROR,
-                (errmsg("policy: multi-join enforcement supports a single target table (targets=%zu)",
-                        loaded.target_set.size())));
-    }
-    const std::string target = *loaded.target_set.begin();
-
-    std::map<int, std::set<std::string>> class_tables;
-    for (int aid : vars) {
-        if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-            continue;
-        const Atom *ap = loaded.atom_by_id[aid];
-        if (!ap || ap->kind != AtomKind::JOIN)
-            continue;
-        int cid = ap->join_class_id;
-        if (cid < 0)
-            continue;
-        class_tables[cid].insert(ap->left.table);
-        class_tables[cid].insert(ap->right.table);
-    }
-    if (class_tables.empty()) {
-        const TableInfo &ti = loaded.tables.find(target)->second;
-        std::vector<uint8_t> ok_rows;
-        uint32 cnt = 0;
-        LocalStat lst;
-        if (!compute_local_ok_bins(loaded, target, ast, vars,
-                                   std::map<int, std::vector<uint8_t>>{}, &ok_rows, &cnt,
-                                   &lst, profile ? profile->bundle_id : 0)) {
-            ereport(ERROR,
-                    (errmsg("policy: failed to compute local_ok bins for table %s", target.c_str())));
-        }
-        size_t bytes = (ti.n_rows + 7) / 8;
-        uint8 *bits = (uint8 *)palloc0(bytes);
-        if (ok_rows.empty()) {
-            memset(bits, 0xFF, bytes);
-            cnt = ti.n_rows;
-        } else {
-            for (uint32 r = 0; r < ti.n_rows; r++) {
-                if (ok_rows[r])
-                    bits[r >> 3] |= (uint8)(1u << (r & 7));
-            }
-        }
-        out->count = 0;
-        out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
-        out->items[0].table = pstrdup(target.c_str());
-        uint64 *words = nullptr;
-        uint32 blocks = 0;
-        size_t nbytes = 0;
-        (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti.n_rows, &words, &blocks, &nbytes);
-        out->items[0].block_words = words;
-        out->items[0].blocks = blocks;
-        out->items[0].n_rows = ti.n_rows;
-        out->count = 1;
-        pfree(bits);
-        if (log_detail)
-            CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), cnt, ti.n_rows);
-        if (profile && lst.atoms > 0) {
-            profile->local.push_back(lst);
-            profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
-            profile->atoms_ms_total += lst.ms_atoms;
-        }
+    if (!target_tp || !target_ti) {
+        // Clause independent of target row: if global witness exists, allow all target rows.
+        auto it_tt = loaded.tables.find(cl.target);
+        if (it_tt == loaded.tables.end())
+            return false;
+        const TableData &tt = it_tt->second;
+        out_bits->assign((tt.nrows + 7u) / 8u, 0xFF);
+        if ((tt.nrows & 7u) != 0u)
+            out_bits->back() &= (uint8)((1u << (tt.nrows & 7u)) - 1u);
         return true;
     }
 
-    if (class_tables.size() != 1) {
-        ereport(ERROR,
-                (errmsg("policy: token-domain OR currently supports a single join class (classes=%zu)",
-                        class_tables.size())));
-    }
+    out_bits->assign((target_ti->nrows + 7u) / 8u, 0);
 
-    std::set<std::string> nodes;
-    for (const auto &kv : class_tables) {
-        for (const auto &t : kv.second)
-            nodes.insert(t);
-    }
-    if (nodes.count(target) == 0) {
-        ereport(ERROR,
-                (errmsg("policy: target %s not present in join graph", target.c_str())));
-    }
-
-    std::map<std::string, std::map<int, int>> table_class_idx;
-    for (const auto &t : nodes) {
-        auto it_t = loaded.tables.find(t);
-        if (it_t == loaded.tables.end())
-            ereport(ERROR, (errmsg("policy: missing table %s in loaded artifacts", t.c_str())));
-        const TableInfo &ti = it_t->second;
-        for (int cid : ti.join_class_ids) {
-            int idx = -1;
-            for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
-                if (ti.join_class_ids[j] == cid) {
-                    idx = ti.join_token_idx[j];
-                    break;
-                }
-            }
-            if (idx >= 0)
-                table_class_idx[t][cid] = idx;
-        }
-    }
-
-    int primary_cid = class_tables.begin()->first;
-    const std::set<std::string> &primary_tables = class_tables.begin()->second;
-    std::map<int, size_t> domain_size;
-    {
-        int cid = primary_cid;
-        int max_tok = -1;
-        for (const auto &t : primary_tables) {
-            const TableInfo &ti = loaded.tables.find(t)->second;
-            auto it_idx = table_class_idx[t].find(cid);
-            if (it_idx == table_class_idx[t].end())
-                ereport(ERROR,
-                        (errmsg("policy: missing join token index for table=%s class=%d",
-                                t.c_str(), cid)));
-            int idx = it_idx->second;
-            for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.row_ptr(r);
-                if (!row) continue;
-                int32 tok = row[idx];
-                if (tok > max_tok) max_tok = tok;
-            }
-        }
-        domain_size[cid] = (max_tok >= 0) ? (size_t)max_tok + 1 : 0;
-    }
-
-    std::map<int, std::vector<uint8_t>> const_allowed;
-    double atoms_ms_const_allowed = 0.0;
-    build_const_allowed_map(loaded, vars, &const_allowed, &atoms_ms_const_allowed);
-    if (profile) profile->atoms_ms_total += atoms_ms_const_allowed;
-
-    std::map<std::string, std::vector<uint8_t>> local_ok;
-    std::map<std::string, uint32> local_ok_count;
-    for (const auto &t : nodes) {
-        const TableInfo &ti = loaded.tables.find(t)->second;
-        std::vector<uint8_t> ok_rows;
-        uint32 cnt = 0;
-        LocalStat lst;
-        if (!compute_local_ok_bins(loaded, t, ast, vars,
-                                   const_allowed, &ok_rows, &cnt, &lst,
-                                   profile ? profile->bundle_id : 0)) {
-            ereport(ERROR,
-                    (errmsg("policy: failed to compute local_ok bins for table %s", t.c_str())));
-        }
-        if (ok_rows.empty()) {
-            local_ok_count[t] = ti.n_rows;
-            continue;
-        }
-        if (log_detail)
-            CF_TRACE_LOG( "policy: local_ok source=bins table=%s", t.c_str());
-        local_ok_count[t] = cnt;
-        local_ok[t] = std::move(ok_rows);
-        if (profile && lst.atoms > 0) {
-            profile->local.push_back(lst);
-            profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
-            profile->atoms_ms_total += lst.ms_atoms;
-        }
-    }
-
-    struct ConstAtomInfo {
-        int atom_id;
-        int token_idx;
-        const std::vector<uint8_t> *allowed;
-    };
-    std::map<std::string, std::vector<ConstAtomInfo>> const_atoms_by_table;
-    for (int aid : vars) {
-        if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-            continue;
-        const Atom *ap = loaded.atom_by_id[aid];
-        if (!ap || ap->kind != AtomKind::CONST)
-            continue;
-        auto it_t = loaded.tables.find(ap->left.table);
-        if (it_t == loaded.tables.end()) continue;
-        const TableInfo &ti = it_t->second;
-        auto it_off = ti.schema_offset.find(ap->lhs_schema_key);
-        if (it_off == ti.schema_offset.end())
-            ereport(ERROR,
-                    (errmsg("policy: missing column offset for %s", ap->lhs_schema_key.c_str())));
-        auto it_allowed = const_allowed.find(aid);
-        if (it_allowed == const_allowed.end())
-            ereport(ERROR,
-                    (errmsg("policy: missing dict for const atom y%d col=%s",
-                            aid, ap->left.key().c_str())));
-        ConstAtomInfo info;
-        info.atom_id = aid;
-        info.token_idx = it_off->second;
-        info.allowed = &it_allowed->second;
-        const_atoms_by_table[ap->left.table].push_back(info);
-    }
-
-    // atoms per class
-    std::vector<int> target_const_ids;
-    {
-        auto it_tc = const_atoms_by_table.find(target);
-        if (it_tc != const_atoms_by_table.end()) {
-            for (const auto &ca : it_tc->second)
-                target_const_ids.push_back(ca.atom_id);
-        }
-    }
-    std::sort(target_const_ids.begin(), target_const_ids.end());
-    target_const_ids.erase(std::unique(target_const_ids.begin(), target_const_ids.end()), target_const_ids.end());
-    const size_t target_k = target_const_ids.size();
-    if (target_k > 20) {
-        ereport(ERROR,
-                (errmsg("policy: token-domain OR target const atoms too many (%zu)", target_k)));
-    }
-    const size_t sig_space = (target_k == 0) ? 1 : ((size_t)1 << target_k);
-
-    std::vector<int> target_const_token_idx;
-    target_const_token_idx.reserve(target_k);
-    std::vector<const std::vector<uint8_t>*> target_const_allowed;
-    target_const_allowed.reserve(target_k);
-    {
-        const TableInfo &ti_t = loaded.tables.find(target)->second;
-        for (int aid : target_const_ids) {
-            const Atom *ap = (aid > 0 && aid < (int)loaded.atom_by_id.size())
-                                 ? loaded.atom_by_id[aid] : nullptr;
-            if (!ap) continue;
-            auto it_off = ti_t.schema_offset.find(ap->lhs_schema_key);
-            if (it_off == ti_t.schema_offset.end())
-                ereport(ERROR,
-                        (errmsg("policy: missing column offset for %s", ap->lhs_schema_key.c_str())));
-            auto it_allow = const_allowed.find(aid);
-            if (it_allow == const_allowed.end())
-                ereport(ERROR,
-                        (errmsg("policy: missing dict for const atom y%d col=%s",
-                                aid, ap->left.key().c_str())));
-            target_const_token_idx.push_back(it_off->second);
-            target_const_allowed.push_back(&it_allow->second);
-        }
-    }
-
-    std::map<int, Bitset> allowed;
-    for (const auto &kv : domain_size) {
-        Bitset bs;
-        bs.nbits = kv.second;
-        bs.bytes.assign((bs.nbits + 7) / 8, 0xFF);
-        if (bs.nbits % 8 != 0 && !bs.bytes.empty()) {
-            uint8 mask = (uint8)((1u << (bs.nbits % 8)) - 1u);
-            bs.bytes.back() &= mask;
-        }
-        allowed[kv.first] = std::move(bs);
-    }
-
-    auto compute_support = [&](std::map<std::string, std::map<int, Bitset>> &support,
-                               std::map<int, std::map<int, Bitset>> &support_const) {
-        support.clear();
-        support_const.clear();
-        for (const auto &t : nodes) {
-            const TableInfo &ti = loaded.tables.find(t)->second;
-            const auto &t_const_atoms = const_atoms_by_table[t];
-            for (int cid : ti.join_class_ids) {
-                size_t D = domain_size[cid];
-                Bitset bs;
-                bs.nbits = D;
-                bs.bytes.assign((D + 7) / 8, 0);
-                support[t][cid] = std::move(bs);
-            }
-            for (const auto &ca : t_const_atoms) {
-                for (int cid : ti.join_class_ids) {
-                    size_t D = domain_size[cid];
-                    Bitset bs;
-                    bs.nbits = D;
-                    bs.bytes.assign((D + 7) / 8, 0);
-                    support_const[ca.atom_id][cid] = std::move(bs);
-                }
-            }
-            for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.row_ptr(r);
-                if (!row) continue;
-                for (int cid : ti.join_class_ids) {
-                    int idx = table_class_idx[t][cid];
-                    int32 tok = row[idx];
-                    if (tok < 0) continue;
-                    bool ok = true;
-                    for (int cid2 : ti.join_class_ids) {
-                        if (cid2 == cid) continue;
-                        int idx2 = table_class_idx[t][cid2];
-                        int32 tok2 = row[idx2];
-                        if (tok2 < 0 || !allowed[cid2].test((size_t)tok2)) {
-                            ok = false;
-                            break;
-                        }
-                    }
-                    if (!ok) continue;
-                    support[t][cid].set((size_t)tok);
-                }
-                if (!t_const_atoms.empty()) {
-                    for (const auto &ca : t_const_atoms) {
-                        int32 tok_c = row[ca.token_idx];
-                        bool atom_true = (tok_c >= 0 && (size_t)tok_c < ca.allowed->size() &&
-                                          (*ca.allowed)[(size_t)tok_c]);
-                        if (!atom_true) continue;
-                        for (int cid : ti.join_class_ids) {
-                            int idx = table_class_idx[t][cid];
-                            int32 tok = row[idx];
-                            if (tok < 0) continue;
-                            bool ok = true;
-                            for (int cid2 : ti.join_class_ids) {
-                                if (cid2 == cid) continue;
-                                int idx2 = table_class_idx[t][cid2];
-                                int32 tok2 = row[idx2];
-                                if (tok2 < 0 || !allowed[cid2].test((size_t)tok2)) {
-                                    ok = false;
-                                    break;
-                                }
-                            }
-                            if (!ok) continue;
-                            support_const[ca.atom_id][cid].set((size_t)tok);
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    auto compute_allowed_sigs = [&](const std::map<std::string, std::map<int, Bitset>> &support,
-                                    const std::map<int, std::map<int, Bitset>> &support_const,
-                                    std::vector<std::vector<uint8_t>> &allowed_sigs) {
-        int cid = primary_cid;
-        size_t D = domain_size[cid];
-        allowed_sigs.assign(D, std::vector<uint8_t>(sig_space, 0));
-        std::vector<int> vals(loaded.atom_by_id.size(), -1);
-        for (size_t tok = 0; tok < D; tok++) {
-            for (int aid : vars) {
-                if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-                    continue;
-                if (std::find(target_const_ids.begin(), target_const_ids.end(), aid) != target_const_ids.end()) {
-                    vals[aid] = -1;
-                    continue;
-                }
-                const Atom *ap = loaded.atom_by_id[aid];
-                if (!ap) continue;
-                bool v = false;
-                if (ap->kind == AtomKind::JOIN) {
-                    int jcid = ap->join_class_id;
-                    if (jcid == cid) {
-                        v = support.at(ap->left.table).at(cid).test(tok) &&
-                            support.at(ap->right.table).at(cid).test(tok);
-                    } else {
-                        v = true;
-                    }
-                } else {
-                    auto itp = support_const.find(aid);
-                    if (itp != support_const.end()) {
-                        auto itc = itp->second.find(cid);
-                        if (itc != itp->second.end())
-                            v = itc->second.test(tok);
-                    }
-                }
-                vals[aid] = v ? 1 : 0;
-            }
-            for (size_t sig = 0; sig < sig_space; sig++) {
-                for (size_t i = 0; i < target_const_ids.size(); i++) {
-                    int aid = target_const_ids[i];
-                    int bit = (sig >> i) & 1u;
-                    if (aid > 0 && aid < (int)vals.size())
-                        vals[aid] = bit ? 1 : 0;
-                }
-                Tri ev = eval_ast(ast, vals);
-                if (ev == TRI_TRUE)
-                    allowed_sigs[tok][sig] = 1;
-            }
-        }
-    };
-
-    const int max_iter = 50;
-    int iterations = 0;
-    bool changed = true;
-    auto t_prop_start = Clock::now();
-    while (changed && iterations < max_iter) {
-        iterations++;
-        changed = false;
-        std::map<std::string, std::map<int, Bitset>> support;
-        std::map<int, std::map<int, Bitset>> support_const;
-        compute_support(support, support_const);
-        std::vector<std::vector<uint8_t>> allowed_sigs;
-        compute_allowed_sigs(support, support_const, allowed_sigs);
-
-        int cid = primary_cid;
-        size_t D = domain_size[cid];
-        Bitset new_allow;
-        new_allow.nbits = D;
-        new_allow.bytes.assign((D + 7) / 8, 0);
-        for (size_t tok = 0; tok < D; tok++) {
-            bool any = false;
-            for (size_t sig = 0; sig < sig_space; sig++) {
-                if (allowed_sigs[tok][sig]) { any = true; break; }
-            }
-            if (any) new_allow.set(tok);
-        }
-        if (!bitset_equals(allowed[cid], new_allow, D)) {
-            changed = true;
-            allowed[cid] = std::move(new_allow);
-        }
-        if (log_detail) {
-            size_t pop = bitset_popcount(allowed[cid], D);
-            CF_TRACE_LOG( "policy: token_eval join_class=%d domain=%zu allowed=%zu",
-                 cid, D, pop);
-            CF_TRACE_LOG( "policy: token_eval target=%s target_atoms=%zu sig_space=%zu",
-                 target.c_str(), target_k, sig_space);
-        }
-    }
-    auto t_prop_end = Clock::now();
-    if (profile) {
-        profile->prop_ms_total = Ms(t_prop_end - t_prop_start).count();
-        profile->prop_iterations = iterations;
-    }
-    if (log_detail) {
-        CF_TRACE_LOG( "policy: token_eval iterations=%d", iterations);
-    }
-
-    // final allowed signatures for decode
-    std::map<std::string, std::map<int, Bitset>> support_final;
-    std::map<int, std::map<int, Bitset>> support_const_final;
-    compute_support(support_final, support_const_final);
-    std::vector<std::vector<uint8_t>> allowed_sigs_final;
-    compute_allowed_sigs(support_final, support_const_final, allowed_sigs_final);
-
-    const TableInfo &ti = loaded.tables.find(target)->second;
-    size_t bytes = (ti.n_rows + 7) / 8;
-    uint8 *bits = (uint8 *)palloc0(bytes);
-    uint32 passed = 0;
-    const std::vector<uint8_t> *ok_rows = nullptr;
-    auto it_ok = local_ok.find(target);
-    if (it_ok != local_ok.end())
-        ok_rows = &it_ok->second;
-    auto t_decode_start = Clock::now();
-    for (uint32 r = 0; r < ti.n_rows; r++) {
-        if (ok_rows && !(*ok_rows)[r])
-            continue;
-        const int32_t *row = ti.row_ptr(r);
-        if (!row) continue;
-        auto it_idx = table_class_idx[target].find(primary_cid);
-        if (it_idx == table_class_idx[target].end())
-            continue;
-        int32 tok = row[it_idx->second];
-        if (tok < 0 || !allowed[primary_cid].test((size_t)tok))
-            continue;
-        size_t sig = 0;
-        for (size_t i = 0; i < target_k; i++) {
-            int idx = target_const_token_idx[i];
-            int32 tokc = row[idx];
-            bool v = (tokc >= 0 &&
-                      (size_t)tokc < target_const_allowed[i]->size() &&
-                      (*target_const_allowed[i])[(size_t)tokc]);
-            if (v) sig |= (size_t)1 << i;
-        }
-        if (tok < 0 || (size_t)tok >= allowed_sigs_final.size())
-            continue;
-        if (sig >= allowed_sigs_final[(size_t)tok].size() ||
-            !allowed_sigs_final[(size_t)tok][sig])
-            continue;
-        bits[r >> 3] |= (uint8)(1u << (r & 7));
-        passed++;
-    }
-    auto t_decode_end = Clock::now();
-
-    out->count = 0;
-    out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
-    out->items[0].table = pstrdup(target.c_str());
-    uint64 *words = nullptr;
-    uint32 blocks = 0;
-    size_t nbytes = 0;
-    (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti.n_rows, &words, &blocks, &nbytes);
-    out->items[0].block_words = words;
-    out->items[0].blocks = blocks;
-    out->items[0].n_rows = ti.n_rows;
-    out->count = 1;
-    pfree(bits);
-    if (log_detail)
-        CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti.n_rows);
-    if (profile) {
-        DecodeStat ds;
-        ds.table = target;
-        ds.rows_total = ti.n_rows;
-        ds.rows_allowed = passed;
-        ds.ms_decode = Ms(t_decode_end - t_decode_start).count();
-        profile->decode.push_back(ds);
-        profile->decode_ms_total += ds.ms_decode;
-        profile->project_ms_total += ds.ms_decode;
-    }
-    return true;
-}
-
-static Bitset bitset_intersect(const Bitset &a, const Bitset &b, size_t nbits) {
-    Bitset out;
-    out.nbits = nbits;
-    out.bytes.assign((nbits + 7) / 8, 0);
-    size_t nbytes = out.bytes.size();
-    for (size_t i = 0; i < nbytes; i++) {
-        uint8 av = (i < a.bytes.size()) ? a.bytes[i] : 0;
-        uint8 bv = (i < b.bytes.size()) ? b.bytes[i] : 0;
-        out.bytes[i] = av & bv;
-    }
-    if (nbits % 8 && !out.bytes.empty()) {
-        uint8 mask = (uint8)((1u << (nbits % 8)) - 1u);
-        out.bytes.back() &= mask;
-    }
-    return out;
-}
-
-static bool multi_join_enforce_general(const Loaded &loaded,
-                                       const std::string &target,
-                                       const AstNode *ast,
-                                       const std::set<int> &vars,
-                                       PolicyAllowListC *out,
-                                       BundleProfile *profile,
-                                       bool log_detail,
-                                       const std::map<std::string, const uint8*> *restrict_bits) {
-    if (!out) return false;
-    if (!ast) {
-        ereport(ERROR, (errmsg("policy: missing AST for multi-join OR")));
-    }
-
-    // Build join graph (tables as nodes, join classes as edges)
-    std::map<int, std::set<std::string>> class_tables;
-    for (int aid : vars) {
-        if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-            continue;
-        const Atom *ap = loaded.atom_by_id[aid];
-        if (!ap || ap->kind != AtomKind::JOIN)
-            continue;
-        int cid = ap->join_class_id;
-        if (cid < 0)
-            continue;
-        class_tables[cid].insert(ap->left.table);
-        class_tables[cid].insert(ap->right.table);
-    }
-    if (class_tables.empty()) {
-        return multi_join_enforce_ast(loaded, target, ast, vars, out, profile, log_detail, nullptr,
-                                      restrict_bits);
-    }
-
-    struct Edge { std::string a; std::string b; int cid; };
-    std::vector<Edge> edges;
-    std::set<std::string> nodes;
-    for (const auto &kv : class_tables) {
-        int cid = kv.first;
-        if (kv.second.size() < 2) {
-            std::string tables;
-            for (const auto &t : kv.second) {
-                if (!tables.empty()) tables += ", ";
-                tables += t;
-            }
-            ereport(ERROR,
-                    (errmsg("policy: multi-join class=%d has %zu tables [%s]; expected >= 2",
-                            cid, kv.second.size(), tables.c_str())));
-        }
-        // Join classes represent equality constraints across N tables.
-        // Any spanning tree across the tables is a sound representation.
-        auto it = kv.second.begin();
-        std::string center = *it++;
-        nodes.insert(center);
-        for (; it != kv.second.end(); ++it) {
-            const std::string &other = *it;
-            edges.push_back({center, other, cid});
-            nodes.insert(other);
-        }
-    }
-    if (nodes.count(target) == 0) {
-        ereport(ERROR,
-                (errmsg("policy: target %s not present in join graph", target.c_str())));
-    }
-    if (edges.size() != nodes.size() - 1) {
-        // Exact cyclic join graph fallback WITHOUT DNF:
-        // Chase a unique joined tuple per target row (same preconditions/limitations as the
-        // cyclic path in multi_join_enforce_ast), then evaluate the boolean AST directly on the
-        // resulting atom truth assignment. This avoids combinatorial blowups from DNF expansion
-        // on OR-heavy policies while staying exact for our functional join-key workloads.
-
-        // Precompute allowed token sets for const atoms.
-        std::map<int, std::vector<uint8_t>> const_allowed;
-        double atoms_ms_const_allowed = 0.0;
-        build_const_allowed_map(loaded, vars, &const_allowed, &atoms_ms_const_allowed);
-        if (profile) profile->atoms_ms_total += atoms_ms_const_allowed;
-
-        // Build a stable node index for per-row chase.
-        struct AdjE {
-            int to = -1;
-            int cid = -1;
-            int idx_self = -1;
-            int idx_to = -1;
-        };
-
-        std::vector<std::string> node_list(nodes.begin(), nodes.end());
-        std::unordered_map<std::string, int> node_id;
-        node_id.reserve(node_list.size());
-        for (size_t i = 0; i < node_list.size(); i++)
-            node_id[node_list[i]] = (int)i;
-
-        auto it_tid = node_id.find(target);
-        if (it_tid == node_id.end())
-            ereport(ERROR, (errmsg("policy: target %s not present in join graph", target.c_str())));
-        int target_id = it_tid->second;
-        const size_t N = node_list.size();
-
-        std::vector<const TableInfo*> ti_by_id(N, nullptr);
-        for (size_t i = 0; i < N; i++) {
-            auto it_t = loaded.tables.find(node_list[i]);
-            if (it_t == loaded.tables.end())
-                ereport(ERROR, (errmsg("policy: missing table %s in loaded artifacts", node_list[i].c_str())));
-            ti_by_id[i] = &it_t->second;
-        }
-
-        std::vector<const uint8*> restrict_by_id(N, nullptr);
-        if (restrict_bits) {
-            for (size_t i = 0; i < N; i++) {
-                auto it_rb = restrict_bits->find(node_list[i]);
-                if (it_rb != restrict_bits->end())
-                    restrict_by_id[i] = it_rb->second;
-            }
-        }
-
-        auto get_node_idx = [&](const std::string &tbl) -> int {
-            auto it = node_id.find(tbl);
-            if (it == node_id.end())
-                ereport(ERROR,
-                        (errmsg("policy: table %s not present in join graph", tbl.c_str())));
-            return it->second;
-        };
-
-        // map table->class->token idx (only for classes used by edges)
-        std::map<std::string, std::map<int, int>> table_class_idx;
-        for (const auto &e : edges) {
-            for (const auto &t : {e.a, e.b}) {
-                if (table_class_idx[t].find(e.cid) != table_class_idx[t].end())
-                    continue;
-                int nid = get_node_idx(t);
-                const TableInfo &ti = *ti_by_id[(size_t)nid];
-                int idx = -1;
-                for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
-                    if (ti.join_class_ids[j] == e.cid) {
-                        idx = ti.join_token_idx[j];
-                        break;
-                    }
-                }
-                if (idx < 0) {
-                    ereport(ERROR,
-                            (errmsg("policy: missing join token index for table=%s class=%d",
-                                    t.c_str(), e.cid)));
-                }
-                table_class_idx[t][e.cid] = idx;
-            }
-        }
-
-        auto get_join_token_idx = [&](const std::string &tbl, int cid) -> int {
-            auto it_t = table_class_idx.find(tbl);
-            if (it_t == table_class_idx.end())
-                ereport(ERROR,
-                        (errmsg("policy: missing join token index map for table=%s", tbl.c_str())));
-            auto it_idx = it_t->second.find(cid);
-            if (it_idx == it_t->second.end())
-                ereport(ERROR,
-                        (errmsg("policy: missing join token index for table=%s class=%d",
-                                tbl.c_str(), cid)));
-            return it_idx->second;
-        };
-
-        // Build adjacency with token indices for quick per-row lookups.
-        std::vector<std::vector<AdjE>> adj_id(N);
-        for (const auto &e : edges) {
-            int ia = get_node_idx(e.a);
-            int ib = get_node_idx(e.b);
-            int idx_a = get_join_token_idx(e.a, e.cid);
-            int idx_b = get_join_token_idx(e.b, e.cid);
-            adj_id[(size_t)ia].push_back({ib, e.cid, idx_a, idx_b});
-            adj_id[(size_t)ib].push_back({ia, e.cid, idx_b, idx_a});
-        }
-
-        // Build unique tok->row maps for non-target tables on incident join classes.
-        ensure_local_cache_ctx();
-        register_query_callback();
-        auto t_row_by_tok_start = Clock::now();
-        std::vector<std::unordered_map<int, std::vector<int32_t>>> row_by_tok(N);
-        for (size_t i = 0; i < N; i++) {
-            if ((int)i == target_id) continue;
-            const TableInfo &ti = *ti_by_id[i];
-
-            // Deduplicate incident join classes for this table and scan once to build all maps.
-            struct MapSpec { int cid; int idx; };
-            std::vector<MapSpec> specs;
-            specs.reserve(adj_id[i].size());
-            std::unordered_set<int> seen;
-            seen.reserve(adj_id[i].size());
-            for (const auto &ae : adj_id[i]) {
-                if (seen.insert(ae.cid).second) {
-                    specs.push_back({ae.cid, ae.idx_self});
-                }
-            }
-            if (specs.empty())
-                continue;
-
-            std::vector<std::vector<int32_t>> maps(specs.size());
-            std::vector<int32_t> max_tok(specs.size(), -1);
-            std::vector<uint8_t> unique(specs.size(), 1);
-
-            // Record join-preprocessing scans separately from local/bin scans (which use plain table names).
-            g_local_cache.scan_counts["join:" + node_list[i]] += 1;
-
-            for (uint32 r = 0; r < ti.n_rows; r++) {
-                if (!allow_bit(restrict_by_id[i], r))
-                    continue;
-                const int32_t *row = ti.row_ptr(r);
-                if (!row) continue;
-
-                for (size_t j = 0; j < specs.size(); j++) {
-                    if (!unique[j])
-                        continue;
-                    int32 tok = row[specs[j].idx];
-                    if (tok < 0)
-                        continue;
-                    if (tok > max_tok[j])
-                        max_tok[j] = tok;
-
-                    auto &vec = maps[j];
-                    size_t utok = (size_t)tok;
-                    if (utok >= vec.size()) {
-                        size_t new_sz = vec.size() ? vec.size() : 1024;
-                        while (new_sz <= utok) new_sz *= 2;
-                        vec.resize(new_sz, -1);
-                    }
-                    if (vec[utok] == -1) {
-                        vec[utok] = (int32_t)r;
-                    } else {
-                        unique[j] = 0;
-                        // Release memory early; this map won't be used.
-                        std::vector<int32_t>().swap(vec);
-                    }
-                }
-            }
-
-            for (size_t j = 0; j < specs.size(); j++) {
-                if (!unique[j])
-                    continue;
-                auto &vec = maps[j];
-                int32_t mt = max_tok[j];
-                if (mt >= 0) {
-                    vec.resize((size_t)mt + 1, -1);
-                } else {
-                    vec.clear();
-                }
-                row_by_tok[i][specs[j].cid] = std::move(vec);
-            }
-        }
-        auto t_row_by_tok_end = Clock::now();
-        if (profile) profile->presence_ms_total += Ms(t_row_by_tok_end - t_row_by_tok_start).count();
-
-        // Precompute const atom evaluation info.
-        struct ConstInfo {
-            int aid = -1;
-            int node = -1;
-            int token_idx = -1;
-            const std::vector<uint8_t> *allowed = nullptr;
-        };
-        std::vector<ConstInfo> consts;
-        int max_id = 0;
-        for (int aid : vars) {
-            if (aid > max_id) max_id = aid;
-            if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-                continue;
-            const Atom *ap = loaded.atom_by_id[aid];
-            if (!ap || ap->kind != AtomKind::CONST)
-                continue;
-            auto it_n = node_id.find(ap->left.table);
-            if (it_n == node_id.end())
-                ereport(ERROR,
-                        (errmsg("policy: const atom table %s not present in join graph",
-                                ap->left.table.c_str())));
-            int nid = it_n->second;
-            const TableInfo &ti = *ti_by_id[(size_t)nid];
-            auto it_off = ti.schema_offset.find(ap->lhs_schema_key);
-            if (it_off == ti.schema_offset.end())
-                ereport(ERROR,
-                        (errmsg("policy: missing column offset for %s",
-                                ap->lhs_schema_key.c_str())));
-            auto it_allow = const_allowed.find(aid);
-            if (it_allow == const_allowed.end())
-                ereport(ERROR,
-                        (errmsg("policy: missing dict for const atom y%d col=%s",
-                                aid, ap->left.key().c_str())));
-            ConstInfo ci;
-            ci.aid = aid;
-            ci.node = nid;
-            ci.token_idx = it_off->second;
-            ci.allowed = &it_allow->second;
-            consts.push_back(ci);
-        }
-        if (max_id < 1)
-            ereport(ERROR, (errmsg("policy: empty AST vars for multi-join")));
-
-        std::string base_sig = base_sig_for_bits((size_t)max_id);
-        std::unordered_map<std::string, uint8_t> decision_cache;
-        decision_cache.reserve(4096);
-
-        auto sig_bit = [&](const std::string &s, int aid) -> bool {
-            if (aid == 0) return false;
-            if (aid < 0) return true;
-            size_t bit = (size_t)(aid - 1);
-            size_t byte = bit >> 3;
-            if (byte >= s.size()) return true;
-            return (s[byte] & (char)(1u << (bit & 7))) != 0;
-        };
-        std::function<bool(const AstNode*, const std::string&)> eval_sig =
-            [&](const AstNode *node, const std::string &s) -> bool {
-                if (!node) return true;
-                if (node->type == AstNode::VAR)
-                    return sig_bit(s, node->var_id);
-                if (node->type == AstNode::AND) {
-                    if (!eval_sig(node->left, s)) return false;
-                    return eval_sig(node->right, s);
-                }
-                if (node->type == AstNode::OR) {
-                    if (eval_sig(node->left, s)) return true;
-                    return eval_sig(node->right, s);
-                }
-                return true;
-            };
-
-        const TableInfo &ti_t = *ti_by_id[(size_t)target_id];
-        size_t bytes = (ti_t.n_rows + 7) / 8;
-        uint8 *final_bits = (uint8 *)palloc0(bytes);
-        uint32 passed = 0;
-
-        std::vector<int32_t> assigned(N, -1);
-        std::vector<int> q;
-        q.reserve(N);
-
-        const uint8 *target_restrict = restrict_by_id[(size_t)target_id];
-
-        auto t_decode_start = Clock::now();
-        for (uint32 r = 0; r < ti_t.n_rows; r++) {
-            if (!allow_bit(target_restrict, r))
-                continue;
-
-            std::fill(assigned.begin(), assigned.end(), -1);
-            q.clear();
-            assigned[(size_t)target_id] = (int32_t)r;
-            q.push_back(target_id);
-
-            bool ok = true;
-            for (size_t qi = 0; qi < q.size() && ok; qi++) {
-                int cur = q[qi];
-                const TableInfo &ti_cur = *ti_by_id[(size_t)cur];
-                int32 rid_cur = assigned[(size_t)cur];
-                const int32_t *row_cur = (rid_cur >= 0) ? ti_cur.row_ptr((uint32)rid_cur) : nullptr;
-                if (!row_cur) { ok = false; break; }
-                for (const auto &ae : adj_id[(size_t)cur]) {
-                    int to = ae.to;
-                    int32 tok = row_cur[ae.idx_self];
-                    if (tok < 0) { ok = false; break; }
-
-                    int32 rid_to = assigned[(size_t)to];
-                    if (rid_to >= 0) {
-                        const TableInfo &ti_to = *ti_by_id[(size_t)to];
-                        const int32_t *row_to = ti_to.row_ptr((uint32)rid_to);
-                        if (!row_to) { ok = false; break; }
-                        int32 tok2 = row_to[ae.idx_to];
-                        if (tok2 != tok) { ok = false; break; }
-                        continue;
-                    }
-
-                    auto it_m = row_by_tok[(size_t)to].find(ae.cid);
-                    if (it_m == row_by_tok[(size_t)to].end())
-                        continue;  // Defer; may be assigned via another edge.
-                    const auto &map = it_m->second;
-                    if ((size_t)tok >= map.size()) { ok = false; break; }
-                    rid_to = map[(size_t)tok];
-                    if (rid_to < 0) { ok = false; break; }
-                    assigned[(size_t)to] = rid_to;
-                    q.push_back(to);
-                }
-            }
-            if (!ok)
-                continue;
-
-            // Require all tables to be assigned (join atoms are conjunctive).
-            for (size_t i = 0; i < N; i++) {
-                if (assigned[i] < 0) { ok = false; break; }
-            }
-            if (!ok)
-                continue;
-
-            // Final edge check (covers deferred edges).
-            for (const auto &e : edges) {
-                int ia = get_node_idx(e.a);
-                int ib = get_node_idx(e.b);
-                const TableInfo &ta = *ti_by_id[(size_t)ia];
-                const TableInfo &tb = *ti_by_id[(size_t)ib];
-                int idx_a = get_join_token_idx(e.a, e.cid);
-                int idx_b = get_join_token_idx(e.b, e.cid);
-                int32 rida = assigned[(size_t)ia];
-                int32 ridb = assigned[(size_t)ib];
-                const int32_t *ra = (rida >= 0) ? ta.row_ptr((uint32)rida) : nullptr;
-                const int32_t *rb = (ridb >= 0) ? tb.row_ptr((uint32)ridb) : nullptr;
-                if (!ra || !rb) { ok = false; break; }
-                int32 toka = ra[idx_a];
-                int32 tokb = rb[idx_b];
-                if (toka < 0 || tokb < 0 || toka != tokb) { ok = false; break; }
-            }
-            if (!ok)
-                continue;
-
-            std::string sig = base_sig;
-            for (const auto &ci : consts) {
-                int32 rid = assigned[(size_t)ci.node];
-                if (rid < 0) { ok = false; break; }
-                const TableInfo &ti = *ti_by_id[(size_t)ci.node];
-                if (!allow_bit(restrict_by_id[(size_t)ci.node], (uint32)rid)) {
-                    ok = false;
-                    break;
-                }
-                const int32_t *row = ti.row_ptr((uint32)rid);
-                if (!row) { ok = false; break; }
-                int32 tokc = row[ci.token_idx];
-                bool v = (tokc >= 0 &&
-                          (size_t)tokc < ci.allowed->size() &&
-                          (*ci.allowed)[(size_t)tokc]);
-                set_sig_bit_idx(sig, (size_t)(ci.aid - 1), v);
-            }
-            if (!ok)
-                continue;
-
-            uint8 allow = 0;
-            auto it = decision_cache.find(sig);
-            if (it != decision_cache.end()) {
-                allow = it->second;
-            } else {
-                allow = eval_sig(ast, sig) ? 1 : 0;
-                decision_cache.emplace(std::move(sig), allow);
-            }
-
-            if (allow) {
-                final_bits[r >> 3] |= (uint8)(1u << (r & 7));
-                passed++;
-            }
-        }
-        auto t_decode_end = Clock::now();
-        double decode_ms = Ms(t_decode_end - t_decode_start).count();
-
-        out->count = 0;
-        out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
-        out->items[0].table = pstrdup(target.c_str());
-        uint64 *words = nullptr;
-        uint32 blocks = 0;
-        size_t nbytes = 0;
-        (void) cf_build_block_words_from_rid_bits(loaded, target, final_bits, ti_t.n_rows, &words, &blocks, &nbytes);
-        out->items[0].block_words = words;
-        out->items[0].blocks = blocks;
-        out->items[0].n_rows = ti_t.n_rows;
-        out->count = 1;
-        pfree(final_bits);
-        if (log_detail)
-            CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti_t.n_rows);
-        if (profile) {
-            DecodeStat ds;
-            ds.table = target;
-            ds.rows_total = ti_t.n_rows;
-            ds.rows_allowed = passed;
-            ds.ms_decode = decode_ms;
-            profile->decode.push_back(ds);
-            profile->decode_ms_total += ds.ms_decode;
-            profile->project_ms_total += ds.ms_decode;
-        }
-        return true;
-    }
-
-    std::map<std::string, std::vector<std::string>> adj;
-    std::map<std::string, std::map<std::string, int>> edge_class;
-    for (const auto &e : edges) {
-        adj[e.a].push_back(e.b);
-        adj[e.b].push_back(e.a);
-        edge_class[e.a][e.b] = e.cid;
-        edge_class[e.b][e.a] = e.cid;
-    }
-
-    std::map<std::string, std::string> parent;
-    std::map<std::string, int> parent_cid;
-    std::vector<std::string> order;
-    std::function<void(const std::string&, const std::string&)> dfs =
-        [&](const std::string &t, const std::string &p) {
-            order.push_back(t);
-            for (const auto &n : adj[t]) {
-                if (n == p) continue;
-                parent[n] = t;
-                parent_cid[n] = edge_class[t][n];
-                dfs(n, t);
-            }
-        };
-    parent[target] = "";
-    dfs(target, "");
-
-    // map table->class->token idx
-    std::map<std::string, std::map<int, int>> table_class_idx;
-    for (const auto &t : nodes) {
-        auto it_t = loaded.tables.find(t);
-        if (it_t == loaded.tables.end())
-            ereport(ERROR, (errmsg("policy: missing table %s in loaded artifacts", t.c_str())));
-        const TableInfo &ti = it_t->second;
-        for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
-            table_class_idx[t][ti.join_class_ids[j]] = ti.join_token_idx[j];
-        }
-    }
-
-    // child lists for the rooted join graph, used by token-propagation maps
-    std::map<std::string, std::vector<std::string>> children;
-    for (const auto &kv : parent) {
-        if (!kv.second.empty())
-            children[kv.second].push_back(kv.first);
-    }
-
-    // Domain size per join class.
-    //
-    // NOTE: join token domains are NOT written as dict/ artifacts today (only const dicts
-    // exist). So we cannot derive domain sizes from loaded.dicts. Instead, we derive each
-    // join-class domain size from the scanned code payloads while we fill presence[].
-    std::set<int> needed_cids;
-    for (const auto &e : edges)
-        needed_cids.insert(e.cid);
-
-    std::map<int, size_t> domain_size;  // computed after presence scan (cid -> max_tok+1)
-
-    // presence bitsets per table/class (exists row with token)
-    std::map<std::string, std::map<int, Bitset>> presence;
-
-    // Upward propagation maps for the rooted join tree:
-    // for a parent table P with parent join-class out_cid, build functional maps from each child
-    // join-class in_cid to out_cid, keyed by token value in P.
-    struct UpMap {
-        int out_cid = -1;
-        bool functional = true;
-        std::vector<int32_t> f;  // tok_in -> tok_out (or -1 if absent)
-    };
-    std::map<std::string, std::map<int, UpMap>> up_map;
-
-    // Initialize presence bitsets (dynamic growth; domain_size is computed after scanning).
-    for (const auto &t : nodes) {
-        for (int cid : needed_cids) {
-            auto it_idx = table_class_idx[t].find(cid);
-            if (it_idx == table_class_idx[t].end())
-                continue;
-            presence[t][cid] = Bitset{};
-        }
-    }
-
-    // Preallocate functional propagation maps for internal nodes (scan each table once).
-    for (const auto &kv : children) {
-        const std::string &p = kv.first;
-        if (p == target)
-            continue;  // root has no parent edge
-        auto it_pc = parent_cid.find(p);
-        if (it_pc == parent_cid.end())
-            continue;
-        int out_cid = it_pc->second;
-
-        std::unordered_set<int> seen;
-        seen.reserve(kv.second.size());
-        for (const auto &c : kv.second) {
-            int in_cid = edge_class[p][c];
-            if (!seen.insert(in_cid).second)
-                continue;
-            UpMap um;
-            um.out_cid = out_cid;
-            // um.f is grown dynamically as tokens are observed (avoid needing domain_size here).
-            up_map[p][in_cid] = std::move(um);
-        }
-    }
-
-    // Precompute restrict pointers per table (avoid map lookups in row loops).
-    std::map<std::string, const uint8*> restrict_by_table;
+    const uint8 *rbits = nullptr;
     if (restrict_bits) {
-        for (const auto &t : nodes) {
-            auto it_rb = restrict_bits->find(t);
-            restrict_by_table[t] = (it_rb != restrict_bits->end()) ? it_rb->second : nullptr;
+        auto it_rb = restrict_bits->find(cl.target);
+        if (it_rb != restrict_bits->end())
+            rbits = it_rb->second;
+    }
+
+    for (uint32 rid = 0; rid < target_ti->nrows; rid++) {
+        if (row_matches_clause_table(*target_tp, rid, allowed, nullptr, rbits)) {
+            rid_bit_set(out_bits->data(), rid);
         }
     }
 
-    // Scan each table once: fill presence bitsets and build functional propagation maps.
-    auto t_presence_start = Clock::now();
-    for (const auto &t : nodes) {
-        const TableInfo &ti = loaded.tables.find(t)->second;
-        const uint8 *t_restrict = nullptr;
-        auto it_r = restrict_by_table.find(t);
-        if (it_r != restrict_by_table.end())
-            t_restrict = it_r->second;
+    return true;
+}
 
-        // Per-table precomputed indices for presence bitsets.
-        std::vector<std::pair<int, Bitset*>> pres_specs;
-        pres_specs.reserve(presence[t].size());
-        for (auto &kvp : presence[t]) {
-            int cid = kvp.first;
-            auto it_idx = table_class_idx[t].find(cid);
-            if (it_idx == table_class_idx[t].end())
-                continue;
-            pres_specs.push_back({it_idx->second, &kvp.second});
-        }
+static bool build_block_words_from_rid_bits(const TableData &ti,
+                                            const std::vector<uint8_t> &rid_bits,
+                                            uint64 **out_words,
+                                            uint32 *out_blocks,
+                                            size_t *out_nbytes,
+                                            uint32 *out_allowed)
+{
+    if (!out_words || !out_blocks || !out_nbytes || !out_allowed)
+        return false;
 
-        // Per-table precomputed indices for upward maps (if this is an internal node).
-        int out_cid = -1;
-        int idx_out = -1;
-        struct MapSpec {
-            int idx_in = -1;
-            UpMap *um = nullptr;
-            int in_cid = -1;
-        };
-        std::vector<MapSpec> map_specs;
-        auto it_um_t = up_map.find(t);
-        if (it_um_t != up_map.end()) {
-            auto it_pc = parent_cid.find(t);
-            if (it_pc != parent_cid.end()) {
-                out_cid = it_pc->second;
-                auto it_o = table_class_idx[t].find(out_cid);
-                if (it_o != table_class_idx[t].end())
-                    idx_out = it_o->second;
-            }
-            map_specs.reserve(it_um_t->second.size());
-            for (auto &kvm : it_um_t->second) {
-                int in_cid = kvm.first;
-                auto it_i = table_class_idx[t].find(in_cid);
-                if (it_i == table_class_idx[t].end())
-                    continue;
-                map_specs.push_back({it_i->second, &kvm.second, in_cid});
-            }
-        }
+    *out_words = nullptr;
+    *out_blocks = 0;
+    *out_nbytes = 0;
+    *out_allowed = 0;
 
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            if (!allow_bit(t_restrict, r))
-                continue;
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
+    if (ti.nrows == 0 || ti.ctid_blk.empty() || ti.ctid_off.empty())
+        return true;
 
-            // Fill presence[t][cid] for all needed join classes present in this table.
-            for (const auto &ps : pres_specs) {
-                int32 tok = row[ps.first];
-                if (tok >= 0)
-                    ps.second->set((size_t)tok);
-            }
+    int32 max_blk = -1;
+    for (uint32 r = 0; r < ti.nrows; r++) {
+        if ((size_t)r >= ti.ctid_blk.size()) break;
+        if ((int32)ti.ctid_blk[r] > max_blk)
+            max_blk = ti.ctid_blk[r];
+    }
+    if (max_blk < 0)
+        return true;
 
-            // Fill functional maps from in_cid -> out_cid for this parent table.
-            if (idx_out >= 0 && !map_specs.empty()) {
-                int32 tok_out = row[idx_out];
-                if (tok_out < 0)
-                    continue;
-                for (auto &ms : map_specs) {
-                    UpMap *um = ms.um;
-                    if (!um || !um->functional)
-                        continue;
-                    if (ms.in_cid == out_cid)
-                        continue;  // identity handled via presence intersection at use-site
-                    int32 tok_in = row[ms.idx_in];
-                    if (tok_in < 0)
-                        continue;
-                    size_t utok = (size_t)tok_in;
-                    if (utok >= um->f.size()) {
-                        // Exponential growth avoids O(n^2) reallocation when tokens are discovered in
-                        // increasing order (common for large TPCH domains).
-                        //
-                        // Keep a hard cap to fail fast on corrupted token payloads.
-                        if (utok > (size_t)1000000000) {
-                            ereport(ERROR,
-                                    (errmsg("policy: absurd join token table=%s class=%d tok=%zu",
-                                            t.c_str(), ms.in_cid, utok)));
-                        }
-                        size_t new_sz = um->f.empty() ? (size_t)1024 : um->f.size();
-                        while (new_sz <= utok) {
-                            if (new_sz > (SIZE_MAX / 2)) {
-                                new_sz = utok + 1;
-                                break;
-                            }
-                            new_sz *= 2;
-                        }
-                        um->f.resize(new_sz, -1);
-                    }
-                    int32_t &slot = um->f[utok];
-                    if (slot == -1) {
-                        slot = tok_out;
-                    } else if (slot != tok_out) {
-                        um->functional = false;
-                        std::vector<int32_t>().swap(um->f);
-                    }
-                }
-            }
+    uint32 blocks = (uint32)max_blk + 1u;
+    size_t nwords = (size_t)blocks * (size_t)kWordsPerBlock;
+    size_t nbytes = nwords * sizeof(uint64_t);
+    uint64 *words = (uint64 *)palloc0(nbytes);
+
+    uint32 allowed_rows = 0;
+    for (uint32 rid = 0; rid < ti.nrows; rid++) {
+        if ((size_t)rid_bits.size() <= (rid >> 3))
+            break;
+        if (!rid_bit_test(rid_bits.data(), rid))
+            continue;
+        if ((size_t)rid >= ti.ctid_blk.size() || (size_t)rid >= ti.ctid_off.size())
+            continue;
+
+        int32 blk = ti.ctid_blk[rid];
+        int32 off = ti.ctid_off[rid];
+        if (blk < 0 || off <= 0 || off > (int32)kMaxOffsetNumber)
+            continue;
+        if ((uint32)blk >= blocks)
+            continue;
+        uint32 off0 = (uint32)(off - 1);
+        size_t flat = (size_t)(uint32)blk * (size_t)kWordsPerBlock + (size_t)(off0 >> 6);
+        words[flat] |= (uint64_t(1) << (off0 & 63u));
+        allowed_rows++;
+    }
+
+    *out_words = words;
+    *out_blocks = blocks;
+    *out_nbytes = nbytes;
+    *out_allowed = allowed_rows;
+    return true;
+}
+
+static int profile_k()
+{
+    const char *v = GetConfigOption("custom_filter.profile_k", true, false);
+    if (!v || !v[0]) return 0;
+    return std::atoi(v);
+}
+
+static std::string profile_query()
+{
+    const char *v = GetConfigOption("custom_filter.profile_query", true, false);
+    if (!v) return "";
+    return std::string(v);
+}
+
+static void log_policy_profile_query(const BuildProfile &p, int filtered_targets)
+{
+    elog(NOTICE,
+         "policy_profile_query: K=%d query_id=%s total_ms=%.3f load_ms=%.3f local_ms=0.000 prop_ms=%.3f decode_ms=%.3f sat_calls=0 cache_hits=0 closure_tables=0 filtered_targets=%d",
+         profile_k(),
+         profile_query().c_str(),
+         p.total_ms,
+         p.artifact_parse_ms,
+         p.propagate_ms,
+         p.decode_ms,
+         filtered_targets);
+}
+
+static bool load_phase(const PolicyArtifactC *arts,
+                       int art_count,
+                       const PolicyEngineInputC *in,
+                       Loaded *out,
+                       BuildProfile *profile)
+{
+    if (!arts || art_count <= 0 || !in || !out || !profile)
+        return false;
+
+    auto t0 = Clock::now();
+
+    if (!load_atoms(in, out))
+        return false;
+    if (!load_artifact_metadata(arts, art_count, out))
+        return false;
+
+    for (int i = 0; i < in->target_count; i++) {
+        if (!in->target_tables || !in->target_tables[i])
+            continue;
+        std::string target = in->target_tables[i];
+        out->target_order.push_back(target);
+        const char *ast = (in->target_asts && in->target_asts[i]) ? in->target_asts[i] : "";
+        if (!compile_target_plan(target, ast, out, profile))
+            return false;
+    }
+
+    for (auto &tkv : out->targets) {
+        for (auto &cl : tkv.second.clauses) {
+            if (!bind_clause_views(&cl, out))
+                return false;
         }
     }
 
-    // Derive join-class domain sizes from the scanned presence bitsets.
-    // This is exact for our token encoding (tok ids are dense in [0..max]), and
-    // avoids any extra passes over code payloads.
-    for (int cid : needed_cids)
-        domain_size[cid] = 0;
-    for (const auto &kt : presence) {
-        for (const auto &kc : kt.second) {
-            int cid = kc.first;
-            auto it = domain_size.find(cid);
-            if (it != domain_size.end() && kc.second.nbits > it->second)
-                it->second = kc.second.nbits;
-        }
-    }
-    // Ensure functional maps have slots for all possible input tokens.
-    for (auto &kt : up_map) {
-        for (auto &kc : kt.second) {
-            int in_cid = kc.first;
-            UpMap &um = kc.second;
-            if (!um.functional)
-                continue;
-            size_t Din = domain_size[in_cid];
-            if (um.f.size() < Din)
-                um.f.resize(Din, -1);
+    for (auto &kv : out->tables) {
+        if (!decode_table_needed_columns(&kv.second,
+                                         &out->artifacts,
+                                         &out->class_domain,
+                                         out->join_class_by_col)) {
+            return false;
         }
     }
 
-    auto t_presence_end = Clock::now();
-    if (profile) profile->presence_ms_total += Ms(t_presence_end - t_presence_start).count();
-
-    // Extract table-local subformulas (non-target)
-    int next_id = (int)loaded.atom_by_id.size();
-    std::vector<DerivedVar> derived;
-    AstNode *global_ast = extract_local_subtrees(loaded, ast, target, derived, next_id);
-    if (log_detail) {
-        for (const auto &dv : derived) {
-            CF_TRACE_LOG( "policy: extract_local table=%s z=%d atoms=%zu",
-                 dv.table.c_str(), dv.id, dv.vars.size());
+    for (auto &tkv : out->targets) {
+        for (auto &cl : tkv.second.clauses) {
+            if (!bind_clause_views(&cl, out))
+                return false;
         }
-        CF_TRACE_LOG( "policy: global_ast=%s", ast_to_string_simple(global_ast).c_str());
     }
 
-    // const allowed tokens for all const atoms
-    std::map<int, std::vector<uint8_t>> const_allowed;
-    double atoms_ms_const_allowed = 0.0;
-    build_const_allowed_map(loaded, vars, &const_allowed, &atoms_ms_const_allowed);
-    if (profile) profile->atoms_ms_total += atoms_ms_const_allowed;
+    auto t1 = Clock::now();
+    profile->artifact_parse_ms = Ms(t1 - t0).count();
+    CF_TRACE_LOG("policy: load_ms=%.3f", profile->artifact_parse_ms);
+    return true;
+}
 
-    // token-level variable bitsets
-    std::map<int, Bitset> var_bits;
-    std::map<int, int> var_class;
+static bool build_target_allow_list(const Loaded &loaded,
+                                    const TargetPlan &tp,
+                                    PolicyTableAllowC *out_item,
+                                    BuildProfile *profile,
+                                    const std::unordered_map<std::string, const uint8 *> *restrict_bits = nullptr)
+{
+    if (!out_item || !profile)
+        return false;
 
-    auto propagate_one_step_scan = [&](const std::string &p,
-                                       int in_cid,
-                                       int out_cid,
-                                       const Bitset &in_bits) -> Bitset {
-        const TableInfo &tp = loaded.tables.find(p)->second;
-        auto it_in = table_class_idx[p].find(in_cid);
-        auto it_out = table_class_idx[p].find(out_cid);
-        if (it_in == table_class_idx[p].end() || it_out == table_class_idx[p].end())
-            ereport(ERROR,
-                    (errmsg("policy: missing join token index for table=%s class=%d",
-                            p.c_str(), in_cid)));
-        Bitset out;
-        size_t D = domain_size[out_cid];
-        out.nbits = D;
-        out.bytes.assign((D + 7) / 8, 0);
-        const uint8 *p_restrict = nullptr;
-        auto it_r = restrict_by_table.find(p);
-        if (it_r != restrict_by_table.end())
-            p_restrict = it_r->second;
-        for (uint32 r = 0; r < tp.n_rows; r++) {
-            if (!allow_bit(p_restrict, r))
-                continue;
-            const int32_t *row = tp.row_ptr(r);
-            if (!row) continue;
-            int32 tok_in = row[it_in->second];
-            if (tok_in < 0 || !in_bits.test((size_t)tok_in))
-                continue;
-            int32 tok_out = row[it_out->second];
-            if (tok_out >= 0)
-                out.set((size_t)tok_out);
-        }
-        return out;
-    };
+    auto it_t = loaded.tables.find(tp.target);
+    if (it_t == loaded.tables.end()) {
+        ereport(ERROR,
+                (errmsg("policy: target table artifacts missing: %s", tp.target.c_str())));
+    }
+    const TableData &target_ti = it_t->second;
+    std::vector<uint8_t> final_bits((target_ti.nrows + 7u) / 8u, 0);
 
-    auto propagate_to_target = [&](const std::string &start_table, int start_cid,
-                                   const Bitset &start_bits) -> std::pair<int, Bitset> {
-        std::string cur_table = start_table;
-        int cur_cid = start_cid;
-        Bitset cur_bits = start_bits;
-        while (cur_table != target) {
-            auto itp = parent.find(cur_table);
-            if (itp == parent.end() || itp->second.empty()) {
-                ereport(ERROR,
-                        (errmsg("policy: cannot propagate token truth from table %s to target %s",
-                                cur_table.c_str(), target.c_str())));
-            }
-            std::string p = itp->second;
-            if (p == target) {
+    for (const ClausePlan &cl : tp.clauses) {
+        if (cl.unsat)
+            continue;
+
+        std::vector<TokenBitset> allowed;
+        int iters = 0;
+        double ms_prop = 0.0;
+        if (!propagate_clause(cl, loaded, &allowed, &iters, restrict_bits, &ms_prop))
+            return false;
+        profile->propagate_ms += ms_prop;
+        profile->prop_iters += iters;
+
+        bool empty = false;
+        for (const auto &b : allowed) {
+            if (!b.any()) {
+                empty = true;
                 break;
             }
-            int next_cid = parent_cid[p];
+        }
+        if (empty)
+            continue;
 
-            // Fast-path: use precomputed functional maps from child join-class -> parent join-class.
-            if (cur_cid == next_cid) {
-                // Identity propagation: restrict to tokens present in p.
-                auto it_pres_t = presence.find(p);
-                if (it_pres_t != presence.end()) {
-                    auto it_pres = it_pres_t->second.find(cur_cid);
-                    if (it_pres != it_pres_t->second.end()) {
-                        cur_bits = bitset_intersect(cur_bits, it_pres->second, domain_size[next_cid]);
-                        cur_table = p;
-                        continue;
-                    }
-                }
-                // Fallback if presence missing (should not happen).
-                Bitset next_bits = propagate_one_step_scan(p, cur_cid, next_cid, cur_bits);
-                cur_bits = std::move(next_bits);
-                cur_cid = next_cid;
-                cur_table = p;
-                continue;
-            }
+        bool clause_global_ok = true;
+        std::vector<uint8_t> clause_bits;
+        if (!build_rid_bits_for_clause_target(cl,
+                                              loaded,
+                                              allowed,
+                                              &clause_bits,
+                                              restrict_bits,
+                                              &clause_global_ok)) {
+            return false;
+        }
+        if (!clause_global_ok)
+            continue;
 
-            auto it_um_t = up_map.find(p);
-            if (it_um_t != up_map.end()) {
-                auto it_um = it_um_t->second.find(cur_cid);
-                if (it_um != it_um_t->second.end() && it_um->second.functional) {
-                    UpMap &um = it_um->second;
-                    Bitset next_bits;
-                    size_t D_out = domain_size[next_cid];
-                    next_bits.nbits = D_out;
-                    next_bits.bytes.assign((D_out + 7) / 8, 0);
-                    const size_t D_in = domain_size[cur_cid];
-                    bitset_for_each_set_bit(cur_bits, D_in, [&](size_t tok_in) {
-                        if (tok_in >= um.f.size())
-                            return;
-                        int32_t tok_out = um.f[tok_in];
-                        if (tok_out >= 0)
-                            next_bits.set((size_t)tok_out);
-                    });
-                    cur_bits = std::move(next_bits);
-                    cur_cid = next_cid;
-                    cur_table = p;
-                    continue;
-                }
-            }
-
-            // Correct fallback: scan the parent table for this propagation step.
-            Bitset next_bits = propagate_one_step_scan(p, cur_cid, next_cid, cur_bits);
-            cur_bits = std::move(next_bits);
-            cur_cid = next_cid;
-            cur_table = p;
-        }
-        return {cur_cid, cur_bits};
-    };
-
-    // derived vars
-    for (const auto &dv : derived) {
-        auto it_t = loaded.tables.find(dv.table);
-        if (it_t == loaded.tables.end())
-            ereport(ERROR, (errmsg("policy: missing table %s", dv.table.c_str())));
-        if (parent_cid.find(dv.table) == parent_cid.end())
-            ereport(ERROR,
-                    (errmsg("policy: derived var table %s not connected to target %s",
-                            dv.table.c_str(), target.c_str())));
-        int anchor_cid = parent_cid[dv.table];
-        const TableInfo &ti = it_t->second;
-        std::vector<uint8_t> ok_rows;
-        uint32 cnt = 0;
-        LocalStat lst;
-        if (!compute_local_ok_bins(loaded, dv.table, dv.ast, dv.vars,
-                                   const_allowed, &ok_rows, &cnt, &lst,
-                                   profile ? profile->bundle_id : 0)) {
-            ereport(ERROR,
-                    (errmsg("policy: failed to compute local_ok bins for table %s", dv.table.c_str())));
-        }
-        size_t allowed_sigs = 0;
-        if (!ok_rows.empty()) {
-            auto it_cache = g_local_cache.tables.find(dv.table);
-            if (it_cache != g_local_cache.tables.end()) {
-                const TableCache &tc = it_cache->second;
-                std::vector<uint8_t> bin_allowed(tc.global.hist.size(), 0);
-                for (uint32 r = 0; r < ti.n_rows; r++) {
-                    if (restrict_bits) {
-                        auto it_rb = restrict_bits->find(dv.table);
-                        if (it_rb != restrict_bits->end() && !allow_bit(it_rb->second, r))
-                            continue;
-                    }
-                    if (!ok_rows[r]) continue;
-                    int b = (r < tc.global.row_to_bin.size()) ? tc.global.row_to_bin[r] : -1;
-                    if (b >= 0 && (size_t)b < bin_allowed.size())
-                        bin_allowed[(size_t)b] = 1;
-                }
-                for (uint8 v : bin_allowed) {
-                    if (v) allowed_sigs++;
-                }
-            }
-        }
-        if (profile && lst.atoms > 0) {
-            profile->local.push_back(lst);
-            profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
-            profile->atoms_ms_total += lst.ms_atoms;
-        }
-        Bitset bits;
-        size_t D = domain_size[anchor_cid];
-        bits.nbits = D;
-        bits.bytes.assign((D + 7) / 8, 0);
-        int idx = table_class_idx[dv.table][anchor_cid];
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            if (restrict_bits) {
-                auto it_rb = restrict_bits->find(dv.table);
-                if (it_rb != restrict_bits->end() && !allow_bit(it_rb->second, r))
-                    continue;
-            }
-            if (!ok_rows.empty() && !ok_rows[r])
-                continue;
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
-            int32 tok = row[idx];
-            if (tok >= 0)
-                bits.set((size_t)tok);
-        }
-        auto propagated = propagate_to_target(dv.table, anchor_cid, bits);
-        var_bits[dv.id] = std::move(propagated.second);
-        var_class[dv.id] = propagated.first;
-        if (log_detail) {
-            CF_TRACE_LOG( "policy: z_eval table=%s z=%d bins=%zu sat_calls=%d allowed_sigs=%zu",
-                 dv.table.c_str(), dv.id, lst.bins, lst.sat_calls, allowed_sigs);
-            size_t pop = bitset_popcount(var_bits[dv.id], domain_size[var_class[dv.id]]);
-            CF_TRACE_LOG( "policy: z_token_truth z=%d domain=%zu true=%zu",
-                 dv.id, domain_size[var_class[dv.id]], pop);
-        }
+        size_t n = std::min(final_bits.size(), clause_bits.size());
+        for (size_t i = 0; i < n; i++)
+            final_bits[i] |= clause_bits[i];
     }
 
-    // join atom vars
-    for (int aid : vars) {
-        if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-            continue;
-        const Atom *ap = loaded.atom_by_id[aid];
-        if (!ap || ap->kind != AtomKind::JOIN)
-            continue;
-        int cid = ap->join_class_id;
-        size_t D = domain_size[cid];
-        auto it_pl = presence.find(ap->left.table);
-        auto it_pr = presence.find(ap->right.table);
-        if (it_pl == presence.end() || it_pr == presence.end())
-            ereport(ERROR,
-                    (errmsg("policy: missing presence bitset table=%s or table=%s",
-                            ap->left.table.c_str(), ap->right.table.c_str())));
-        auto it_bl = it_pl->second.find(cid);
-        auto it_br = it_pr->second.find(cid);
-        if (it_bl == it_pl->second.end() || it_br == it_pr->second.end())
-            ereport(ERROR,
-                    (errmsg("policy: missing presence bitset join_class=%d lhs=%s rhs=%s",
-                            cid, ap->left.table.c_str(), ap->right.table.c_str())));
-        Bitset base = bitset_intersect(it_bl->second, it_br->second, D);
-        int target_cid = cid;
-        if (table_class_idx[target].find(cid) == table_class_idx[target].end()) {
-            std::string child;
-            if (parent[ap->left.table] == ap->right.table)
-                child = ap->left.table;
-            else if (parent[ap->right.table] == ap->left.table)
-                child = ap->right.table;
-            else
-                child = ap->left.table;
-            auto propagated = propagate_to_target(child, cid, base);
-            base = std::move(propagated.second);
-            target_cid = propagated.first;
-        }
-        var_bits[aid] = std::move(base);
-        var_class[aid] = target_cid;
-    }
-
-    // const atoms on non-target (if any left in AST)
-    std::set<int> global_vars;
-    collect_ast_vars(global_ast, global_vars);
-    std::map<std::string, std::vector<int>> const_ids_by_table;
-    for (int vid : global_vars) {
-        if (vid <= 0 || vid >= (int)loaded.atom_by_id.size())
-            continue;
-        const Atom *ap = loaded.atom_by_id[vid];
-        if (!ap || ap->kind != AtomKind::CONST)
-            continue;
-        if (ap->left.table == target)
-            continue;
-        if (var_bits.find(vid) != var_bits.end())
-            continue;
-        if (parent_cid.find(ap->left.table) == parent_cid.end())
-            ereport(ERROR,
-                    (errmsg("policy: const atom table %s not connected to target", ap->left.table.c_str())));
-        const_ids_by_table[ap->left.table].push_back(vid);
-    }
-
-    for (const auto &kv : const_ids_by_table) {
-        const std::string &tbl = kv.first;
-        const auto &vids = kv.second;
-        if (vids.empty())
-            continue;
-        int anchor_cid = parent_cid[tbl];
-        size_t D = domain_size[anchor_cid];
-        Bitset deny_bits;
-        deny_bits.nbits = D;
-        deny_bits.bytes.assign((D + 7) / 8, 0);
-
-        const TableInfo &ti = loaded.tables.find(tbl)->second;
-        int idx_anchor = table_class_idx[tbl][anchor_cid];
-        const uint8 *t_restrict = nullptr;
-        auto it_r = restrict_by_table.find(tbl);
-        if (it_r != restrict_by_table.end())
-            t_restrict = it_r->second;
-
-        struct ConstSpec {
-            int vid = -1;
-            int token_idx = -1;
-            const std::vector<uint8_t> *allowed = nullptr;
-            Bitset bits;
-        };
-        std::vector<ConstSpec> specs;
-        specs.reserve(vids.size());
-        for (int vid : vids) {
-            const Atom *ap = loaded.atom_by_id[vid];
-            if (!ap) continue;
-            auto it_allowed = const_allowed.find(vid);
-            if (it_allowed == const_allowed.end())
-                ereport(ERROR,
-                        (errmsg("policy: missing dict for const atom y%d col=%s",
-                                vid, ap->left.key().c_str())));
-            int token_idx = ti.schema_offset.at(ap->lhs_schema_key);
-            ConstSpec cs;
-            cs.vid = vid;
-            cs.token_idx = token_idx;
-            cs.allowed = &it_allowed->second;
-            cs.bits = deny_bits;
-            specs.push_back(std::move(cs));
-        }
-
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            if (!allow_bit(t_restrict, r))
-                continue;
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
-            int32 tok_anchor = row[idx_anchor];
-            if (tok_anchor < 0)
-                continue;
-            for (auto &cs : specs) {
-                int32 tokc = row[cs.token_idx];
-                bool ok = (tokc >= 0 && (size_t)tokc < cs.allowed->size() &&
-                           (*cs.allowed)[(size_t)tokc]);
-                if (ok)
-                    cs.bits.set((size_t)tok_anchor);
-            }
-        }
-
-        for (auto &cs : specs) {
-            auto propagated = propagate_to_target(tbl, anchor_cid, cs.bits);
-            var_bits[cs.vid] = std::move(propagated.second);
-            var_class[cs.vid] = propagated.first;
-        }
-    }
-
-    // target const atoms
-    std::vector<int> target_const_ids;
-    for (int vid : global_vars) {
-        if (vid <= 0 || vid >= (int)loaded.atom_by_id.size())
-            continue;
-        const Atom *ap = loaded.atom_by_id[vid];
-        if (ap && ap->kind == AtomKind::CONST && ap->left.table == target)
-            target_const_ids.push_back(vid);
-    }
-    std::sort(target_const_ids.begin(), target_const_ids.end());
-    target_const_ids.erase(std::unique(target_const_ids.begin(), target_const_ids.end()),
-                           target_const_ids.end());
-
-    int max_id = 0;
-    for (int vid : global_vars)
-        max_id = std::max(max_id, vid);
-    if (max_id < 1)
-        ereport(ERROR, (errmsg("policy: empty AST after extraction")));
-
-    // Precompute target token indices and allowed vectors for target const atoms
-    std::vector<int> target_const_token_idx;
-    std::vector<const std::vector<uint8_t>*> target_const_allowed;
-    const TableInfo &ti_t = loaded.tables.find(target)->second;
-    for (int aid : target_const_ids) {
-        const Atom *ap = loaded.atom_by_id[aid];
-        if (!ap) continue;
-        auto it_off = ti_t.schema_offset.find(ap->lhs_schema_key);
-        if (it_off == ti_t.schema_offset.end())
-            ereport(ERROR,
-                    (errmsg("policy: missing column offset for %s", ap->lhs_schema_key.c_str())));
-        auto it_allow = const_allowed.find(aid);
-        if (it_allow == const_allowed.end())
-            ereport(ERROR,
-                    (errmsg("policy: missing dict for const atom y%d col=%s",
-                            aid, ap->left.key().c_str())));
-        target_const_token_idx.push_back(it_off->second);
-        target_const_allowed.push_back(&it_allow->second);
-    }
-
-    // Build+bin row signatures for target table (streaming; no per-row signature storage).
-    auto t_sig_start = Clock::now();
-    std::string base_sig = base_sig_for_bits((size_t)max_id);
-    const size_t nbytes = base_sig.size();
-    std::vector<uint8_t> base_bytes(nbytes, 0);
-    if (nbytes > 0) memcpy(base_bytes.data(), base_sig.data(), nbytes);
-
-    std::vector<int> row_to_bin(ti_t.n_rows, 0);
-    std::vector<uint8_t> bin_sig_flat;
-    std::vector<uint32_t> hist;
-
-    BinTable tab;
-    tab.init(std::max<size_t>(1024, (size_t)ti_t.n_rows / 2));
-
-    const uint32 CHUNK = 4096;
-    std::vector<uint8_t> sig_chunk;
-    sig_chunk.reserve((size_t)CHUNK * nbytes);
-
-    for (uint32 start = 0; start < ti_t.n_rows; start += CHUNK) {
-        uint32 end = start + CHUNK;
-        if (end > ti_t.n_rows) end = ti_t.n_rows;
-        uint32 n = end - start;
-        sig_chunk.resize((size_t)n * nbytes);
-
-        for (uint32 i = 0; i < n; i++) {
-            uint32 r = start + i;
-            uint8_t *sig = sig_chunk.data() + (size_t)i * nbytes;
-            memcpy(sig, base_bytes.data(), nbytes);
-
-            const int32_t *row = ti_t.row_ptr(r);
-            if (!row) continue;
-            // target const atoms
-            for (size_t j = 0; j < target_const_ids.size(); j++) {
-                int aid = target_const_ids[j];
-                int idx = target_const_token_idx[j];
-                int32 tok = row[idx];
-                bool v = (tok >= 0 &&
-                          (size_t)tok < target_const_allowed[j]->size() &&
-                          (*target_const_allowed[j])[(size_t)tok]);
-                set_sig_bit_bytes(sig, nbytes, (size_t)(aid - 1), v);
-            }
-            // token-level vars
-            for (int vid : global_vars) {
-                if (std::find(target_const_ids.begin(), target_const_ids.end(), vid) != target_const_ids.end())
-                    continue;
-                auto itv = var_bits.find(vid);
-                auto itc = var_class.find(vid);
-                if (itv == var_bits.end() || itc == var_class.end())
-                    continue;
-                int cid = itc->second;
-                auto it_idx = table_class_idx[target].find(cid);
-                if (it_idx == table_class_idx[target].end())
-                    continue;
-                int32 tok = row[it_idx->second];
-                bool v = (tok >= 0 && itv->second.test((size_t)tok));
-                set_sig_bit_bytes(sig, nbytes, (size_t)(vid - 1), v);
-            }
-        }
-
-        for (uint32 i = 0; i < n; i++) {
-            const uint8_t *sig = sig_chunk.data() + (size_t)i * nbytes;
-            uint64_t h = hash_bytes_fnv1a64(sig, nbytes);
-            int32_t bid = tab.find_or_insert(h, sig, nbytes, bin_sig_flat, hist);
-            row_to_bin[start + i] = (int)bid;
-            hist[(size_t)bid] += 1;
-        }
-    }
-    auto t_sig_end = Clock::now();
-    if (profile) profile->presence_ms_total += Ms(t_sig_end - t_sig_start).count();
-
-    std::vector<uint8_t> allow_bin;
-    auto t_sat_start = Clock::now();
-    if (!eval_bins_sat_flat(global_ast, max_id, bin_sig_flat, nbytes, hist.size(),
-                            &allow_bin, nullptr, nullptr))
-        ereport(ERROR, (errmsg("policy: failed to eval AST bins")));
-    auto t_sat_end = Clock::now();
-    if (profile) profile->presence_ms_total += Ms(t_sat_end - t_sat_start).count();
-
-    // decode allowed rows
-    size_t bytes = (ti_t.n_rows + 7) / 8;
-    uint8 *bits = (uint8 *)palloc0(bytes);
-    uint32 passed = 0;
-    auto t_decode_start = Clock::now();
-    for (uint32 r = 0; r < ti_t.n_rows; r++) {
-        if (restrict_bits) {
-            auto it_rb = restrict_bits->find(target);
-            if (it_rb != restrict_bits->end() && !allow_bit(it_rb->second, r))
-                continue;
-        }
-        int b = row_to_bin[r];
-        if (b >= 0 && b < (int)allow_bin.size() && allow_bin[(size_t)b]) {
-            bits[r >> 3] |= (uint8)(1u << (r & 7));
-            passed++;
-        }
-    }
-    auto t_decode_end = Clock::now();
-    double decode_ms = Ms(t_decode_end - t_decode_start).count();
-
-    out->count = 0;
-    out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
-    out->items[0].table = pstrdup(target.c_str());
+    auto t_decode0 = Clock::now();
     uint64 *words = nullptr;
     uint32 blocks = 0;
-    size_t bm_nbytes = 0;
-    (void) cf_build_block_words_from_rid_bits(loaded, target, bits, ti_t.n_rows, &words, &blocks, &bm_nbytes);
-    out->items[0].block_words = words;
-    out->items[0].blocks = blocks;
-    out->items[0].n_rows = ti_t.n_rows;
-    out->count = 1;
-    pfree(bits);
-    if (log_detail)
-        CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti_t.n_rows);
-    if (profile) {
-        DecodeStat ds;
-        ds.table = target;
-        ds.rows_total = ti_t.n_rows;
-        ds.rows_allowed = passed;
-        ds.ms_decode = decode_ms;
-        profile->decode.push_back(ds);
-        profile->decode_ms_total += ds.ms_decode;
-        profile->project_ms_total += ds.ms_decode;
+    size_t nbytes = 0;
+    uint32 allowed_rows = 0;
+    if (!build_block_words_from_rid_bits(target_ti,
+                                         final_bits,
+                                         &words,
+                                         &blocks,
+                                         &nbytes,
+                                         &allowed_rows)) {
+        return false;
     }
-    return true;
-}
+    auto t_decode1 = Clock::now();
+    profile->decode_ms += Ms(t_decode1 - t_decode0).count();
 
-static std::map<std::string, std::set<std::string>>
-build_target_deps(const Loaded &loaded)
-{
-    std::map<std::string, std::set<std::string>> deps;
-    for (const auto &t : loaded.target_set)
-        deps[t];
+    out_item->table = pstrdup(tp.target.c_str());
+    out_item->block_words = words;
+    out_item->blocks = blocks;
+    out_item->n_rows = target_ti.nrows;
 
-    auto add_dep = [&](const std::string &target, const std::string &ref) {
-        if (ref.empty() || ref == target)
-            return;
-        if (loaded.target_set.count(ref) == 0)
-            return;
-        deps[target].insert(ref);
-    };
-
-    for (const auto &t : loaded.target_set) {
-        auto it_vars = loaded.target_vars.find(t);
-        if (it_vars == loaded.target_vars.end())
-            continue;
-        for (int aid : it_vars->second) {
-            if (aid <= 0 || aid >= (int)loaded.atom_by_id.size())
-                continue;
-            const Atom *ap = loaded.atom_by_id[aid];
-            if (!ap)
-                continue;
-            if (ap->kind == AtomKind::CONST) {
-                add_dep(t, ap->left.table);
-            } else if (ap->kind == AtomKind::JOIN) {
-                add_dep(t, ap->left.table);
-                add_dep(t, ap->right.table);
-            }
-        }
-    }
-    return deps;
-}
-
-static std::vector<std::string>
-target_topo_order(const Loaded &loaded)
-{
-    std::map<std::string, std::set<std::string>> deps = build_target_deps(loaded);
-    std::map<std::string, int> state;
-    std::vector<std::string> stack;
-    std::vector<std::string> order;
-
-    std::function<void(const std::string&)> dfs = [&](const std::string &t) {
-        state[t] = 1;
-        stack.push_back(t);
-        auto it_dep = deps.find(t);
-        if (it_dep != deps.end()) {
-            for (const auto &u : it_dep->second) {
-                int st = 0;
-                auto it_state = state.find(u);
-                if (it_state != state.end())
-                    st = it_state->second;
-                if (st == 0) {
-                    dfs(u);
-                } else if (st == 1) {
-                    std::string cyc;
-                    auto it_stack = std::find(stack.begin(), stack.end(), u);
-                    if (it_stack == stack.end()) {
-                        cyc = u;
-                    } else {
-                        for (auto it = it_stack; it != stack.end(); ++it) {
-                            if (!cyc.empty()) cyc += " -> ";
-                            cyc += *it;
-                        }
-                        if (!cyc.empty()) cyc += " -> ";
-                        cyc += u;
-                    }
-                    ereport(ERROR,
-                            (errmsg("policy: cyclic dependencies among targets: %s",
-                                    cyc.c_str())));
-                }
-            }
-        }
-        stack.pop_back();
-        state[t] = 2;
-        order.push_back(t);
-    };
-
-    for (const auto &kv : deps) {
-        if (state[kv.first] == 0)
-            dfs(kv.first);
-    }
-    return order;
-}
-
-static bool
-multi_join_enforce_one_target(const Loaded &loaded,
-                              const std::string &target,
-                              const std::map<std::string, const uint8*> *restrict_bits,
-                              PolicyAllowListC *out,
-                              BundleProfile *profile,
-                              bool log_detail)
-{
-    if (!out) return false;
-    auto it_ast = loaded.target_ast.find(target);
-    if (it_ast == loaded.target_ast.end() || !it_ast->second) {
-        ereport(ERROR, (errmsg("policy: missing AST for target %s", target.c_str())));
-    }
-    auto it_vars = loaded.target_vars.find(target);
-    if (it_vars == loaded.target_vars.end()) {
-        ereport(ERROR, (errmsg("policy: missing vars for target %s", target.c_str())));
-    }
-
-    std::string ast_reason;
-    if (ast_supported_multi_join(loaded, it_ast->second, &ast_reason)) {
-        return multi_join_enforce_ast(loaded, target, it_ast->second, it_vars->second,
-                                      out, profile, log_detail, nullptr, restrict_bits);
-    }
-
-    if (!contract_mode_enabled()) {
-        return multi_join_enforce_general(loaded, target, it_ast->second, it_vars->second,
-                                          out, profile, log_detail, restrict_bits);
-    }
-
-    // Contract-only fallback: DNF expansion to handle OR across tables.
-    std::vector<std::vector<int>> terms;
-    bool overflow = false;
-    const size_t max_terms = 256;
-    dnf_expand_terms(it_ast->second, terms, max_terms, overflow);
-    if (overflow || terms.empty()) {
-        ereport(ERROR,
-                (errmsg("policy: multi-join boolean structure unsupported for target %s (%s)",
-                        target.c_str(),
-                        overflow ? "DNF expansion overflow" : ast_reason.c_str())));
-    }
-
-    const TableInfo &ti = loaded.tables.find(target)->second;
-    size_t bytes = (ti.n_rows + 7) / 8;
-    uint8 *zero_bits = (uint8 *) palloc0(bytes);
-    uint64 *final_words = nullptr;
-    uint32 final_blocks = 0;
-    size_t final_nbytes = 0;
-    (void) cf_build_block_words_from_rid_bits(loaded, target, zero_bits, ti.n_rows, &final_words, &final_blocks, &final_nbytes);
-    pfree(zero_bits);
-    std::map<int, Bitset> union_allowed;
-
-    for (const auto &term : terms) {
-        AstNode *term_ast = build_and_ast(term);
-        std::set<int> term_vars;
-        term_vars.insert(term.begin(), term.end());
-        PolicyAllowListC term_out{};
-        std::map<int, Bitset> term_allowed;
-        if (!multi_join_enforce_ast(loaded, target, term_ast, term_vars,
-                                    &term_out, profile, false, &term_allowed, restrict_bits)) {
-            return false;
-        }
-        if (term_out.count == 1 && term_out.items && term_out.items[0].block_words && final_words) {
-            uint32 bmin = (term_out.items[0].blocks < final_blocks) ? term_out.items[0].blocks : final_blocks;
-            size_t nwords = (size_t) bmin * (size_t) CF_WORDS_PER_BLOCK;
-            for (size_t i = 0; i < nwords; i++)
-                final_words[i] |= term_out.items[0].block_words[i];
-        }
-        for (auto &kv : term_allowed) {
-            auto &dst = union_allowed[kv.first];
-            if (dst.nbits == 0) {
-                dst.nbits = kv.second.nbits;
-                dst.bytes.assign((dst.nbits + 7) / 8, 0);
-            }
-            size_t nbytes = std::min(dst.bytes.size(), kv.second.bytes.size());
-            for (size_t i = 0; i < nbytes; i++) {
-                dst.bytes[i] |= kv.second.bytes[i];
-            }
-        }
-    }
-
-    const uint8 *target_restrict = nullptr;
-    if (restrict_bits) {
-        auto it_rb = restrict_bits->find(target);
-        if (it_rb != restrict_bits->end())
-            target_restrict = it_rb->second;
-    }
-
-    if (target_restrict && final_words) {
-        auto it_ctid = loaded.ctid_map.find(target);
-        if (it_ctid == loaded.ctid_map.end() || !it_ctid->second.data)
-            ereport(ERROR, (errmsg("policy: missing ctid map for target %s", target.c_str())));
-        const CtidArray &arr = it_ctid->second;
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            if (allow_bit(target_restrict, r))
-                continue;
-            int32 blk = arr.data[2 * r];
-            int32 off = arr.data[2 * r + 1];
-            cf_block_words_clear(final_words, final_blocks, blk, off);
-        }
-    }
-    uint32 passed = (uint32) cf_popcount_block_words(final_words, final_blocks);
-    out->count = 0;
-    out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC));
-    out->items[0].table = pstrdup(target.c_str());
-    out->items[0].block_words = final_words;
-    out->items[0].blocks = final_blocks;
-    out->items[0].n_rows = ti.n_rows;
-    out->count = 1;
-
-    if (log_detail) {
-        CF_TRACE_LOG( "policy: multi_join or_terms=%zu", terms.size());
-        for (const auto &kv : union_allowed) {
-            size_t D = kv.second.nbits;
-            size_t pop = bitset_popcount(kv.second, D);
-            CF_TRACE_LOG( "policy: multi_join class=%d allowed=%zu / %zu",
-                 kv.first, pop, D);
-        }
-        CF_TRACE_LOG( "policy: allow_%s count = %u / %u", target.c_str(), passed, ti.n_rows);
-    }
-    return true;
-}
-
-static bool
-multi_join_enforce_multi_target(const Loaded &loaded,
-                                PolicyAllowListC *out,
-                                BundleProfile *profile)
-{
-    if (!out) return false;
-
-    std::vector<std::string> order = target_topo_order(loaded);
-    out->count = 0;
-    out->items = order.empty()
-                     ? nullptr
-                     : (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC) * order.size());
-
-    std::map<std::string, const uint8*> restrict_bits;
-    for (const auto &target : order) {
-        PolicyAllowListC tmp{};
-        if (!multi_join_enforce_one_target(loaded, target, &restrict_bits, &tmp, profile, true))
-            return false;
-        if (tmp.count != 1 || !tmp.items || !tmp.items[0].table || !tmp.items[0].block_words) {
-            ereport(ERROR,
-                    (errmsg("policy: invalid multi-target allow list for target %s", target.c_str())));
-        }
-
-        const TableInfo &ti = loaded.tables.find(target)->second;
-        if (tmp.items[0].n_rows != ti.n_rows) {
-            ereport(ERROR,
-                    (errmsg("policy: allow row mismatch for target %s allow_rows=%u expected=%u",
-                            target.c_str(), tmp.items[0].n_rows, ti.n_rows)));
-        }
-
-        out->items[out->count].table = pstrdup(target.c_str());
-        out->items[out->count].block_words = tmp.items[0].block_words;
-        out->items[out->count].blocks = tmp.items[0].blocks;
-        out->items[out->count].n_rows = ti.n_rows;
-        out->count++;
-
-        /* Build RID-level restriction bits for downstream targets (cheap: scan CTIDs once). */
-        size_t bytes = (ti.n_rows + 7) / 8;
-        uint8 *rid_bits = (uint8 *) palloc0(bytes);
-        auto it_ctid = loaded.ctid_map.find(target);
-        if (it_ctid == loaded.ctid_map.end() || !it_ctid->second.data)
-            ereport(ERROR, (errmsg("policy: missing ctid map for target %s", target.c_str())));
-        const CtidArray &arr = it_ctid->second;
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            int32 blk = arr.data[2 * r];
-            int32 off = arr.data[2 * r + 1];
-            if (cf_block_words_test(tmp.items[0].block_words, tmp.items[0].blocks, blk, off))
-                rid_bits[r >> 3] |= (uint8)(1u << (r & 7));
-        }
-        restrict_bits[target] = rid_bits;
-    }
-
-    return true;
-}
-
-static bool multi_join_enforce(const Loaded &loaded, PolicyAllowListC *out, BundleProfile *profile)
-{
-    if (!out) return false;
-    if (loaded.target_set.empty()) {
-        out->count = 0;
-        out->items = nullptr;
-        return true;
-    }
-    if (loaded.target_set.size() == 1) {
-        const std::string target = *loaded.target_set.begin();
-        return multi_join_enforce_one_target(loaded, target, nullptr, out, profile, true);
-    }
-    return multi_join_enforce_multi_target(loaded, out, profile);
-}
-
-static bool const_only_enforce(const Loaded &loaded, PolicyAllowListC *out, BundleProfile *profile)
-{
-    if (!out) return false;
-    out->count = 0;
-    if (loaded.target_set.empty())
-        return true;
-    out->items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC) * loaded.target_set.size());
-    for (const auto &t : loaded.target_set) {
-        auto it_t = loaded.tables.find(t);
-        if (it_t == loaded.tables.end())
-            ereport(ERROR, (errmsg("policy: missing table %s", t.c_str())));
-        const TableInfo &ti = it_t->second;
-        auto it_ast = loaded.target_ast.find(t);
-        if (it_ast == loaded.target_ast.end() || !it_ast->second)
-            ereport(ERROR, (errmsg("policy: missing AST for target %s", t.c_str())));
-        auto it_vars = loaded.target_vars.find(t);
-        if (it_vars == loaded.target_vars.end())
-            ereport(ERROR, (errmsg("policy: missing vars for target %s", t.c_str())));
-
-        std::map<int, std::vector<uint8_t>> const_allowed;
-        double atoms_ms_const_allowed = 0.0;
-        build_const_allowed_map(loaded, it_vars->second, &const_allowed, &atoms_ms_const_allowed);
-        if (profile) profile->atoms_ms_total += atoms_ms_const_allowed;
-
-        std::vector<uint8_t> ok_rows;
-        uint32 cnt = 0;
-        LocalStat lst;
-        if (!compute_local_ok_bins(loaded, t, it_ast->second, it_vars->second,
-                                   const_allowed, &ok_rows, &cnt, &lst,
-                                   profile ? profile->bundle_id : 0)) {
-            ereport(ERROR,
-                    (errmsg("policy: failed to compute local_ok bins for table %s", t.c_str())));
-        }
-
-        size_t bytes = (ti.n_rows + 7) / 8;
-        uint8 *bits = (uint8 *)palloc0(bytes);
-        if (ok_rows.empty()) {
-            memset(bits, 0xFF, bytes);
-            cnt = ti.n_rows;
-        } else {
-            for (uint32 r = 0; r < ti.n_rows; r++) {
-                if (ok_rows[r])
-                    bits[r >> 3] |= (uint8)(1u << (r & 7));
-            }
-        }
-
-        out->items[out->count].table = pstrdup(t.c_str());
-        uint64 *words = nullptr;
-        uint32 blocks = 0;
-        size_t nbytes = 0;
-        (void) cf_build_block_words_from_rid_bits(loaded, t, bits, ti.n_rows, &words, &blocks, &nbytes);
-        out->items[out->count].block_words = words;
-        out->items[out->count].blocks = blocks;
-        out->items[out->count].n_rows = ti.n_rows;
-        out->count++;
-        pfree(bits);
-
-        CF_TRACE_LOG( "policy: allow_%s count = %u / %u",
-             t.c_str(), cnt, ti.n_rows);
-
-        if (profile && lst.atoms > 0) {
-            profile->local.push_back(lst);
-            profile->local_ms_total += lst.ms_stamp + lst.ms_bin + lst.ms_eval + lst.ms_fill;
-            profile->atoms_ms_total += lst.ms_atoms;
-        }
-    }
-    return true;
-}
-
-static bool token_domain_run(const Loaded &loaded, PolicyAllowListC *out)
-{
-    if (!out) return false;
-    auto find_join_idx = [](const TableInfo &ti, int class_id) -> int {
-        for (size_t i = 0; i < ti.join_class_ids.size(); i++) {
-            if (ti.join_class_ids[i] == class_id)
-                return ti.join_token_idx[i];
-        }
-        return -1;
-    };
-    auto max_token_for_class = [&](const TableInfo &ti, int class_id) -> int {
-        int idx = find_join_idx(ti, class_id);
-        if (idx < 0 || ti.n_rows == 0) return -1;
-        int max_tok = -1;
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
-            int32 tok = row[idx];
-            if (tok > max_tok) max_tok = tok;
-        }
-        return max_tok;
-    };
-
-    const bool trace_dbg = debug_trace_enabled();
-    std::set<int> logged_classes;
-    std::map<int, std::vector<const Atom*>> class_atoms;
-    for (const auto &a : loaded.atoms) {
-        if (a.kind == AtomKind::JOIN && a.join_class_id >= 0) {
-            class_atoms[a.join_class_id].push_back(&a);
-        } else if (a.kind == AtomKind::CONST) {
-            if (a.join_class_id >= 0) {
-                class_atoms[a.join_class_id].push_back(&a);
-            } else {
-                auto it = loaded.tables.find(a.left.table);
-                if (it != loaded.tables.end()) {
-                    for (int cid : it->second.join_class_ids)
-                        class_atoms[cid].push_back(&a);
-                }
-            }
-        }
-    }
-
-    std::map<int, std::map<std::string, Bitset>> present;
-    std::map<int, std::map<int, Bitset>> pred;
-    std::map<int, int> domain_max;
-    std::map<int, std::vector<uint8_t>> const_allowed;
-
-    for (const auto &a : loaded.atoms) {
-        if (a.kind != AtomKind::CONST) continue;
-        auto it = loaded.dicts.find(a.left.key());
-        if (it == loaded.dicts.end())
-            return false;
-        DictType dtype = dict_type_for_key(loaded, a.left.key());
-        const_allowed[a.id] = build_allowed_tokens(it->second, a, dtype);
-    }
-
-    for (const auto &kv : loaded.tables) {
-        const TableInfo &ti = kv.second;
-        if (ti.n_rows == 0 || ti.stride <= 1) continue;
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
-            for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
-                int cid = ti.join_class_ids[j];
-                int idx = ti.join_token_idx[j];
-                int32 tok = row[idx];
-                if (tok >= 0) {
-                    present[cid][ti.name].set((size_t)tok);
-                    if (tok > domain_max[cid]) domain_max[cid] = tok;
-                }
-            }
-        }
-    }
-
-    for (const auto &a : loaded.atoms) {
-        if (a.kind != AtomKind::CONST) continue;
-        auto it_table = loaded.tables.find(a.left.table);
-        if (it_table == loaded.tables.end()) continue;
-        const TableInfo &ti = it_table->second;
-        auto itoff = ti.schema_offset.find("const:" + a.left.key());
-        if (itoff == ti.schema_offset.end()) continue;
-        int off_const = itoff->second;
-        auto it_allowed = const_allowed.find(a.id);
-        if (it_allowed == const_allowed.end()) continue;
-        const auto &allowed = it_allowed->second;
-
-        if (a.join_class_id >= 0) {
-            int cid = a.join_class_id;
-            for (uint32 r = 0; r < ti.n_rows; r++) {
-                const int32_t *row = ti.row_ptr(r);
-                if (!row) continue;
-                int32 tok = row[off_const];
-                if (tok >= 0 && (size_t)tok < allowed.size() && allowed[(size_t)tok]) {
-                    pred[cid][a.id].set((size_t)tok);
-                    if (tok > domain_max[cid]) domain_max[cid] = tok;
-                }
-            }
-        } else {
-            for (size_t j = 0; j < ti.join_class_ids.size(); j++) {
-                int cid = ti.join_class_ids[j];
-                int off_join = ti.join_token_idx[j];
-                for (uint32 r = 0; r < ti.n_rows; r++) {
-                    const int32_t *row = ti.row_ptr(r);
-                    if (!row) continue;
-                    int32 tok = row[off_const];
-                    if (tok >= 0 && (size_t)tok < allowed.size() && allowed[(size_t)tok]) {
-                        int32 jtok = row[off_join];
-                        if (jtok >= 0) {
-                            pred[cid][a.id].set((size_t)jtok);
-                            if (jtok > domain_max[cid]) domain_max[cid] = jtok;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (debug_contract_enabled()) {
-        for (const auto &ckv : class_atoms) {
-            int cid = ckv.first;
-            int D = domain_max[cid] + 1;
-            if (D <= 0) continue;
-            CF_TRACE_LOG( "policy_contract: class=%d domain=%d", cid, D);
-            for (const auto *ap : ckv.second) {
-                if (!ap) continue;
-                size_t pop = 0;
-                if (ap->kind == AtomKind::JOIN) {
-                    for (int tok = 0; tok < D; tok++) {
-                        bool has_l = present[cid][ap->left.table].test((size_t)tok);
-                        bool has_r = present[cid][ap->right.table].test((size_t)tok);
-                        if (has_l && has_r) pop++;
-                    }
-                } else {
-                    auto itp = pred[cid].find(ap->id);
-                    if (itp != pred[cid].end())
-                        pop = bitset_popcount(itp->second, (size_t)D);
-                }
-                CF_TRACE_LOG( "policy_contract: class=%d atom=y%d popcount=%zu / %d",
-                     cid, ap->id, pop, D);
-            }
-        }
-    }
-
-    int target_count = 0;
-    for (const auto &kv : loaded.tables) {
-        if (loaded.target_set.count(kv.first) > 0)
-            target_count++;
-    }
-    out->count = 0;
-    out->items = target_count > 0
-                     ? (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC) * target_count)
-                     : nullptr;
-    std::map<std::string, PolicyTableAllowC *> allow_map;
-
-    for (const auto &kv : loaded.tables) {
-        const TableInfo &ti = kv.second;
-        if (ti.n_rows == 0) continue;
-        if (loaded.target_set.count(ti.name) == 0)
-            continue;
-        const AstNode *ast = nullptr;
-        auto it_ast = loaded.target_ast.find(ti.name);
-        if (it_ast != loaded.target_ast.end())
-            ast = it_ast->second;
-        const std::set<int> *target_atom_ids = nullptr;
-        auto it_vars = loaded.target_vars.find(ti.name);
-        if (it_vars != loaded.target_vars.end())
-            target_atom_ids = &it_vars->second;
-        std::set<int> constrained_classes;
-        if (target_atom_ids) {
-            for (int aid : *target_atom_ids) {
-                if (aid > 0 && aid < (int)loaded.atom_by_id.size()) {
-                    const Atom *ap = loaded.atom_by_id[aid];
-                    if (ap && ap->join_class_id >= 0)
-                        constrained_classes.insert(ap->join_class_id);
-                }
-            }
-        }
-
-        std::map<int, std::vector<uint8_t>> allow_tok;
-        uint32 rid_mismatch = 0;
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
-            if (row[0] != (int32_t)r) {
-                rid_mismatch++;
-                if (rid_mismatch <= 3) {
-                    CF_TRACE_LOG( "policy: rid mismatch table=%s row_idx=%u rid=%d",
-                         ti.name.c_str(), r, row[0]);
-                }
-            }
-        }
-        if (rid_mismatch > 0) {
-            CF_TRACE_LOG( "policy: rid_mismatch table=%s count=%u", ti.name.c_str(), rid_mismatch);
-        }
-        for (int cid : constrained_classes) {
-            auto it_class = class_atoms.find(cid);
-            if (it_class == class_atoms.end())
-                continue;
-            const auto &atoms = it_class->second;
-            int D = domain_max[cid] + 1;
-            if (D <= 0) continue;
-            std::vector<int> atom_ids;
-            atom_ids.reserve(atoms.size());
-            if (target_atom_ids) {
-                for (auto *ap : atoms) {
-                    if (ap && target_atom_ids->count(ap->id))
-                        atom_ids.push_back(ap->id);
-                }
-            } else {
-                for (auto *ap : atoms) {
-                    if (ap) atom_ids.push_back(ap->id);
-                }
-            }
-            if (atom_ids.empty())
-                continue;
-            std::sort(atom_ids.begin(), atom_ids.end());
-            int K = (int)atom_ids.size();
-            std::unordered_map<uint64_t, int> bin_u64;
-            std::unordered_map<std::string, int> bin_bytes;
-            std::vector<uint64_t> class_sig_u64;
-            std::vector<std::string> class_sig_bytes;
-            std::vector<int> tok2class(D, -1);
-            bool use_u64 = (K <= 64);
-            for (int tok = 0; tok < D; tok++) {
-                if (use_u64) {
-                    uint64_t sig = 0;
-                    for (int i = 0; i < K; i++) {
-                        int aid = atom_ids[i];
-                        bool val = false;
-                        const Atom *ap = nullptr;
-                        for (const auto &a : loaded.atoms) if (a.id == aid) { ap = &a; break; }
-                        if (!ap) continue;
-                        if (ap->kind == AtomKind::JOIN) {
-                            bool has_l = present[cid][ap->left.table].test((size_t)tok);
-                            bool has_r = present[cid][ap->right.table].test((size_t)tok);
-                            val = has_l && has_r;
-                        } else {
-                            auto itp = pred[cid].find(aid);
-                            if (itp != pred[cid].end())
-                                val = itp->second.test((size_t)tok);
-                        }
-                        if (val) sig |= (1ULL << i);
-                    }
-                    auto it = bin_u64.find(sig);
-                    int bid;
-                    if (it == bin_u64.end()) {
-                        bid = (int)class_sig_u64.size();
-                        bin_u64[sig] = bid;
-                        class_sig_u64.push_back(sig);
-                    } else {
-                        bid = it->second;
-                    }
-                    tok2class[tok] = bid;
-                } else {
-                    size_t nbytes = (K + 7) / 8;
-                    std::string sig(nbytes, '\0');
-                    for (int i = 0; i < K; i++) {
-                        int aid = atom_ids[i];
-                        bool val = false;
-                        const Atom *ap = nullptr;
-                        for (const auto &a : loaded.atoms) if (a.id == aid) { ap = &a; break; }
-                        if (!ap) continue;
-                        if (ap->kind == AtomKind::JOIN) {
-                            bool has_l = present[cid][ap->left.table].test((size_t)tok);
-                            bool has_r = present[cid][ap->right.table].test((size_t)tok);
-                            val = has_l && has_r;
-                        } else {
-                            auto itp = pred[cid].find(aid);
-                            if (itp != pred[cid].end())
-                                val = itp->second.test((size_t)tok);
-                        }
-                        if (val)
-                            sig[(size_t)i >> 3] |= (char)(1u << (i & 7));
-                    }
-                    auto it = bin_bytes.find(sig);
-                    int bid;
-                    if (it == bin_bytes.end()) {
-                        bid = (int)class_sig_bytes.size();
-                        bin_bytes[sig] = bid;
-                        class_sig_bytes.push_back(sig);
-                    } else {
-                        bid = it->second;
-                    }
-                    tok2class[tok] = bid;
-                }
-            }
-
-            std::vector<uint32_t> bin_counts(use_u64 ? class_sig_u64.size() : class_sig_bytes.size(), 0);
-            for (int tok = 0; tok < D; tok++) {
-                int bid = tok2class[(size_t)tok];
-                if (bid >= 0 && bid < (int)bin_counts.size())
-                    bin_counts[(size_t)bid]++;
-            }
-
-            std::vector<uint8_t> allow_bin(use_u64 ? class_sig_u64.size() : class_sig_bytes.size(), 0);
-            int max_atom_id = 0;
-            for (int aid : atom_ids) if (aid > max_atom_id) max_atom_id = aid;
-            std::vector<int> vals((size_t)max_atom_id + 1, -1);
-            for (size_t b = 0; b < allow_bin.size(); b++) {
-                for (int aid : atom_ids) vals[aid] = -1;
-                if (use_u64) {
-                    uint64_t sig = class_sig_u64[b];
-                    for (int i = 0; i < K; i++) {
-                        int aid = atom_ids[i];
-                        vals[aid] = (sig >> i) & 1ULL;
-                    }
-                } else {
-                    const std::string &sig = class_sig_bytes[b];
-                    for (int i = 0; i < K; i++) {
-                        int aid = atom_ids[i];
-                        bool bit = (sig[(size_t)i >> 3] >> (i & 7)) & 1;
-                        vals[aid] = bit ? 1 : 0;
-                    }
-                }
-                Tri ev = ast ? eval_ast(ast, vals) : TRI_TRUE;
-                if (ev == TRI_TRUE) allow_bin[b] = 1;
-            }
-            std::vector<uint8_t> allow_tok_c((size_t)D, 0);
-            for (int tok = 0; tok < D; tok++) {
-                int bid = tok2class[(size_t)tok];
-                if (bid >= 0 && allow_bin[(size_t)bid])
-                    allow_tok_c[(size_t)tok] = 1;
-            }
-            allow_tok[cid] = std::move(allow_tok_c);
-
-            if (trace_dbg && logged_classes.insert(cid).second) {
-                auto sig_to_bits = [&](uint64_t sig) {
-                    std::string bits;
-                    bits.reserve((size_t)K);
-                    for (int i = 0; i < K; i++) bits.push_back(((sig >> i) & 1ULL) ? '1' : '0');
-                    return bits;
-                };
-                auto sig_to_bits_bytes = [&](const std::string &sig) {
-                    std::string bits;
-                    bits.reserve((size_t)K);
-                    for (int i = 0; i < K; i++) {
-                        bool bit = (sig[(size_t)i >> 3] >> (i & 7)) & 1;
-                        bits.push_back(bit ? '1' : '0');
-                    }
-                    return bits;
-                };
-
-                size_t bins = allow_bin.size();
-                uint32 allowed_bins = 0;
-                for (size_t i = 0; i < allow_bin.size(); i++)
-                    if (allow_bin[i]) allowed_bins++;
-                uint32 allowed_tokens = 0;
-                const auto &tok_allow_ref = allow_tok[cid];
-                for (size_t i = 0; i < tok_allow_ref.size(); i++)
-                    if (tok_allow_ref[i]) allowed_tokens++;
-
-                CF_TRACE_LOG( "policy: class=%d domain=%d atoms=%d unique_bins=%zu bin_eval_calls=%zu allowed_bins=%u allowed_tokens=%u",
-                     cid, D, K, bins, bins, allowed_bins, allowed_tokens);
-
-                // top 10 bins by count
-                std::vector<size_t> idx(bin_counts.size());
-                for (size_t i = 0; i < idx.size(); i++) idx[i] = i;
-                std::sort(idx.begin(), idx.end(),
-                          [&](size_t a, size_t b) { return bin_counts[a] > bin_counts[b]; });
-                size_t top = std::min<size_t>(10, idx.size());
-                for (size_t i = 0; i < top; i++) {
-                    size_t b = idx[i];
-                    std::string bits = use_u64 ? sig_to_bits(class_sig_u64[b])
-                                               : sig_to_bits_bytes(class_sig_bytes[b]);
-                    CF_TRACE_LOG( "policy: class=%d bin sig=%s count=%u",
-                         cid, bits.c_str(), bin_counts[b]);
-                }
-            }
-        }
-
-        size_t bytes = (ti.n_rows + 7) / 8;
-        uint8 *bits = (uint8 *) palloc0(bytes);
-        uint32 passed = 0;
-        std::vector<int> ast_vals;
-        if (ast && constrained_classes.empty()) {
-            ast_vals.assign(loaded.atom_by_id.size(), 1);
-        }
-        for (uint32 r = 0; r < ti.n_rows; r++) {
-            const int32_t *row = ti.row_ptr(r);
-            if (!row) continue;
-            int32 rid = row[0];
-            if (rid < 0 || (uint32)rid >= ti.n_rows)
-                continue;
-            bool ok = true;
-            for (int cid : constrained_classes) {
-                int idx = find_join_idx(ti, cid);
-                if (idx < 0)
-                    continue;
-                int32 tok = row[idx];
-                auto it = allow_tok.find(cid);
-                if (it == allow_tok.end()) continue;
-                const auto &at = it->second;
-                if (tok < 0 || (size_t)tok >= at.size() || !at[(size_t)tok]) {
-                    ok = false;
-                    break;
-                }
-            }
-            if (ok && !ti.const_atom_ids.empty()) {
-                if (ast && constrained_classes.empty()) {
-                    std::fill(ast_vals.begin(), ast_vals.end(), 1);
-                    for (size_t c = 0; c < ti.const_atom_ids.size(); c++) {
-                        int atom_id = ti.const_atom_ids[c];
-                        if (target_atom_ids && target_atom_ids->count(atom_id) == 0)
-                            continue;
-                        auto it_allowed = const_allowed.find(atom_id);
-                        if (it_allowed == const_allowed.end()) continue;
-                        int idx = ti.const_token_idx[c];
-                        int32 tok = row[idx];
-                        bool v = (tok >= 0 && (size_t)tok < it_allowed->second.size() &&
-                                  it_allowed->second[(size_t)tok]);
-                        if ((size_t)atom_id < ast_vals.size())
-                            ast_vals[(size_t)atom_id] = v ? 1 : 0;
-                    }
-                    Tri ev = eval_ast(ast, ast_vals);
-                    ok = (ev == TRI_TRUE);
-                } else {
-                    for (size_t c = 0; c < ti.const_atom_ids.size(); c++) {
-                        int atom_id = ti.const_atom_ids[c];
-                        if (target_atom_ids && target_atom_ids->count(atom_id) == 0)
-                            continue;
-                        auto it_allowed = const_allowed.find(atom_id);
-                        if (it_allowed == const_allowed.end()) continue;
-                        int idx = ti.const_token_idx[c];
-                        int32 tok = row[idx];
-                        if (tok < 0 || (size_t)tok >= it_allowed->second.size() ||
-                            !it_allowed->second[(size_t)tok]) {
-                            ok = false;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (ok) {
-                bits[(uint32)rid >> 3] |= (uint8)(1u << ((uint32)rid & 7));
-                passed++;
-            }
-        }
-
-        CF_TRACE_LOG( "policy: allow_%s count = %u / %u",
-             ti.name.c_str(), passed, ti.n_rows);
-
-        out->items[out->count].table = pstrdup(ti.name.c_str());
-        uint64 *words = nullptr;
-        uint32 blocks = 0;
-        size_t nbytes = 0;
-        (void) cf_build_block_words_from_rid_bits(loaded, ti.name, bits, ti.n_rows, &words, &blocks, &nbytes);
-        out->items[out->count].block_words = words;
-        out->items[out->count].blocks = blocks;
-        out->items[out->count].n_rows = ti.n_rows;
-        allow_map[ti.name] = &out->items[out->count];
-        out->count++;
-        pfree(bits);
-    }
-
+    CF_TRACE_LOG("policy: allow_%s count=%u/%u", tp.target.c_str(), allowed_rows, target_ti.nrows);
     return true;
 }
 
 } // namespace
+
+extern "C" {
 
 typedef struct PolicyRunHandle {
     PolicyAllowListC allow_list;
     PolicyRunProfileC profile;
 } PolicyRunHandle;
 
-static void fill_run_profile(const BundleProfile &profile,
-                             double parse_ms,
-                             PolicyRunProfileC *out)
+static void fill_run_profile(const BuildProfile &bp, PolicyRunProfileC *out)
 {
     if (!out) return;
-    out->artifact_parse_ms = parse_ms;
-    out->atoms_ms = profile.atoms_ms_total;
-    out->presence_ms = profile.presence_ms_total;
-    out->project_ms = profile.project_ms_total;
+    out->artifact_parse_ms = bp.artifact_parse_ms;
+    out->atoms_ms = bp.atoms_ms;
+    out->propagate_ms = bp.propagate_ms;
+    out->project_ms = 0.0;
     out->stamp_ms = 0.0;
     out->bin_ms = 0.0;
     out->local_sat_ms = 0.0;
     out->fill_ms = 0.0;
-    for (const auto &ls : profile.local) {
-        out->stamp_ms += ls.ms_stamp;
-        out->bin_ms += ls.ms_bin;
-        out->local_sat_ms += ls.ms_eval;
-        out->fill_ms += ls.ms_fill;
-    }
-    out->prop_ms = profile.prop_ms_total;
-    out->prop_iters = profile.prop_iterations;
-    out->decode_ms = profile.decode_ms_total;
-    out->policy_total_ms = profile.total_ms;
+    out->prop_ms = bp.propagate_ms;
+    out->prop_iters = bp.prop_iters;
+    out->decode_ms = bp.decode_ms;
+    out->policy_total_ms = bp.total_ms;
 }
 
-static void fill_decode_stats(const PolicyAllowListC *allow, BundleProfile *profile, double ms_decode_default)
-{
-    if (!allow || !profile) return;
-    if (!profile->decode.empty())
-        return;
-    for (int i = 0; i < allow->count; i++) {
-        const PolicyTableAllowC *it = &allow->items[i];
-        if (!it->table) continue;
-        DecodeStat ds;
-        ds.table = it->table;
-        ds.rows_total = it->n_rows;
-        ds.rows_allowed = (uint32) cf_popcount_block_words(it->block_words, it->blocks);
-        ds.ms_decode = ms_decode_default;
-        profile->decode.push_back(ds);
-        profile->decode_ms_total += ds.ms_decode;
-    }
-}
-
-extern "C" PolicyRunHandle *
+PolicyRunHandle *
 policy_run(const PolicyArtifactC *arts, int art_count, const PolicyEngineInputC *in)
 {
     if (!arts || art_count <= 0 || !in)
         return nullptr;
 
-    PolicyRunHandle *handle = (PolicyRunHandle *)palloc0(sizeof(PolicyRunHandle));
-    Loaded loaded;
     auto t0 = Clock::now();
-    if (!load_phase(arts, art_count, in, &loaded))
+
+    PolicyRunHandle *h = (PolicyRunHandle *)palloc0(sizeof(PolicyRunHandle));
+    Loaded loaded;
+    BuildProfile profile;
+
+    if (!load_phase(arts, art_count, in, &loaded, &profile))
         return nullptr;
+
+    h->allow_list.count = 0;
+    h->allow_list.items = nullptr;
+
+    if (!loaded.target_order.empty()) {
+        h->allow_list.items = (PolicyTableAllowC *)palloc0(sizeof(PolicyTableAllowC) * loaded.target_order.size());
+
+        int out_count = 0;
+        for (const std::string &target : loaded.target_order) {
+            auto it_tp = loaded.targets.find(target);
+            if (it_tp == loaded.targets.end())
+                continue;
+            if (!build_target_allow_list(loaded, it_tp->second, &h->allow_list.items[out_count], &profile, nullptr))
+                return nullptr;
+            out_count++;
+        }
+        h->allow_list.count = out_count;
+    }
+
     auto t1 = Clock::now();
-    double parse_ms = Ms(t1 - t0).count();
-    CF_TRACE_LOG( "policy: load_ms=%.3f", parse_ms);
+    profile.total_ms = Ms(t1 - t0).count();
 
-    BundleProfile profile;
-    profile.bundle_id = next_bundle_id();
-    profile.k = profile_k();
-    profile.query = profile_query();
-    if (!loaded.target_set.empty())
-        profile.target = *loaded.target_set.begin();
+    fill_run_profile(profile, &h->profile);
 
-    bool force_multi = loaded.has_multi_join;
-    bool has_join = false;
-    for (const auto &a : loaded.atoms) {
-        if (a.kind == AtomKind::JOIN) {
-            has_join = true;
-            break;
-        }
-    }
-    if (!force_multi && !loaded.target_set.empty()) {
-        const std::string &t = *loaded.target_set.begin();
-        auto it_ast = loaded.target_ast.find(t);
-        if (it_ast != loaded.target_ast.end() && it_ast->second) {
-            std::string reason;
-            if (!ast_supported_multi_join(loaded, it_ast->second, &reason)) {
-                force_multi = true;
-            }
-        }
-    }
-    // Join policies use the multi-join path to preserve AST semantics; the
-    // token-domain fast path can over-constrain OR branches in decode.
-    if (has_join)
-        force_multi = true;
+    log_policy_profile_query(profile, h->allow_list.count);
 
-    if (contract_mode_enabled() && force_multi) {
-        run_multi_join_contract(loaded);
-        CF_TRACE_LOG( "policy_contract: multi_join debug only; allow-all for targets");
-        if (!build_allow_all(loaded, &handle->allow_list))
-            return nullptr;
-        auto t_end = Clock::now();
-        CF_TRACE_LOG( "policy: total_ms=%.3f", Ms(t_end - t0).count());
-        profile.total_ms = Ms(t_end - t0).count();
-        fill_decode_stats(&handle->allow_list, &profile, 0.0);
-        log_profile(profile);
-        update_query_profile(profile, loaded);
-        fill_run_profile(profile, parse_ms, &handle->profile);
-        return handle;
-    }
-
-    if (force_multi) {
-        if (!multi_join_enforce(loaded, &handle->allow_list, &profile))
-            return nullptr;
-        auto t_end = Clock::now();
-        CF_TRACE_LOG( "policy: total_ms=%.3f", Ms(t_end - t0).count());
-        profile.total_ms = Ms(t_end - t0).count();
-        fill_decode_stats(&handle->allow_list, &profile, 0.0);
-        log_profile(profile);
-        update_query_profile(profile, loaded);
-        fill_run_profile(profile, parse_ms, &handle->profile);
-        return handle;
-    }
-
-    if (!has_join) {
-        if (!const_only_enforce(loaded, &handle->allow_list, &profile))
-            return nullptr;
-        auto t_done = Clock::now();
-        CF_TRACE_LOG( "policy: total_ms=%.3f", Ms(t_done - t0).count());
-        profile.total_ms = Ms(t_done - t0).count();
-        fill_decode_stats(&handle->allow_list, &profile, 0.0);
-        log_profile(profile);
-        update_query_profile(profile, loaded);
-        fill_run_profile(profile, parse_ms, &handle->profile);
-        return handle;
-    }
-
-    if (!token_domain_run(loaded, &handle->allow_list))
-        return nullptr;
-    auto t2 = Clock::now();
-    CF_TRACE_LOG( "policy: token_domain_ms=%.3f", Ms(t2 - t1).count());
-    CF_TRACE_LOG( "policy: total_ms=%.3f", Ms(t2 - t0).count());
-    profile.total_ms = Ms(t2 - t0).count();
-    profile.prop_ms_total = Ms(t2 - t1).count();
-    profile.prop_iterations = 0;
-    fill_decode_stats(&handle->allow_list, &profile, 0.0);
-    log_profile(profile);
-    update_query_profile(profile, loaded);
-    fill_run_profile(profile, parse_ms, &handle->profile);
-
-    return handle;
+    return h;
 }
 
-extern "C" const PolicyAllowListC *
+const PolicyAllowListC *
 policy_run_allow_list(const PolicyRunHandle *h)
 {
     if (!h) return nullptr;
     return &h->allow_list;
 }
 
-extern "C" const PolicyRunProfileC *
+const PolicyRunProfileC *
 policy_run_profile(const PolicyRunHandle *h)
 {
     if (!h) return nullptr;
     return &h->profile;
 }
 
-extern "C" bool
-policy_build_allow_bits_general(const PolicyArtifactC *arts, int art_count,
+bool
+policy_build_allow_bits_general(const PolicyArtifactC *arts,
+                                int art_count,
                                 const PolicyEngineInputC *in,
                                 PolicyAllowListC *out)
 {
@@ -7028,3 +2142,5 @@ policy_build_allow_bits_general(const PolicyArtifactC *arts, int art_count,
     *out = h->allow_list;
     return true;
 }
+
+} // extern "C"
