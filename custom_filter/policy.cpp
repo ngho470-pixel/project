@@ -256,6 +256,17 @@ struct BoolAst {
     BoolAst *right = nullptr;
 };
 
+enum class FormulaTokKind {
+    VAR,
+    AND,
+    OR,
+};
+
+struct FormulaToken {
+    FormulaTokKind kind = FormulaTokKind::VAR;
+    int var_id = -1;
+};
+
 struct AstParser {
     std::string src;
     size_t pos = 0;
@@ -430,6 +441,30 @@ static DnfList ast_to_dnf(const BoolAst *node, size_t cap)
     if (node->type == AstType::OR)
         return dnf_or(ast_to_dnf(node->left, cap), ast_to_dnf(node->right, cap));
     return dnf_and(ast_to_dnf(node->left, cap), ast_to_dnf(node->right, cap), cap);
+}
+
+static void dedup_dnf_terms(DnfList *terms)
+{
+    if (!terms || terms->empty())
+        return;
+    std::sort(terms->begin(), terms->end());
+    terms->erase(std::unique(terms->begin(), terms->end()), terms->end());
+}
+
+static void emit_ast_rpn(const BoolAst *node, std::vector<FormulaToken> *out)
+{
+    if (!node || !out)
+        return;
+    if (node->type == AstType::VAR) {
+        out->push_back({FormulaTokKind::VAR, node->var_id});
+        return;
+    }
+    emit_ast_rpn(node->left, out);
+    emit_ast_rpn(node->right, out);
+    if (node->type == AstType::AND)
+        out->push_back({FormulaTokKind::AND, -1});
+    else
+        out->push_back({FormulaTokKind::OR, -1});
 }
 
 struct ColRef {
@@ -661,14 +696,27 @@ struct ClausePlan {
     std::vector<int> atom_ids;
     std::vector<ClauseTablePlan> tables;
     std::vector<int> join_classes;
+    bool has_join_atom = false;
     bool target_present = false;
     bool unsat = false;
     bool acyclic_hint = false;
 };
 
+struct TargetLocalAtom {
+    int var_id = -1;
+    int atom_id = -1;
+    int col_idx = -1;
+    TokenBitset allowed;
+    const std::vector<int32_t> *col_data = nullptr;
+};
+
 struct TargetPlan {
     std::string target;
     std::vector<ClausePlan> clauses;
+    bool local_formula_enabled = false;
+    std::vector<FormulaToken> local_formula_rpn;
+    std::vector<TargetLocalAtom> local_formula_atoms;
+    std::vector<int> local_var_slot;
 };
 
 struct Loaded {
@@ -1156,6 +1204,94 @@ static bool is_clause_acyclic_hint(const ClausePlan &cl)
     return true;
 }
 
+static void collect_formula_var_ids(const std::vector<FormulaToken> &rpn, std::vector<int> *out_vars)
+{
+    if (!out_vars)
+        return;
+    out_vars->clear();
+    for (const auto &tk : rpn) {
+        if (tk.kind == FormulaTokKind::VAR && tk.var_id > 0)
+            out_vars->push_back(tk.var_id);
+    }
+    std::sort(out_vars->begin(), out_vars->end());
+    out_vars->erase(std::unique(out_vars->begin(), out_vars->end()), out_vars->end());
+}
+
+static bool try_compile_target_local_formula(const std::string &target,
+                                             const std::vector<FormulaToken> &rpn,
+                                             Loaded *out,
+                                             TargetPlan *tp)
+{
+    if (!out || !tp || rpn.empty())
+        return false;
+
+    std::vector<int> vars;
+    collect_formula_var_ids(rpn, &vars);
+    if (vars.empty())
+        return false;
+
+    // Fast path is valid only when every referenced atom is target-local const.
+    for (int vid : vars) {
+        auto ita = out->atoms_by_id.find(vid);
+        if (ita == out->atoms_by_id.end())
+            continue;  // unknown atom id acts as FALSE (same behavior as DNF fallback).
+        const Atom &a = ita->second;
+        if (a.kind != AtomKind::CONST || a.left.table != target)
+            return false;
+    }
+
+    auto it_table = out->tables.find(target);
+    if (it_table == out->tables.end()) {
+        ereport(ERROR,
+                (errmsg("policy: missing table artifacts for %s", target.c_str())));
+    }
+    TableData &ti = it_table->second;
+
+    int max_var = vars.empty() ? 0 : vars.back();
+    tp->local_var_slot.assign((size_t)max_var + 1u, -1);
+    tp->local_formula_rpn = rpn;
+    tp->local_formula_atoms.clear();
+
+    for (int vid : vars) {
+        auto ita = out->atoms_by_id.find(vid);
+        if (ita == out->atoms_by_id.end())
+            continue;
+        const Atom &a = ita->second;
+
+        std::string key = a.left.key();
+        auto itd = out->dicts.find(key);
+        if (itd == out->dicts.end()) {
+            ereport(ERROR,
+                    (errmsg("policy: missing dict for const atom y%d col=%s",
+                            a.id, key.c_str())));
+        }
+        DictType dtype = DictType::TEXT;
+        auto itdt = out->dict_types.find(key);
+        if (itdt != out->dict_types.end())
+            dtype = itdt->second;
+
+        auto it_idx = ti.col_idx.find(key);
+        if (it_idx == ti.col_idx.end()) {
+            ereport(ERROR,
+                    (errmsg("policy: missing predicate column %s in meta/cols/%s",
+                            key.c_str(), target.c_str())));
+        }
+
+        TargetLocalAtom la;
+        la.var_id = vid;
+        la.atom_id = a.id;
+        la.col_idx = it_idx->second;
+        la.allowed = build_allowed_token_set(a, itd->second, dtype);
+
+        ti.needed_cols.insert(la.col_idx);
+        tp->local_var_slot[(size_t)vid] = (int)tp->local_formula_atoms.size();
+        tp->local_formula_atoms.push_back(std::move(la));
+    }
+
+    tp->local_formula_enabled = true;
+    return true;
+}
+
 static bool compile_target_plan(const std::string &target,
                                 const char *ast_str,
                                 Loaded *out,
@@ -1183,9 +1319,20 @@ static bool compile_target_plan(const std::string &target,
                         target.c_str(), ast.c_str())));
     }
 
-    auto dnf_terms = ast_to_dnf(root, 4096);
-
     auto t_atoms0 = Clock::now();
+
+    std::vector<FormulaToken> rpn;
+    emit_ast_rpn(root, &rpn);
+    if (try_compile_target_local_formula(target, rpn, out, &tp)) {
+        auto t_atoms1 = Clock::now();
+        profile->atoms_ms += Ms(t_atoms1 - t_atoms0).count();
+        out->targets[target] = std::move(tp);
+        return true;
+    }
+
+    auto dnf_terms = ast_to_dnf(root, 4096);
+    dedup_dnf_terms(&dnf_terms);
+
     for (const DnfTerm &term : dnf_terms) {
         ClausePlan cl;
         cl.target = target;
@@ -1215,6 +1362,7 @@ static bool compile_target_plan(const std::string &target,
             const Atom &a = ita->second;
 
             if (a.kind == AtomKind::JOIN) {
+                cl.has_join_atom = true;
                 if (a.join_class_id < 0) {
                     unsat = true;
                     break;
@@ -1520,6 +1668,26 @@ static bool bind_clause_views(ClausePlan *cl, Loaded *loaded)
     return true;
 }
 
+static bool bind_target_local_views(TargetPlan *tp, Loaded *loaded)
+{
+    if (!tp || !loaded)
+        return false;
+    if (!tp->local_formula_enabled)
+        return true;
+
+    auto it = loaded->tables.find(tp->target);
+    if (it == loaded->tables.end())
+        return false;
+    TableData &ti = it->second;
+
+    for (auto &a : tp->local_formula_atoms) {
+        if (a.col_idx < 0 || a.col_idx >= (int)ti.decoded_cols.size())
+            return false;
+        a.col_data = &ti.decoded_cols[a.col_idx];
+    }
+    return true;
+}
+
 static bool row_matches_clause_table(const ClauseTablePlan &tp,
                                      uint32 rid,
                                      const std::vector<TokenBitset> &allowed,
@@ -1562,6 +1730,24 @@ static bool row_matches_clause_table(const ClauseTablePlan &tp,
             (*out_group_tokens)[g] = tok;
     }
 
+    return true;
+}
+
+static bool row_matches_table_predicates_only(const ClauseTablePlan &tp,
+                                              uint32 rid,
+                                              const uint8 *restrict_bits = nullptr)
+{
+    if (restrict_bits && !rid_bit_test(restrict_bits, rid))
+        return false;
+    for (const auto &pred : tp.predicates) {
+        if (!pred.col_data || rid >= pred.col_data->size())
+            return false;
+        int32_t tok = (*pred.col_data)[rid];
+        if (tok < 0)
+            return false;
+        if (!pred.allowed.test((size_t)tok))
+            return false;
+    }
     return true;
 }
 
@@ -1633,10 +1819,9 @@ static bool propagate_clause(const ClausePlan &cl,
         allowed_out->push_back(std::move(b));
     }
 
-    bool changed = false;
     int iterations = 0;
 
-    auto sweep = [&](bool reverse) -> bool {
+    auto sweep = [&](bool reverse, bool *out_changed) -> bool {
         bool any_change = false;
         if (!reverse) {
             for (size_t ti_idx = 0; ti_idx < cl.tables.size(); ti_idx++) {
@@ -1654,6 +1839,7 @@ static bool propagate_clause(const ClausePlan &cl,
                         any_change = true;
                 }
             }
+            if (out_changed) *out_changed = any_change;
             return true;
         }
 
@@ -1672,48 +1858,39 @@ static bool propagate_clause(const ClausePlan &cl,
                     any_change = true;
             }
         }
+        if (out_changed) *out_changed = any_change;
         return true;
     };
 
     if (cl.acyclic_hint) {
         // Two directional passes (Yannakakis-style fast path for tree-like clauses).
-        changed = false;
-        if (!sweep(false)) return false;
-        if (!sweep(true)) return false;
+        bool ch0 = false;
+        bool ch1 = false;
+        if (!sweep(false, &ch0)) return false;
+        if (!sweep(true, &ch1)) return false;
+        iterations = 1;
         for (const auto &b : *allowed_out) {
             if (!b.any()) {
-                *out_iters = 1;
+                *out_iters = iterations;
                 *out_ms = Ms(Clock::now() - t0).count();
                 return true;
             }
         }
-        // Safety: fall back to bounded fixpoint if two-pass still moves domains.
-        iterations = 1;
+        if (!ch0 && !ch1) {
+            *out_iters = iterations;
+            *out_ms = Ms(Clock::now() - t0).count();
+            return true;
+        }
     }
 
     const int cap = cl.acyclic_hint ? 8 : 20;
     for (;;) {
-        bool any_change = false;
-        if (!sweep(false)) return false;
-        if (!sweep(true)) return false;
-
-        // Re-check by recomputing support and intersecting once more to detect change.
-        for (const auto &tp : cl.tables) {
-            auto it_t = loaded.tables.find(tp.table);
-            if (it_t == loaded.tables.end())
-                return false;
-            const TableData &ti = it_t->second;
-            std::vector<TokenBitset> support;
-            if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
-                return false;
-            for (size_t g = 0; g < tp.class_groups.size(); g++) {
-                const ClauseClassGroup &cg = tp.class_groups[g];
-                if ((*allowed_out)[cg.class_pos].intersect_with_changed(support[g]))
-                    any_change = true;
-            }
-        }
-
+        bool ch0 = false;
+        bool ch1 = false;
+        if (!sweep(false, &ch0)) return false;
+        if (!sweep(true, &ch1)) return false;
         iterations++;
+        bool any_change = ch0 || ch1;
 
         bool empty = false;
         for (const auto &b : *allowed_out) {
@@ -1820,6 +1997,149 @@ static bool build_rid_bits_for_clause_target(const ClausePlan &cl,
         }
     }
 
+    return true;
+}
+
+static bool table_has_predicate_witness(const ClauseTablePlan &tp,
+                                        const TableData &ti,
+                                        const std::unordered_map<std::string, const uint8 *> *restrict_bits)
+{
+    const uint8 *rbits = nullptr;
+    if (restrict_bits) {
+        auto it_rb = restrict_bits->find(tp.table);
+        if (it_rb != restrict_bits->end())
+            rbits = it_rb->second;
+    }
+    for (uint32 rid = 0; rid < ti.nrows; rid++) {
+        if (row_matches_table_predicates_only(tp, rid, rbits))
+            return true;
+    }
+    return false;
+}
+
+static bool build_rid_bits_for_clause_nojoins(const ClausePlan &cl,
+                                              const Loaded &loaded,
+                                              std::vector<uint8_t> *out_bits,
+                                              const std::unordered_map<std::string, const uint8 *> *restrict_bits,
+                                              bool *out_clause_global_ok)
+{
+    if (!out_bits || !out_clause_global_ok)
+        return false;
+
+    *out_clause_global_ok = true;
+
+    const ClauseTablePlan *target_tp = nullptr;
+    const TableData *target_ti = nullptr;
+
+    for (const auto &tp : cl.tables) {
+        auto it_t = loaded.tables.find(tp.table);
+        if (it_t == loaded.tables.end())
+            return false;
+        const TableData &ti = it_t->second;
+
+        if (tp.table == cl.target) {
+            target_tp = &tp;
+            target_ti = &ti;
+        } else {
+            if (!table_has_predicate_witness(tp, ti, restrict_bits)) {
+                *out_clause_global_ok = false;
+                break;
+            }
+        }
+    }
+
+    if (!*out_clause_global_ok)
+        return true;
+
+    if (!target_tp || !target_ti) {
+        auto it_tt = loaded.tables.find(cl.target);
+        if (it_tt == loaded.tables.end())
+            return false;
+        const TableData &tt = it_tt->second;
+        out_bits->assign((tt.nrows + 7u) / 8u, 0xFF);
+        if ((tt.nrows & 7u) != 0u)
+            out_bits->back() &= (uint8)((1u << (tt.nrows & 7u)) - 1u);
+        return true;
+    }
+
+    out_bits->assign((target_ti->nrows + 7u) / 8u, 0);
+    const uint8 *rbits = nullptr;
+    if (restrict_bits) {
+        auto it_rb = restrict_bits->find(cl.target);
+        if (it_rb != restrict_bits->end())
+            rbits = it_rb->second;
+    }
+    for (uint32 rid = 0; rid < target_ti->nrows; rid++) {
+        if (row_matches_table_predicates_only(*target_tp, rid, rbits))
+            rid_bit_set(out_bits->data(), rid);
+    }
+    return true;
+}
+
+static bool build_rid_bits_for_target_local_formula(const TargetPlan &tp,
+                                                    const Loaded &loaded,
+                                                    std::vector<uint8_t> *out_bits,
+                                                    const std::unordered_map<std::string, const uint8 *> *restrict_bits)
+{
+    if (!out_bits)
+        return false;
+    auto it_t = loaded.tables.find(tp.target);
+    if (it_t == loaded.tables.end())
+        return false;
+    const TableData &ti = it_t->second;
+
+    out_bits->assign((ti.nrows + 7u) / 8u, 0);
+    const uint8 *rbits = nullptr;
+    if (restrict_bits) {
+        auto it_rb = restrict_bits->find(tp.target);
+        if (it_rb != restrict_bits->end())
+            rbits = it_rb->second;
+    }
+
+    std::vector<uint8_t> atom_vals(tp.local_formula_atoms.size(), 0);
+    std::vector<uint8_t> stack;
+    stack.reserve(tp.local_formula_rpn.size());
+
+    for (uint32 rid = 0; rid < ti.nrows; rid++) {
+        if (rbits && !rid_bit_test(rbits, rid))
+            continue;
+
+        for (size_t i = 0; i < tp.local_formula_atoms.size(); i++) {
+            const auto &a = tp.local_formula_atoms[i];
+            if (!a.col_data || rid >= a.col_data->size())
+                return false;
+            int32_t tok = (*a.col_data)[rid];
+            atom_vals[i] = (tok >= 0 && a.allowed.test((size_t)tok)) ? 1u : 0u;
+        }
+
+        stack.clear();
+        for (const auto &tk : tp.local_formula_rpn) {
+            if (tk.kind == FormulaTokKind::VAR) {
+                uint8_t v = 0;
+                if (tk.var_id > 0 && (size_t)tk.var_id < tp.local_var_slot.size()) {
+                    int slot = tp.local_var_slot[(size_t)tk.var_id];
+                    if (slot >= 0 && (size_t)slot < atom_vals.size())
+                        v = atom_vals[(size_t)slot];
+                }
+                stack.push_back(v);
+                continue;
+            }
+
+            if (stack.size() < 2)
+                return false;
+            uint8_t rhs = stack.back(); stack.pop_back();
+            uint8_t lhs = stack.back(); stack.pop_back();
+            if (tk.kind == FormulaTokKind::AND)
+                stack.push_back((lhs && rhs) ? 1u : 0u);
+            else
+                stack.push_back((lhs || rhs) ? 1u : 0u);
+        }
+
+        if (stack.size() != 1)
+            return false;
+        if (stack.back())
+            rid_bit_set(out_bits->data(), rid);
+    }
     return true;
 }
 
@@ -1941,6 +2261,8 @@ static bool load_phase(const PolicyArtifactC *arts,
             if (!bind_clause_views(&cl, out))
                 return false;
         }
+        if (!bind_target_local_views(&tkv.second, out))
+            return false;
     }
 
     for (auto &kv : out->tables) {
@@ -1957,6 +2279,8 @@ static bool load_phase(const PolicyArtifactC *arts,
             if (!bind_clause_views(&cl, out))
                 return false;
         }
+        if (!bind_target_local_views(&tkv.second, out))
+            return false;
     }
 
     auto t1 = Clock::now();
@@ -1982,44 +2306,62 @@ static bool build_target_allow_list(const Loaded &loaded,
     const TableData &target_ti = it_t->second;
     std::vector<uint8_t> final_bits((target_ti.nrows + 7u) / 8u, 0);
 
-    for (const ClausePlan &cl : tp.clauses) {
-        if (cl.unsat)
-            continue;
-
-        std::vector<TokenBitset> allowed;
-        int iters = 0;
-        double ms_prop = 0.0;
-        if (!propagate_clause(cl, loaded, &allowed, &iters, restrict_bits, &ms_prop))
+    if (tp.local_formula_enabled) {
+        if (!build_rid_bits_for_target_local_formula(tp, loaded, &final_bits, restrict_bits))
             return false;
-        profile->propagate_ms += ms_prop;
-        profile->prop_iters += iters;
+    } else {
+        for (const ClausePlan &cl : tp.clauses) {
+            if (cl.unsat)
+                continue;
 
-        bool empty = false;
-        for (const auto &b : allowed) {
-            if (!b.any()) {
-                empty = true;
-                break;
+            bool clause_global_ok = true;
+            std::vector<uint8_t> clause_bits;
+
+            if (!cl.has_join_atom) {
+                if (!build_rid_bits_for_clause_nojoins(cl,
+                                                       loaded,
+                                                       &clause_bits,
+                                                       restrict_bits,
+                                                       &clause_global_ok)) {
+                    return false;
+                }
+                if (!clause_global_ok)
+                    continue;
+            } else {
+                std::vector<TokenBitset> allowed;
+                int iters = 0;
+                double ms_prop = 0.0;
+                if (!propagate_clause(cl, loaded, &allowed, &iters, restrict_bits, &ms_prop))
+                    return false;
+                profile->propagate_ms += ms_prop;
+                profile->prop_iters += iters;
+
+                bool empty = false;
+                for (const auto &b : allowed) {
+                    if (!b.any()) {
+                        empty = true;
+                        break;
+                    }
+                }
+                if (empty)
+                    continue;
+
+                if (!build_rid_bits_for_clause_target(cl,
+                                                      loaded,
+                                                      allowed,
+                                                      &clause_bits,
+                                                      restrict_bits,
+                                                      &clause_global_ok)) {
+                    return false;
+                }
+                if (!clause_global_ok)
+                    continue;
             }
-        }
-        if (empty)
-            continue;
 
-        bool clause_global_ok = true;
-        std::vector<uint8_t> clause_bits;
-        if (!build_rid_bits_for_clause_target(cl,
-                                              loaded,
-                                              allowed,
-                                              &clause_bits,
-                                              restrict_bits,
-                                              &clause_global_ok)) {
-            return false;
+            size_t n = std::min(final_bits.size(), clause_bits.size());
+            for (size_t i = 0; i < n; i++)
+                final_bits[i] |= clause_bits[i];
         }
-        if (!clause_global_ok)
-            continue;
-
-        size_t n = std::min(final_bits.size(), clause_bits.size());
-        for (size_t i = 0; i < n; i++)
-            final_bits[i] |= clause_bits[i];
     }
 
     auto t_decode0 = Clock::now();
