@@ -188,6 +188,41 @@ struct TokenBitset {
         words[bit >> 6] |= (uint64_t(1) << (bit & 63u));
     }
 
+    void clear(size_t bit)
+    {
+        if (bit >= nbits) return;
+        words[bit >> 6] &= ~(uint64_t(1) << (bit & 63u));
+    }
+
+    void set_range(size_t begin_bit, size_t end_bit)
+    {
+        if (begin_bit >= end_bit || begin_bit >= nbits)
+            return;
+        end_bit = std::min(end_bit, nbits);
+        size_t wb = begin_bit >> 6;
+        size_t we = (end_bit - 1u) >> 6;
+        uint32 ob = (uint32)(begin_bit & 63u);
+        uint32 oe = (uint32)((end_bit - 1u) & 63u);
+
+        if (wb == we) {
+            uint64_t mask_lo = (ob == 0) ? ~uint64_t(0) : (~uint64_t(0) << ob);
+            uint64_t mask_hi = (oe == 63u) ? ~uint64_t(0) : ((uint64_t(1) << (oe + 1u)) - 1u);
+            words[wb] |= (mask_lo & mask_hi);
+            trim_tail();
+            return;
+        }
+
+        // First partial word.
+        words[wb] |= (~uint64_t(0) << ob);
+        // Full words in the middle.
+        for (size_t i = wb + 1; i < we; i++)
+            words[i] = ~uint64_t(0);
+        // Last partial word.
+        uint64_t mask_hi = (oe == 63u) ? ~uint64_t(0) : ((uint64_t(1) << (oe + 1u)) - 1u);
+        words[we] |= mask_hi;
+        trim_tail();
+    }
+
     bool test(size_t bit) const
     {
         if (bit >= nbits) return false;
@@ -725,6 +760,7 @@ struct Loaded {
     std::unordered_map<std::string, TableData> tables;
     std::unordered_map<std::string, std::vector<std::string>> dicts;
     std::unordered_map<std::string, DictType> dict_types;
+    std::unordered_set<std::string> dict_sorted;
 
     std::unordered_map<int, Atom> atoms_by_id;
 
@@ -1007,6 +1043,15 @@ static bool load_artifact_metadata(const PolicyArtifactC *arts, int art_count, L
             continue;
         }
 
+        if (name.rfind("meta/dict_sorted/", 0) == 0) {
+            std::string rest = name.substr(std::strlen("meta/dict_sorted/"));
+            auto p = rest.find('/');
+            if (p == std::string::npos) continue;
+            std::string key = rest.substr(0, p) + "." + rest.substr(p + 1);
+            out->dict_sorted.insert(key);
+            continue;
+        }
+
         if (name.size() > 5 && name.substr(name.size() - 5) == "_ctid") {
             std::string table = name.substr(0, name.size() - 5);
             TableData &ti = out->tables[table];
@@ -1095,9 +1140,23 @@ static bool eval_const_match(ConstOp op,
     if (op == ConstOp::EQ || op == ConstOp::IN || op == ConstOp::NE) {
         bool found = false;
         for (const auto &v : const_vals) {
-            if (dict_val == v) {
-                found = true;
-                break;
+            if (dtype == DictType::NUMERIC) {
+                double l = 0.0;
+                double r = 0.0;
+                if (parse_number(dict_val, &l) && parse_number(v, &r)) {
+                    if (l == r) {
+                        found = true;
+                        break;
+                    }
+                } else if (dict_val == v) {
+                    found = true;
+                    break;
+                }
+            } else {
+                if (dict_val == v) {
+                    found = true;
+                    break;
+                }
             }
         }
         if (op == ConstOp::NE)
@@ -1137,21 +1196,188 @@ static bool eval_const_match(ConstOp op,
     }
 }
 
+static size_t lower_bound_text(const std::vector<std::string> &dict_vals, const std::string &rhs)
+{
+    auto it = std::lower_bound(dict_vals.begin(), dict_vals.end(), rhs);
+    return (size_t)(it - dict_vals.begin());
+}
+
+static size_t upper_bound_text(const std::vector<std::string> &dict_vals, const std::string &rhs)
+{
+    auto it = std::upper_bound(dict_vals.begin(), dict_vals.end(), rhs);
+    return (size_t)(it - dict_vals.begin());
+}
+
+static bool lower_bound_numeric(const std::vector<std::string> &dict_vals, double rhs, size_t *out_idx)
+{
+    if (!out_idx) return false;
+    size_t lo = 0;
+    size_t hi = dict_vals.size();
+    while (lo < hi) {
+        size_t mid = lo + ((hi - lo) >> 1);
+        double v = 0.0;
+        if (!parse_number(dict_vals[mid], &v))
+            return false;
+        if (v < rhs)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    *out_idx = lo;
+    return true;
+}
+
+static bool upper_bound_numeric(const std::vector<std::string> &dict_vals, double rhs, size_t *out_idx)
+{
+    if (!out_idx) return false;
+    size_t lo = 0;
+    size_t hi = dict_vals.size();
+    while (lo < hi) {
+        size_t mid = lo + ((hi - lo) >> 1);
+        double v = 0.0;
+        if (!parse_number(dict_vals[mid], &v))
+            return false;
+        if (v <= rhs)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    *out_idx = lo;
+    return true;
+}
+
+static bool find_eq_token_sorted(const std::vector<std::string> &dict_vals,
+                                 const std::string &rhs,
+                                 DictType dtype,
+                                 size_t *out_tok)
+{
+    if (!out_tok) return false;
+    if (dtype == DictType::NUMERIC) {
+        double r = 0.0;
+        if (!parse_number(rhs, &r))
+            return false;
+        size_t idx = 0;
+        if (!lower_bound_numeric(dict_vals, r, &idx))
+            return false;
+        if (idx >= dict_vals.size())
+            return false;
+        double v = 0.0;
+        if (!parse_number(dict_vals[idx], &v))
+            return false;
+        if (v != r)
+            return false;
+        *out_tok = idx;
+        return true;
+    }
+
+    size_t idx = lower_bound_text(dict_vals, rhs);
+    if (idx >= dict_vals.size() || dict_vals[idx] != rhs)
+        return false;
+    *out_tok = idx;
+    return true;
+}
+
 static TokenBitset build_allowed_token_set(const Atom &a,
                                            const std::vector<std::string> &dict_vals,
-                                           DictType dtype)
+                                           DictType dtype,
+                                           bool dict_sorted)
 {
     TokenBitset bits(dict_vals.size());
-    if (a.op == ConstOp::NE)
-        bits.fill_all();
-    for (size_t i = 0; i < dict_vals.size(); i++) {
-        bool ok = eval_const_match(a.op, dict_vals[i], a.values, dtype);
-        if (a.op == ConstOp::NE) {
-            if (!ok)
-                bits.set(i);
-        } else if (ok) {
-            bits.set(i);
+    if (dict_vals.empty())
+        return bits;
+
+    // Fast path for sorted dicts (binary search/range set). LIKE always falls back to scan.
+    if (dict_sorted && a.op != ConstOp::LIKE) {
+        if (a.op == ConstOp::EQ) {
+            std::string rhs = a.values.empty() ? "" : a.values.front();
+            size_t tok = 0;
+            if (find_eq_token_sorted(dict_vals, rhs, dtype, &tok))
+                bits.set(tok);
+            return bits;
         }
+
+        if (a.op == ConstOp::NE) {
+            bits.fill_all();
+            for (const auto &rhs : a.values) {
+                size_t tok = 0;
+                if (find_eq_token_sorted(dict_vals, rhs, dtype, &tok))
+                    bits.clear(tok);
+            }
+            return bits;
+        }
+
+        if (a.op == ConstOp::IN) {
+            for (const auto &rhs : a.values) {
+                size_t tok = 0;
+                if (find_eq_token_sorted(dict_vals, rhs, dtype, &tok))
+                    bits.set(tok);
+            }
+            return bits;
+        }
+
+        // Range ops use the first RHS value, matching eval_const_match().
+        std::string rhs = a.values.empty() ? "" : a.values.front();
+        size_t lo = 0;
+        size_t hi = 0;
+
+        if (dtype == DictType::NUMERIC) {
+            double r = 0.0;
+            if (!parse_number(rhs, &r))
+                dict_sorted = false;  // fall back
+            else {
+                if (a.op == ConstOp::LT || a.op == ConstOp::GE) {
+                    if (!lower_bound_numeric(dict_vals, r, &lo))
+                        dict_sorted = false;
+                }
+                if (a.op == ConstOp::LE || a.op == ConstOp::GT) {
+                    if (!upper_bound_numeric(dict_vals, r, &hi))
+                        dict_sorted = false;
+                }
+                if (a.op == ConstOp::LT) {
+                    bits.set_range(0, lo);
+                    return bits;
+                }
+                if (a.op == ConstOp::LE) {
+                    bits.set_range(0, hi);
+                    return bits;
+                }
+                if (a.op == ConstOp::GT) {
+                    bits.set_range(hi, dict_vals.size());
+                    return bits;
+                }
+                if (a.op == ConstOp::GE) {
+                    bits.set_range(lo, dict_vals.size());
+                    return bits;
+                }
+            }
+        } else {
+            if (a.op == ConstOp::LT) {
+                hi = lower_bound_text(dict_vals, rhs);
+                bits.set_range(0, hi);
+                return bits;
+            }
+            if (a.op == ConstOp::LE) {
+                hi = upper_bound_text(dict_vals, rhs);
+                bits.set_range(0, hi);
+                return bits;
+            }
+            if (a.op == ConstOp::GT) {
+                lo = upper_bound_text(dict_vals, rhs);
+                bits.set_range(lo, dict_vals.size());
+                return bits;
+            }
+            if (a.op == ConstOp::GE) {
+                lo = lower_bound_text(dict_vals, rhs);
+                bits.set_range(lo, dict_vals.size());
+                return bits;
+            }
+        }
+        // Fall through to scan if numeric parse/bounds failed.
+    }
+
+    for (size_t i = 0; i < dict_vals.size(); i++) {
+        if (eval_const_match(a.op, dict_vals[i], a.values, dtype))
+            bits.set(i);
     }
     return bits;
 }
@@ -1269,6 +1495,7 @@ static bool try_compile_target_local_formula(const std::string &target,
         auto itdt = out->dict_types.find(key);
         if (itdt != out->dict_types.end())
             dtype = itdt->second;
+        bool sorted = (out->dict_sorted.find(key) != out->dict_sorted.end());
 
         auto it_idx = ti.col_idx.find(key);
         if (it_idx == ti.col_idx.end()) {
@@ -1281,7 +1508,7 @@ static bool try_compile_target_local_formula(const std::string &target,
         la.var_id = vid;
         la.atom_id = a.id;
         la.col_idx = it_idx->second;
-        la.allowed = build_allowed_token_set(a, itd->second, dtype);
+        la.allowed = build_allowed_token_set(a, itd->second, dtype, sorted);
 
         ti.needed_cols.insert(la.col_idx);
         tp->local_var_slot[(size_t)vid] = (int)tp->local_formula_atoms.size();
@@ -1382,8 +1609,9 @@ static bool compile_target_plan(const std::string &target,
                 auto itdt = out->dict_types.find(key);
                 if (itdt != out->dict_types.end())
                     dtype = itdt->second;
+                bool sorted = (out->dict_sorted.find(key) != out->dict_sorted.end());
 
-                TokenBitset allowed = build_allowed_token_set(a, itd->second, dtype);
+                TokenBitset allowed = build_allowed_token_set(a, itd->second, dtype, sorted);
                 if (!allowed.any()) {
                     unsat = true;
                     break;
@@ -1826,6 +2054,8 @@ static bool propagate_clause(const ClausePlan &cl,
         if (!reverse) {
             for (size_t ti_idx = 0; ti_idx < cl.tables.size(); ti_idx++) {
                 const ClauseTablePlan &tp = cl.tables[ti_idx];
+                if (tp.class_groups.empty())
+                    continue;  // predicate-only table: doesn't restrict join-class domains
                 auto it_t = loaded.tables.find(tp.table);
                 if (it_t == loaded.tables.end())
                     return false;
@@ -1845,6 +2075,8 @@ static bool propagate_clause(const ClausePlan &cl,
 
         for (int ti_idx = (int)cl.tables.size() - 1; ti_idx >= 0; ti_idx--) {
             const ClauseTablePlan &tp = cl.tables[(size_t)ti_idx];
+            if (tp.class_groups.empty())
+                continue;
             auto it_t = loaded.tables.find(tp.table);
             if (it_t == loaded.tables.end())
                 return false;
