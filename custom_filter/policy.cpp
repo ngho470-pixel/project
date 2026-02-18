@@ -182,6 +182,19 @@ struct TokenBitset {
         return false;
     }
 
+    bool is_all() const
+    {
+        if (nbits == 0) return true;
+        if (words.empty()) return true;
+        for (size_t i = 0; i + 1 < words.size(); i++) {
+            if (words[i] != ~uint64_t(0))
+                return false;
+        }
+        size_t rem = nbits & 63u;
+        uint64_t mask = (rem == 0) ? ~uint64_t(0) : ((uint64_t(1) << rem) - 1u);
+        return words.back() == mask;
+    }
+
     void set(size_t bit)
     {
         if (bit >= nbits) return;
@@ -777,6 +790,7 @@ struct BuildProfile {
     double artifact_parse_ms = 0.0;
     double atoms_ms = 0.0;
     double propagate_ms = 0.0;
+    double project_ms = 0.0;
     double decode_ms = 0.0;
     int prop_iters = 0;
     double total_ms = 0.0;
@@ -2006,11 +2020,38 @@ static bool compute_table_support(const ClausePlan &cl,
     }
 
     bool any_row = false;
-    std::vector<int32_t> toks;
+    std::vector<int32_t> toks(tp.class_groups.size(), -1);
 
     for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        if (!row_matches_clause_table(tp, rid, allowed, &toks, rbits))
+        if (rbits && !rid_bit_test(rbits, rid))
             continue;
+
+        bool ok = true;
+        for (const auto &pred : tp.predicates) {
+            if (!pred.col_data || rid >= pred.col_data->size()) return false;
+            int32_t tok = (*pred.col_data)[rid];
+            if (tok < 0) { ok = false; break; }
+            if (!pred.allowed.test((size_t)tok)) { ok = false; break; }
+        }
+        if (!ok)
+            continue;
+
+        for (size_t g = 0; g < tp.class_groups.size(); g++) {
+            const ClauseClassGroup &cg = tp.class_groups[g];
+            if (cg.class_pos < 0 || cg.class_pos >= (int)allowed.size()) return false;
+            if (cg.col_data.empty()) return false;
+            int32_t tok = (*cg.col_data[0])[rid];
+            if (tok < 0) { ok = false; break; }
+            for (size_t i = 1; i < cg.col_data.size(); i++) {
+                if ((*cg.col_data[i])[rid] != tok) { ok = false; break; }
+            }
+            if (!ok) break;
+            if (!allowed[cg.class_pos].test((size_t)tok)) { ok = false; break; }
+            toks[g] = tok;
+        }
+        if (!ok)
+            continue;
+
         any_row = true;
         for (size_t g = 0; g < tp.class_groups.size(); g++) {
             int32_t tok = toks[g];
@@ -2021,6 +2062,250 @@ static bool compute_table_support(const ClausePlan &cl,
 
     if (table_has_any)
         *table_has_any = any_row;
+    return true;
+}
+
+static bool compute_table_support_one(const ClauseTablePlan &tp,
+                                      const TableData &ti,
+                                      const std::vector<TokenBitset> &allowed,
+                                      int class_pos,
+                                      TokenBitset *out_support,
+                                      const uint8 *rbits)
+{
+    if (!out_support || class_pos < 0 || class_pos >= (int)allowed.size())
+        return false;
+
+    int g_target = -1;
+    for (size_t g = 0; g < tp.class_groups.size(); g++) {
+        if (tp.class_groups[g].class_pos == class_pos) {
+            g_target = (int)g;
+            break;
+        }
+    }
+    if (g_target < 0)
+        return false;
+
+    out_support->reset(allowed[class_pos].nbits);
+    out_support->clear_all();
+
+    std::vector<int32_t> toks(tp.class_groups.size(), -1);
+
+    for (uint32 rid = 0; rid < ti.nrows; rid++) {
+        if (rbits && !rid_bit_test(rbits, rid))
+            continue;
+
+        bool ok = true;
+        for (const auto &pred : tp.predicates) {
+            if (!pred.col_data || rid >= pred.col_data->size()) return false;
+            int32_t tok = (*pred.col_data)[rid];
+            if (tok < 0) { ok = false; break; }
+            if (!pred.allowed.test((size_t)tok)) { ok = false; break; }
+        }
+        if (!ok)
+            continue;
+
+        for (size_t g = 0; g < tp.class_groups.size(); g++) {
+            const ClauseClassGroup &cg = tp.class_groups[g];
+            if (cg.class_pos < 0 || cg.class_pos >= (int)allowed.size()) return false;
+            if (cg.col_data.empty()) return false;
+            int32_t tok = (*cg.col_data[0])[rid];
+            if (tok < 0) { ok = false; break; }
+            for (size_t i = 1; i < cg.col_data.size(); i++) {
+                if ((*cg.col_data[i])[rid] != tok) { ok = false; break; }
+            }
+            if (!ok) break;
+            if (!allowed[cg.class_pos].test((size_t)tok)) { ok = false; break; }
+            toks[g] = tok;
+        }
+        if (!ok)
+            continue;
+
+        int32_t tok = toks[(size_t)g_target];
+        if (tok >= 0)
+            out_support->set((size_t)tok);
+    }
+
+    return true;
+}
+
+static bool compute_unary_support(const ClauseTablePlan &tp,
+                                  const TableData &ti,
+                                  int class_pos,
+                                  const std::unordered_map<std::string, const uint8 *> *restrict_bits,
+                                  TokenBitset *out_support,
+                                  const std::vector<TokenBitset> &allowed)
+{
+    if (!out_support || tp.class_groups.size() != 1)
+        return false;
+    const ClauseClassGroup &cg = tp.class_groups[0];
+    if (cg.class_pos != class_pos)
+        return false;
+    if (cg.col_data.empty())
+        return false;
+
+    const uint8 *rbits = nullptr;
+    if (restrict_bits) {
+        auto it_rb = restrict_bits->find(tp.table);
+        if (it_rb != restrict_bits->end())
+            rbits = it_rb->second;
+    }
+
+    out_support->reset(allowed[class_pos].nbits);
+    out_support->clear_all();
+
+    for (uint32 rid = 0; rid < ti.nrows; rid++) {
+        if (rbits && !rid_bit_test(rbits, rid))
+            continue;
+
+        bool ok = true;
+        for (const auto &pred : tp.predicates) {
+            if (!pred.col_data || rid >= pred.col_data->size()) return false;
+            int32_t tok = (*pred.col_data)[rid];
+            if (tok < 0) { ok = false; break; }
+            if (!pred.allowed.test((size_t)tok)) { ok = false; break; }
+        }
+        if (!ok)
+            continue;
+
+        int32_t tok = (*cg.col_data[0])[rid];
+        if (tok < 0)
+            continue;
+        for (size_t i = 1; i < cg.col_data.size(); i++) {
+            if ((*cg.col_data[i])[rid] != tok) { ok = false; break; }
+        }
+        if (!ok)
+            continue;
+        out_support->set((size_t)tok);
+    }
+    return true;
+}
+
+static bool clause_factor_forest_schedule(const ClausePlan &cl,
+                                          const std::vector<const ClauseTablePlan *> &factors,
+                                          std::vector<std::vector<int>> *out_var_to_fac,
+                                          std::vector<std::vector<int>> *out_fac_to_var,
+                                          std::vector<int> *out_pre_fac,
+                                          std::vector<int> *out_post_fac,
+                                          std::vector<int> *out_parent_fac,
+                                          std::vector<int> *out_parent_var)
+{
+    if (!out_var_to_fac || !out_fac_to_var || !out_pre_fac || !out_post_fac || !out_parent_fac || !out_parent_var)
+        return false;
+
+    const int nvars = (int)cl.join_classes.size();
+    const int nf = (int)factors.size();
+    out_var_to_fac->assign((size_t)nvars, {});
+    out_fac_to_var->assign((size_t)nf, {});
+
+    for (int fi = 0; fi < nf; fi++) {
+        const ClauseTablePlan *tp = factors[(size_t)fi];
+        if (!tp) return false;
+        for (const auto &cg : tp->class_groups) {
+            if (cg.class_pos < 0 || cg.class_pos >= nvars)
+                return false;
+            (*out_fac_to_var)[(size_t)fi].push_back(cg.class_pos);
+            (*out_var_to_fac)[(size_t)cg.class_pos].push_back(fi);
+        }
+        auto &vv = (*out_fac_to_var)[(size_t)fi];
+        std::sort(vv.begin(), vv.end());
+        vv.erase(std::unique(vv.begin(), vv.end()), vv.end());
+    }
+    for (auto &vv : *out_var_to_fac) {
+        std::sort(vv.begin(), vv.end());
+        vv.erase(std::unique(vv.begin(), vv.end()), vv.end());
+    }
+
+    // Check forest property per connected component: edges == nodes - 1.
+    std::vector<uint8_t> vis_var((size_t)nvars, 0);
+    std::vector<uint8_t> vis_fac((size_t)nf, 0);
+
+    for (int start_v = 0; start_v < nvars; start_v++) {
+        if (vis_var[(size_t)start_v] || (*out_var_to_fac)[(size_t)start_v].empty())
+            continue;
+
+        std::vector<std::pair<bool, int>> q;  // (is_var, id)
+        q.reserve((size_t)(nvars + nf));
+        q.push_back({true, start_v});
+        vis_var[(size_t)start_v] = 1;
+
+        size_t qi = 0;
+        int nodes = 0;
+        int edges = 0;
+
+        while (qi < q.size()) {
+            auto [is_var, id] = q[qi++];
+            nodes++;
+            if (is_var) {
+                edges += (int)(*out_var_to_fac)[(size_t)id].size();
+                for (int fi : (*out_var_to_fac)[(size_t)id]) {
+                    if (!vis_fac[(size_t)fi]) {
+                        vis_fac[(size_t)fi] = 1;
+                        q.push_back({false, fi});
+                    }
+                }
+            } else {
+                for (int v : (*out_fac_to_var)[(size_t)id]) {
+                    if (!vis_var[(size_t)v]) {
+                        vis_var[(size_t)v] = 1;
+                        q.push_back({true, v});
+                    }
+                }
+            }
+        }
+
+        if (edges != nodes - 1)
+            return false;
+    }
+
+    // Build parent pointers + pre/post order over factors (DFS over the forest).
+    out_parent_fac->assign((size_t)nf, -1);
+    out_parent_var->assign((size_t)nvars, -1);
+    out_pre_fac->clear();
+    out_post_fac->clear();
+
+    std::fill(vis_var.begin(), vis_var.end(), 0);
+    std::fill(vis_fac.begin(), vis_fac.end(), 0);
+
+    std::function<void(int, int)> dfs_var;
+    std::function<void(int, int)> dfs_fac;
+
+    dfs_fac = [&](int fi, int parent_v) {
+        vis_fac[(size_t)fi] = 1;
+        for (int v : (*out_fac_to_var)[(size_t)fi]) {
+            if (v == parent_v)
+                continue;
+            if (vis_var[(size_t)v])
+                continue;
+            (*out_parent_var)[(size_t)v] = fi;
+            dfs_var(v, fi);
+        }
+        out_post_fac->push_back(fi);
+    };
+
+    dfs_var = [&](int v, int parent_f) {
+        vis_var[(size_t)v] = 1;
+        for (int fi : (*out_var_to_fac)[(size_t)v]) {
+            if (fi == parent_f)
+                continue;
+            if (vis_fac[(size_t)fi])
+                continue;
+            (*out_parent_fac)[(size_t)fi] = v;
+            out_pre_fac->push_back(fi);
+            dfs_fac(fi, v);
+        }
+    };
+
+    for (int v = 0; v < nvars; v++) {
+        if (vis_var[(size_t)v] || (*out_var_to_fac)[(size_t)v].empty())
+            continue;
+        dfs_var(v, -1);
+    }
+
+    // Every factor should have a parent var in a rooted var-forest.
+    for (int fi = 0; fi < nf; fi++) {
+        if ((*out_parent_fac)[(size_t)fi] < 0)
+            return false;
+    }
     return true;
 }
 
@@ -2047,82 +2332,141 @@ static bool propagate_clause(const ClausePlan &cl,
         allowed_out->push_back(std::move(b));
     }
 
-    int iterations = 0;
-
-    auto sweep = [&](bool reverse, bool *out_changed) -> bool {
-        bool any_change = false;
-        if (!reverse) {
-            for (size_t ti_idx = 0; ti_idx < cl.tables.size(); ti_idx++) {
-                const ClauseTablePlan &tp = cl.tables[ti_idx];
-                if (tp.class_groups.empty())
-                    continue;  // predicate-only table: doesn't restrict join-class domains
-                auto it_t = loaded.tables.find(tp.table);
-                if (it_t == loaded.tables.end())
-                    return false;
-                const TableData &ti = it_t->second;
-                std::vector<TokenBitset> support;
-                if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
-                    return false;
-                for (size_t g = 0; g < tp.class_groups.size(); g++) {
-                    const ClauseClassGroup &cg = tp.class_groups[g];
-                    if ((*allowed_out)[cg.class_pos].intersect_with_changed(support[g]))
-                        any_change = true;
-                }
-            }
-            if (out_changed) *out_changed = any_change;
-            return true;
-        }
-
-        for (int ti_idx = (int)cl.tables.size() - 1; ti_idx >= 0; ti_idx--) {
-            const ClauseTablePlan &tp = cl.tables[(size_t)ti_idx];
-            if (tp.class_groups.empty())
-                continue;
-            auto it_t = loaded.tables.find(tp.table);
-            if (it_t == loaded.tables.end())
-                return false;
-            const TableData &ti = it_t->second;
-            std::vector<TokenBitset> support;
-            if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
-                return false;
-            for (size_t g = 0; g < tp.class_groups.size(); g++) {
-                const ClauseClassGroup &cg = tp.class_groups[g];
-                if ((*allowed_out)[cg.class_pos].intersect_with_changed(support[g]))
-                    any_change = true;
-            }
-        }
-        if (out_changed) *out_changed = any_change;
-        return true;
-    };
-
-    if (cl.acyclic_hint) {
-        // Two directional passes (Yannakakis-style fast path for tree-like clauses).
-        bool ch0 = false;
-        bool ch1 = false;
-        if (!sweep(false, &ch0)) return false;
-        if (!sweep(true, &ch1)) return false;
-        iterations = 1;
-        for (const auto &b : *allowed_out) {
-            if (!b.any()) {
-                *out_iters = iterations;
-                *out_ms = Ms(Clock::now() - t0).count();
-                return true;
-            }
-        }
-        if (!ch0 && !ch1) {
-            *out_iters = iterations;
+    // Unary tables: shrink domains once, then skip them in join propagation.
+    for (const auto &tp : cl.tables) {
+        if (tp.table == cl.target)
+            continue;  // never scan target during propagation
+        if (tp.class_groups.size() != 1)
+            continue;
+        auto it_t = loaded.tables.find(tp.table);
+        if (it_t == loaded.tables.end())
+            return false;
+        const TableData &ti = it_t->second;
+        int class_pos = tp.class_groups[0].class_pos;
+        TokenBitset unary;
+        if (!compute_unary_support(tp, ti, class_pos, restrict_bits, &unary, *allowed_out))
+            return false;
+        (void)(*allowed_out)[class_pos].intersect_with_changed(unary);
+        if (!(*allowed_out)[class_pos].any()) {
+            *out_iters = 0;
             *out_ms = Ms(Clock::now() - t0).count();
             return true;
         }
     }
 
-    const int cap = cl.acyclic_hint ? 8 : 20;
+    // Collect k-ary factors (tables touching >= 2 join-classes), excluding the target.
+    std::vector<const ClauseTablePlan *> factors;
+    std::vector<const TableData *> factor_data;
+    factors.reserve(cl.tables.size());
+    factor_data.reserve(cl.tables.size());
+    for (const auto &tp : cl.tables) {
+        if (tp.table == cl.target)
+            continue;
+        if (tp.class_groups.size() < 2)
+            continue;
+        auto it_t = loaded.tables.find(tp.table);
+        if (it_t == loaded.tables.end())
+            return false;
+        factors.push_back(&tp);
+        factor_data.push_back(&it_t->second);
+    }
+    if (factors.empty()) {
+        *out_iters = 0;
+        *out_ms = Ms(Clock::now() - t0).count();
+        return true;
+    }
+
+    // Acyclic (forest) fast path: message passing on the variable-factor forest (2 passes, then stop).
+    {
+        std::vector<std::vector<int>> var_to_fac;
+        std::vector<std::vector<int>> fac_to_var;
+        std::vector<int> pre_fac;
+        std::vector<int> post_fac;
+        std::vector<int> parent_fac;
+        std::vector<int> parent_var;
+
+        if (clause_factor_forest_schedule(cl,
+                                          factors,
+                                          &var_to_fac,
+                                          &fac_to_var,
+                                          &pre_fac,
+                                          &post_fac,
+                                          &parent_fac,
+                                          &parent_var)) {
+            // Bottom-up: factor -> parent var (postorder).
+            for (int fi : post_fac) {
+                const ClauseTablePlan &tp = *factors[(size_t)fi];
+                const TableData &ti = *factor_data[(size_t)fi];
+                int pv = parent_fac[(size_t)fi];
+
+                const uint8 *rbits = nullptr;
+                if (restrict_bits) {
+                    auto it_rb = restrict_bits->find(tp.table);
+                    if (it_rb != restrict_bits->end())
+                        rbits = it_rb->second;
+                }
+
+                TokenBitset support;
+                if (!compute_table_support_one(tp, ti, *allowed_out, pv, &support, rbits))
+                    return false;
+                (void)(*allowed_out)[pv].intersect_with_changed(support);
+                if (!(*allowed_out)[pv].any()) {
+                    *out_iters = 2;
+                    *out_ms = Ms(Clock::now() - t0).count();
+                    return true;
+                }
+            }
+
+            // Top-down: factor -> child vars (preorder).
+            for (int fi : pre_fac) {
+                const ClauseTablePlan &tp = *factors[(size_t)fi];
+                const TableData &ti = *factor_data[(size_t)fi];
+                int pv = parent_fac[(size_t)fi];
+
+                std::vector<TokenBitset> support;
+                if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
+                    return false;
+                for (size_t g = 0; g < tp.class_groups.size(); g++) {
+                    int v = tp.class_groups[g].class_pos;
+                    if (v == pv)
+                        continue;
+                    if (v < 0 || v >= (int)parent_var.size())
+                        continue;
+                    if (parent_var[(size_t)v] != fi)
+                        continue;
+                    (void)(*allowed_out)[v].intersect_with_changed(support[g]);
+                    if (!(*allowed_out)[v].any()) {
+                        *out_iters = 2;
+                        *out_ms = Ms(Clock::now() - t0).count();
+                        return true;
+                    }
+                }
+            }
+
+            *out_iters = 2;
+            *out_ms = Ms(Clock::now() - t0).count();
+            return true;
+        }
+    }
+
+    // Cyclic fallback: iterate to fixpoint (cap enforced).
+    int iterations = 0;
+    const int cap = 20;
     for (;;) {
-        bool ch0 = false;
-        bool ch1 = false;
-        if (!sweep(false, &ch0)) return false;
-        if (!sweep(true, &ch1)) return false;
+        bool any_change = false;
+        for (size_t i = 0; i < factors.size(); i++) {
+            const ClauseTablePlan &tp = *factors[i];
+            const TableData &ti = *factor_data[i];
+            std::vector<TokenBitset> support;
+            if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
+                return false;
+            for (size_t g = 0; g < tp.class_groups.size(); g++) {
+                int v = tp.class_groups[g].class_pos;
+                if ((*allowed_out)[v].intersect_with_changed(support[g]))
+                    any_change = true;
+            }
+        }
         iterations++;
-        bool any_change = ch0 || ch1;
 
         bool empty = false;
         for (const auto &b : *allowed_out) {
@@ -2133,7 +2477,6 @@ static bool propagate_clause(const ClausePlan &cl,
         }
         if (empty || !any_change)
             break;
-
         if (iterations >= cap) {
             ereport(ERROR,
                     (errmsg("policy: cycle_fixpoint_cap target=%s cap=%d",
@@ -2141,7 +2484,7 @@ static bool propagate_clause(const ClausePlan &cl,
         }
     }
 
-    *out_iters = std::max(iterations, cl.acyclic_hint ? 1 : 0);
+    *out_iters = iterations;
     *out_ms = Ms(Clock::now() - t0).count();
     return true;
 }
@@ -2539,17 +2882,36 @@ static bool build_target_allow_list(const Loaded &loaded,
     std::vector<uint8_t> final_bits((target_ti.nrows + 7u) / 8u, 0);
 
     if (tp.local_formula_enabled) {
+        auto t_proj0 = Clock::now();
         if (!build_rid_bits_for_target_local_formula(tp, loaded, &final_bits, restrict_bits))
             return false;
+        profile->project_ms += Ms(Clock::now() - t_proj0).count();
     } else {
+        struct JoinClauseEval {
+            const ClauseTablePlan *target_tp = nullptr;
+            std::vector<TokenBitset> allowed;
+        };
+
+        const uint8 *target_rbits = nullptr;
+        if (restrict_bits) {
+            auto it_rb = restrict_bits->find(tp.target);
+            if (it_rb != restrict_bits->end())
+                target_rbits = it_rb->second;
+        }
+
+        std::vector<JoinClauseEval> join_evals;
+        join_evals.reserve(tp.clauses.size());
+
+        bool allow_all = false;
+
         for (const ClausePlan &cl : tp.clauses) {
             if (cl.unsat)
                 continue;
 
-            bool clause_global_ok = true;
-            std::vector<uint8_t> clause_bits;
-
             if (!cl.has_join_atom) {
+                bool clause_global_ok = true;
+                std::vector<uint8_t> clause_bits;
+                auto t_proj0 = Clock::now();
                 if (!build_rid_bits_for_clause_nojoins(cl,
                                                        loaded,
                                                        &clause_bits,
@@ -2557,42 +2919,345 @@ static bool build_target_allow_list(const Loaded &loaded,
                                                        &clause_global_ok)) {
                     return false;
                 }
+                profile->project_ms += Ms(Clock::now() - t_proj0).count();
                 if (!clause_global_ok)
                     continue;
-            } else {
-                std::vector<TokenBitset> allowed;
-                int iters = 0;
-                double ms_prop = 0.0;
-                if (!propagate_clause(cl, loaded, &allowed, &iters, restrict_bits, &ms_prop))
-                    return false;
-                profile->propagate_ms += ms_prop;
-                profile->prop_iters += iters;
 
-                bool empty = false;
-                for (const auto &b : allowed) {
-                    if (!b.any()) {
-                        empty = true;
+                auto t_or0 = Clock::now();
+                size_t n = std::min(final_bits.size(), clause_bits.size());
+                for (size_t i = 0; i < n; i++)
+                    final_bits[i] |= clause_bits[i];
+                profile->project_ms += Ms(Clock::now() - t_or0).count();
+                continue;
+            }
+
+            std::vector<TokenBitset> allowed;
+            int iters = 0;
+            double ms_prop = 0.0;
+            if (!propagate_clause(cl, loaded, &allowed, &iters, restrict_bits, &ms_prop))
+                return false;
+            profile->propagate_ms += ms_prop;
+            profile->prop_iters += iters;
+
+            bool empty = false;
+            for (const auto &b : allowed) {
+                if (!b.any()) {
+                    empty = true;
+                    break;
+                }
+            }
+            if (empty)
+                continue;
+
+            // Global predicate-only tables (no join columns) must have at least one witness row,
+            // otherwise the clause is unsatisfiable regardless of the target row.
+            bool clause_global_ok = true;
+            for (const auto &tp_tbl : cl.tables) {
+                if (!tp_tbl.class_groups.empty())
+                    continue;
+                if (tp_tbl.table == cl.target)
+                    continue;  // target-local predicates checked per-row below.
+
+                auto it_t = loaded.tables.find(tp_tbl.table);
+                if (it_t == loaded.tables.end())
+                    return false;
+                const TableData &ti = it_t->second;
+
+                if (tp_tbl.predicates.empty()) {
+                    if (ti.nrows == 0) {
+                        clause_global_ok = false;
+                        break;
+                    }
+                } else {
+                    if (!table_has_predicate_witness(tp_tbl, ti, restrict_bits)) {
+                        clause_global_ok = false;
                         break;
                     }
                 }
-                if (empty)
-                    continue;
+            }
+            if (!clause_global_ok)
+                continue;
 
-                if (!build_rid_bits_for_clause_target(cl,
-                                                      loaded,
-                                                      allowed,
-                                                      &clause_bits,
-                                                      restrict_bits,
-                                                      &clause_global_ok)) {
-                    return false;
-                }
-                if (!clause_global_ok)
-                    continue;
+            if (!cl.target_present) {
+                // Clause independent of target row: if satisfiable, it allows all target rows.
+                allow_all = true;
+                break;
             }
 
-            size_t n = std::min(final_bits.size(), clause_bits.size());
-            for (size_t i = 0; i < n; i++)
-                final_bits[i] |= clause_bits[i];
+            const ClauseTablePlan *target_tp = nullptr;
+            for (const auto &tp_tbl : cl.tables) {
+                if (tp_tbl.table == cl.target) {
+                    target_tp = &tp_tbl;
+                    break;
+                }
+            }
+            if (!target_tp)
+                continue;
+
+            JoinClauseEval je;
+            je.target_tp = target_tp;
+            je.allowed = std::move(allowed);
+            join_evals.push_back(std::move(je));
+        }
+
+        if (allow_all) {
+            final_bits.assign(final_bits.size(), 0xFF);
+            if ((target_ti.nrows & 7u) != 0u && !final_bits.empty())
+                final_bits.back() &= (uint8)((1u << (target_ti.nrows & 7u)) - 1u);
+        } else if (!join_evals.empty()) {
+            auto t_proj0 = Clock::now();
+
+            bool used_mask = false;
+            const size_t nclauses = join_evals.size();
+
+            if (nclauses <= 64) {
+                const uint64_t all_mask = (nclauses == 64) ? ~uint64_t(0) : ((uint64_t(1) << nclauses) - 1u);
+
+                struct JCEntry {
+                    int class_id = -1;
+                    const std::vector<int32_t> *col_data = nullptr;
+                    uint64_t default_mask = 0;
+                    size_t domain = 0;
+                    std::vector<uint64_t> by_tok;  // lazily allocated
+                };
+
+                struct PredEntry {
+                    int col_idx = -1;
+                    const std::vector<int32_t> *col_data = nullptr;
+                    uint64_t default_mask = 0;
+                    size_t domain = 0;
+                    std::vector<uint64_t> by_tok;  // lazily allocated
+                };
+
+                bool ok = true;
+                std::vector<JCEntry> jc_entries;
+                std::unordered_map<int, size_t> jc_pos;
+                std::vector<PredEntry> pred_entries;
+                std::unordered_map<int, size_t> pred_pos;
+
+                // First pass: collect target columns per join-class/predicate and validate shape.
+                for (size_t ci = 0; ci < nclauses && ok; ci++) {
+                    const ClauseTablePlan *ttp = join_evals[ci].target_tp;
+                    if (!ttp) {
+                        ok = false;
+                        break;
+                    }
+                    for (const auto &cg : ttp->class_groups) {
+                        if (cg.col_data.size() != 1) {
+                            ok = false;
+                            break;
+                        }
+                        auto it = jc_pos.find(cg.class_id);
+                        const std::vector<int32_t> *col = cg.col_data[0];
+                        if (it == jc_pos.end()) {
+                            int cid = cg.class_id;
+                            int dom = (cid >= 0 && cid < (int)loaded.class_domain.size()) ? loaded.class_domain[(size_t)cid] : 0;
+                            if (dom <= 0) {
+                                ok = false;
+                                break;
+                            }
+                            JCEntry e;
+                            e.class_id = cid;
+                            e.col_data = col;
+                            e.default_mask = all_mask;
+                            e.domain = (size_t)dom;
+                            jc_pos[cid] = jc_entries.size();
+                            jc_entries.push_back(std::move(e));
+                        } else {
+                            if (jc_entries[it->second].col_data != col) {
+                                ok = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    for (const auto &pred : ttp->predicates) {
+                        if (!pred.col_data) {
+                            ok = false;
+                            break;
+                        }
+
+                        auto it = pred_pos.find(pred.col_idx);
+                        const std::vector<int32_t> *col = pred.col_data;
+                        size_t dom = pred.allowed.nbits;
+                        if (dom == 0) {
+                            ok = false;
+                            break;
+                        }
+                        if (it == pred_pos.end()) {
+                            PredEntry e;
+                            e.col_idx = pred.col_idx;
+                            e.col_data = col;
+                            e.default_mask = all_mask;
+                            e.domain = dom;
+                            pred_pos[pred.col_idx] = pred_entries.size();
+                            pred_entries.push_back(std::move(e));
+                        } else {
+                            PredEntry &e = pred_entries[it->second];
+                            if (e.col_data != col || e.domain != dom) {
+                                ok = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Second pass: build per-token clause masks.
+                if (ok) {
+                    for (size_t ci = 0; ci < nclauses; ci++) {
+                        const uint64_t bit = uint64_t(1) << ci;
+                        const ClauseTablePlan *ttp = join_evals[ci].target_tp;
+                        if (!ttp) continue;
+
+                        for (const auto &cg : ttp->class_groups) {
+                            auto it = jc_pos.find(cg.class_id);
+                            if (it == jc_pos.end())
+                                continue;
+                            JCEntry &e = jc_entries[it->second];
+                            if (cg.class_pos < 0 || cg.class_pos >= (int)join_evals[ci].allowed.size()) {
+                                ok = false;
+                                break;
+                            }
+                            const TokenBitset &bs = join_evals[ci].allowed[(size_t)cg.class_pos];
+                            if (bs.is_all())
+                                continue;  // no restriction for this clause on this join-class.
+
+                            e.default_mask &= ~bit;
+                            if (e.by_tok.empty())
+                                e.by_tok.assign(e.domain, 0);
+
+                            for (size_t wi = 0; wi < bs.words.size(); wi++) {
+                                uint64_t w = bs.words[wi];
+                                while (w) {
+                                    uint64_t lsb = w & (~w + 1u);
+                                    int bpos = __builtin_ctzll(w);
+                                    size_t tok = wi * 64u + (size_t)bpos;
+                                    if (tok < e.by_tok.size())
+                                        e.by_tok[tok] |= bit;
+                                    w ^= lsb;
+                                }
+                            }
+                        }
+                        if (!ok) break;
+
+                        // Conjunction semantics: multiple predicates on the same column are ANDed
+                        // (intersection of allowed token sets).
+                        std::unordered_map<int, TokenBitset> pred_and;
+                        pred_and.reserve(ttp->predicates.size());
+                        for (const auto &pred : ttp->predicates) {
+                            auto itp = pred_and.find(pred.col_idx);
+                            if (itp == pred_and.end()) {
+                                pred_and.emplace(pred.col_idx, pred.allowed);
+                            } else {
+                                itp->second.bit_and(pred.allowed);
+                            }
+                        }
+
+                        for (auto &kv : pred_and) {
+                            auto it = pred_pos.find(kv.first);
+                            if (it == pred_pos.end())
+                                continue;
+                            PredEntry &e = pred_entries[it->second];
+                            const TokenBitset &bs = kv.second;
+                            if (bs.is_all())
+                                continue;
+
+                            e.default_mask &= ~bit;
+                            if (e.by_tok.empty())
+                                e.by_tok.assign(e.domain, 0);
+
+                            for (size_t wi = 0; wi < bs.words.size(); wi++) {
+                                uint64_t w = bs.words[wi];
+                                while (w) {
+                                    uint64_t lsb = w & (~w + 1u);
+                                    int bpos = __builtin_ctzll(w);
+                                    size_t tok = wi * 64u + (size_t)bpos;
+                                    if (tok < e.by_tok.size())
+                                        e.by_tok[tok] |= bit;
+                                    w ^= lsb;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (ok) {
+                    // Fast per-row OR-of-clauses via bitmask propagation.
+                    used_mask = true;
+                    for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
+                        if (target_rbits && !rid_bit_test(target_rbits, rid))
+                            continue;
+                        if (rid_bit_test(final_bits.data(), rid))
+                            continue;
+
+                        uint64_t mask = all_mask;
+                        for (const auto &e : jc_entries) {
+                            if (e.default_mask == all_mask && e.by_tok.empty())
+                                continue;
+                            if (!e.col_data || rid >= e.col_data->size()) {
+                                mask = 0;
+                                break;
+                            }
+                            int32_t tok = (*e.col_data)[rid];
+                            if (tok < 0 || (size_t)tok >= e.domain) {
+                                mask = 0;
+                                break;
+                            }
+                            uint64_t m = e.default_mask;
+                            if (!e.by_tok.empty())
+                                m |= e.by_tok[(size_t)tok];
+                            mask &= m;
+                            if (!mask)
+                                break;
+                        }
+                        if (!mask)
+                            continue;
+
+                        for (const auto &e : pred_entries) {
+                            if (e.default_mask == all_mask && e.by_tok.empty())
+                                continue;
+                            if (!e.col_data || rid >= e.col_data->size()) {
+                                mask = 0;
+                                break;
+                            }
+                            int32_t tok = (*e.col_data)[rid];
+                            if (tok < 0 || (size_t)tok >= e.domain) {
+                                mask = 0;
+                                break;
+                            }
+                            uint64_t m = e.default_mask;
+                            if (!e.by_tok.empty())
+                                m |= e.by_tok[(size_t)tok];
+                            mask &= m;
+                            if (!mask)
+                                break;
+                        }
+
+                        if (mask)
+                            rid_bit_set(final_bits.data(), rid);
+                    }
+                }
+            }
+
+            if (!used_mask) {
+                // Fallback: per-row scan all clauses (still single pass over target).
+                for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
+                    if (target_rbits && !rid_bit_test(target_rbits, rid))
+                        continue;
+                    if (rid_bit_test(final_bits.data(), rid))
+                        continue;
+                    for (const auto &je : join_evals) {
+                        if (!je.target_tp)
+                            continue;
+                        if (row_matches_clause_table(*je.target_tp, rid, je.allowed, nullptr, nullptr)) {
+                            rid_bit_set(final_bits.data(), rid);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            profile->project_ms += Ms(Clock::now() - t_proj0).count();
         }
     }
 
@@ -2636,7 +3301,7 @@ static void fill_run_profile(const BuildProfile &bp, PolicyRunProfileC *out)
     out->artifact_parse_ms = bp.artifact_parse_ms;
     out->atoms_ms = bp.atoms_ms;
     out->propagate_ms = bp.propagate_ms;
-    out->project_ms = 0.0;
+    out->project_ms = bp.project_ms;
     out->stamp_ms = 0.0;
     out->bin_ms = 0.0;
     out->local_sat_ms = 0.0;
