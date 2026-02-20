@@ -78,6 +78,10 @@ typedef struct PolicyRunProfileC {
     int prop_iters;
     double decode_ms;
     double policy_total_ms;
+    int clause_plan_count_max;
+    uint64 prop_join_scans_total;
+    int unique_join_struct_sigs_max;
+    const char *prop_table_scans;
 } PolicyRunProfileC;
 
 } // extern "C"
@@ -767,6 +771,9 @@ struct TargetLocalAtom {
 struct TargetPlan {
     std::string target;
     std::vector<ClausePlan> clauses;
+    std::vector<std::vector<ClausePlan>> restrictive_clause_sets;
+    bool factored_enabled = false;
+    bool deny_all = false;
     bool local_formula_enabled = false;
     std::vector<FormulaToken> local_formula_rpn;
     std::vector<TargetLocalAtom> local_formula_atoms;
@@ -805,7 +812,71 @@ struct BuildProfile {
     double decode_ms = 0.0;
     int prop_iters = 0;
     double total_ms = 0.0;
+    int clause_plan_count_max = 0;
+    uint64 prop_join_scans_total = 0;
+    int unique_join_struct_sigs_max = 0;
+    std::unordered_map<std::string, uint64> prop_table_scan_counts;
+    std::string prop_table_scans_compact;
 };
+
+static std::string format_prop_table_scan_counts(const std::unordered_map<std::string, uint64> &counts)
+{
+    if (counts.empty())
+        return "";
+    std::vector<std::pair<std::string, uint64>> items;
+    items.reserve(counts.size());
+    for (const auto &kv : counts)
+        items.push_back(kv);
+    std::sort(items.begin(), items.end(),
+              [](const auto &a, const auto &b) {
+                  if (a.second != b.second) return a.second > b.second;
+                  return a.first < b.first;
+              });
+    std::string out;
+    out.reserve(items.size() * 16u);
+    for (size_t i = 0; i < items.size(); i++) {
+        if (i > 0) out.push_back('|');
+        out += items[i].first;
+        out.push_back(':');
+        out += std::to_string((unsigned long long)items[i].second);
+    }
+    return out;
+}
+
+static std::string clause_join_structure_signature(const ClausePlan &cl)
+{
+    std::vector<std::string> edges;
+    edges.reserve(cl.tables.size());
+    for (const auto &tp : cl.tables) {
+        if (tp.class_groups.empty())
+            continue;
+        std::vector<int> cids;
+        cids.reserve(tp.class_groups.size());
+        for (const auto &cg : tp.class_groups) {
+            if (cg.class_id >= 0)
+                cids.push_back(cg.class_id);
+        }
+        std::sort(cids.begin(), cids.end());
+        cids.erase(std::unique(cids.begin(), cids.end()), cids.end());
+
+        std::string s = tp.table;
+        s.push_back('(');
+        for (size_t i = 0; i < cids.size(); i++) {
+            if (i > 0) s.push_back(',');
+            s += std::to_string(cids[i]);
+        }
+        s.push_back(')');
+        edges.push_back(std::move(s));
+    }
+    std::sort(edges.begin(), edges.end());
+
+    std::string out;
+    for (size_t i = 0; i < edges.size(); i++) {
+        if (i > 0) out.push_back('|');
+        out += edges[i];
+    }
+    return out;
+}
 
 static bool has_magic(const ArtifactBlob &b, const char *magic, size_t n)
 {
@@ -1544,46 +1615,13 @@ static bool try_compile_target_local_formula(const std::string &target,
     return true;
 }
 
-static bool compile_target_plan(const std::string &target,
-                                const char *ast_str,
-                                Loaded *out,
-                                BuildProfile *profile)
+static bool append_clause_plans_from_dnf(const std::string &target,
+                                         const DnfList &dnf_terms,
+                                         Loaded *out,
+                                         std::vector<ClausePlan> *dst)
 {
-    if (!out || !profile)
+    if (!out || !dst)
         return false;
-
-    TargetPlan tp;
-    tp.target = target;
-
-    std::string ast = ast_str ? ast_str : "";
-    ast = trim_ws(ast);
-    if (ast.empty()) {
-        out->targets[target] = std::move(tp);
-        return true;
-    }
-
-    AstParser parser(ast);
-    BoolAst *root = parser.parse_or();
-    parser.skip_ws();
-    if (!root || parser.pos != parser.src.size()) {
-        ereport(ERROR,
-                (errmsg("policy: failed to parse target AST target=%s ast=%s",
-                        target.c_str(), ast.c_str())));
-    }
-
-    auto t_atoms0 = Clock::now();
-
-    std::vector<FormulaToken> rpn;
-    emit_ast_rpn(root, &rpn);
-    if (try_compile_target_local_formula(target, rpn, out, &tp)) {
-        auto t_atoms1 = Clock::now();
-        profile->atoms_ms += Ms(t_atoms1 - t_atoms0).count();
-        out->targets[target] = std::move(tp);
-        return true;
-    }
-
-    auto dnf_terms = ast_to_dnf(root, 4096);
-    dedup_dnf_terms(&dnf_terms);
 
     for (const DnfTerm &term : dnf_terms) {
         ClausePlan cl;
@@ -1657,7 +1695,7 @@ static bool compile_target_plan(const std::string &target,
 
         cl.unsat = unsat;
         if (unsat) {
-            tp.clauses.push_back(std::move(cl));
+            dst->push_back(std::move(cl));
             continue;
         }
 
@@ -1723,11 +1761,143 @@ static bool compile_target_plan(const std::string &target,
         }
 
         cl.acyclic_hint = is_clause_acyclic_hint(cl);
-        tp.clauses.push_back(std::move(cl));
+        dst->push_back(std::move(cl));
     }
+    return true;
+}
+
+static bool append_clause_plans_from_ast(const std::string &target,
+                                         const BoolAst *root,
+                                         size_t dnf_cap,
+                                         Loaded *out,
+                                         std::vector<ClausePlan> *dst)
+{
+    if (!root || !out || !dst)
+        return false;
+    DnfList dnf_terms = ast_to_dnf(root, dnf_cap);
+    dedup_dnf_terms(&dnf_terms);
+    return append_clause_plans_from_dnf(target, dnf_terms, out, dst);
+}
+
+static bool compile_target_plan(const std::string &target,
+                                const char *ast_str,
+                                Loaded *out,
+                                BuildProfile *profile)
+{
+    if (!out || !profile)
+        return false;
+
+    TargetPlan tp;
+    tp.target = target;
+
+    std::string ast = ast_str ? ast_str : "";
+    ast = trim_ws(ast);
+    if (ast.empty()) {
+        out->targets[target] = std::move(tp);
+        return true;
+    }
+
+    AstParser parser(ast);
+    BoolAst *root = parser.parse_or();
+    parser.skip_ws();
+    if (!root || parser.pos != parser.src.size()) {
+        ereport(ERROR,
+                (errmsg("policy: failed to parse target AST target=%s ast=%s",
+                        target.c_str(), ast.c_str())));
+    }
+
+    auto t_atoms0 = Clock::now();
+
+    std::vector<FormulaToken> rpn;
+    emit_ast_rpn(root, &rpn);
+    if (try_compile_target_local_formula(target, rpn, out, &tp)) {
+        auto t_atoms1 = Clock::now();
+        profile->atoms_ms += Ms(t_atoms1 - t_atoms0).count();
+        out->targets[target] = std::move(tp);
+        return true;
+    }
+
+    if (!append_clause_plans_from_ast(target, root, 4096, out, &tp.clauses))
+        return false;
     auto t_atoms1 = Clock::now();
     profile->atoms_ms += Ms(t_atoms1 - t_atoms0).count();
 
+    out->targets[target] = std::move(tp);
+    return true;
+}
+
+static bool compile_target_plan_factored(const std::string &target,
+                                         const char *combined_ast_str,
+                                         const char *perm_ast_str,
+                                         const char *rest_ast_str,
+                                         Loaded *out,
+                                         BuildProfile *profile)
+{
+    if (!out || !profile)
+        return false;
+
+    TargetPlan tp;
+    tp.target = target;
+    tp.factored_enabled = true;
+
+    auto t_atoms0 = Clock::now();
+
+    std::string combined_ast = trim_ws(combined_ast_str ? combined_ast_str : "");
+    if (!combined_ast.empty()) {
+        AstParser parser(combined_ast);
+        BoolAst *root = parser.parse_or();
+        parser.skip_ws();
+        if (!root || parser.pos != parser.src.size()) {
+            ereport(ERROR,
+                    (errmsg("policy: failed to parse target AST target=%s ast=%s",
+                            target.c_str(), combined_ast.c_str())));
+        }
+        std::vector<FormulaToken> rpn;
+        emit_ast_rpn(root, &rpn);
+        if (try_compile_target_local_formula(target, rpn, out, &tp)) {
+            auto t_atoms1 = Clock::now();
+            profile->atoms_ms += Ms(t_atoms1 - t_atoms0).count();
+            out->targets[target] = std::move(tp);
+            return true;
+        }
+    }
+
+    std::string perm_ast = trim_ws(perm_ast_str ? perm_ast_str : "");
+    std::string rest_ast = trim_ws(rest_ast_str ? rest_ast_str : "");
+
+    if (!perm_ast.empty()) {
+        AstParser parser(perm_ast);
+        BoolAst *root = parser.parse_or();
+        parser.skip_ws();
+        if (!root || parser.pos != parser.src.size()) {
+            ereport(ERROR,
+                    (errmsg("policy: failed to parse permissive AST target=%s ast=%s",
+                            target.c_str(), perm_ast.c_str())));
+        }
+        if (!append_clause_plans_from_ast(target, root, 4096, out, &tp.clauses))
+            return false;
+    } else {
+        // Postgres semantics: no permissive policy means deny-all.
+        tp.deny_all = true;
+    }
+
+    if (!rest_ast.empty()) {
+        AstParser parser(rest_ast);
+        BoolAst *root = parser.parse_or();
+        parser.skip_ws();
+        if (!root || parser.pos != parser.src.size()) {
+            ereport(ERROR,
+                    (errmsg("policy: failed to parse restrictive AST target=%s ast=%s",
+                            target.c_str(), rest_ast.c_str())));
+        }
+        std::vector<ClausePlan> rest_clauses;
+        if (!append_clause_plans_from_ast(target, root, 4096, out, &rest_clauses))
+            return false;
+        tp.restrictive_clause_sets.push_back(std::move(rest_clauses));
+    }
+
+    auto t_atoms1 = Clock::now();
+    profile->atoms_ms += Ms(t_atoms1 - t_atoms0).count();
     out->targets[target] = std::move(tp);
     return true;
 }
@@ -2325,12 +2495,19 @@ static bool propagate_clause(const ClausePlan &cl,
                              std::vector<TokenBitset> *allowed_out,
                              int *out_iters,
                              const std::unordered_map<std::string, const uint8 *> *restrict_bits,
-                             double *out_ms)
+                             double *out_ms,
+                             BuildProfile *profile)
 {
     if (!allowed_out || !out_iters || !out_ms)
         return false;
 
     auto t0 = Clock::now();
+    auto record_factor_scan = [&](const std::string &table) {
+        if (!profile)
+            return;
+        profile->prop_join_scans_total++;
+        profile->prop_table_scan_counts[table]++;
+    };
 
     allowed_out->clear();
     allowed_out->reserve(cl.join_classes.size());
@@ -2418,6 +2595,7 @@ static bool propagate_clause(const ClausePlan &cl,
                 }
 
                 TokenBitset support;
+                record_factor_scan(tp.table);
                 if (!compute_table_support_one(tp, ti, *allowed_out, pv, &support, rbits))
                     return false;
                 (void)(*allowed_out)[pv].intersect_with_changed(support);
@@ -2435,6 +2613,7 @@ static bool propagate_clause(const ClausePlan &cl,
                 int pv = parent_fac[(size_t)fi];
 
                 std::vector<TokenBitset> support;
+                record_factor_scan(tp.table);
                 if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
                     return false;
                 for (size_t g = 0; g < tp.class_groups.size(); g++) {
@@ -2469,6 +2648,7 @@ static bool propagate_clause(const ClausePlan &cl,
             const ClauseTablePlan &tp = *factors[i];
             const TableData &ti = *factor_data[i];
             std::vector<TokenBitset> support;
+            record_factor_scan(tp.table);
             if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
                 return false;
             for (size_t g = 0; g < tp.class_groups.size(); g++) {
@@ -2500,92 +2680,6 @@ static bool propagate_clause(const ClausePlan &cl,
     return true;
 }
 
-static bool table_has_witness(const ClausePlan &cl,
-                              const ClauseTablePlan &tp,
-                              const TableData &ti,
-                              const std::vector<TokenBitset> &allowed,
-                              const std::unordered_map<std::string, const uint8 *> *restrict_bits)
-{
-    const uint8 *rbits = nullptr;
-    if (restrict_bits) {
-        auto it_rb = restrict_bits->find(tp.table);
-        if (it_rb != restrict_bits->end())
-            rbits = it_rb->second;
-    }
-    for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        if (row_matches_clause_table(tp, rid, allowed, nullptr, rbits))
-            return true;
-    }
-    return false;
-}
-
-static bool build_rid_bits_for_clause_target(const ClausePlan &cl,
-                                             const Loaded &loaded,
-                                             const std::vector<TokenBitset> &allowed,
-                                             std::vector<uint8_t> *out_bits,
-                                             const std::unordered_map<std::string, const uint8 *> *restrict_bits,
-                                             bool *out_clause_global_ok)
-{
-    if (!out_bits || !out_clause_global_ok)
-        return false;
-
-    *out_clause_global_ok = true;
-
-    const ClauseTablePlan *target_tp = nullptr;
-    const TableData *target_ti = nullptr;
-
-    for (const auto &tp : cl.tables) {
-        auto it_t = loaded.tables.find(tp.table);
-        if (it_t == loaded.tables.end())
-            return false;
-        const TableData &ti = it_t->second;
-
-        if (tp.table == cl.target) {
-            target_tp = &tp;
-            target_ti = &ti;
-        }
-
-        if (tp.table != cl.target) {
-            if (!table_has_witness(cl, tp, ti, allowed, restrict_bits)) {
-                *out_clause_global_ok = false;
-                break;
-            }
-        }
-    }
-
-    if (!*out_clause_global_ok)
-        return true;
-
-    if (!target_tp || !target_ti) {
-        // Clause independent of target row: if global witness exists, allow all target rows.
-        auto it_tt = loaded.tables.find(cl.target);
-        if (it_tt == loaded.tables.end())
-            return false;
-        const TableData &tt = it_tt->second;
-        out_bits->assign((tt.nrows + 7u) / 8u, 0xFF);
-        if ((tt.nrows & 7u) != 0u)
-            out_bits->back() &= (uint8)((1u << (tt.nrows & 7u)) - 1u);
-        return true;
-    }
-
-    out_bits->assign((target_ti->nrows + 7u) / 8u, 0);
-
-    const uint8 *rbits = nullptr;
-    if (restrict_bits) {
-        auto it_rb = restrict_bits->find(cl.target);
-        if (it_rb != restrict_bits->end())
-            rbits = it_rb->second;
-    }
-
-    for (uint32 rid = 0; rid < target_ti->nrows; rid++) {
-        if (row_matches_clause_table(*target_tp, rid, allowed, nullptr, rbits)) {
-            rid_bit_set(out_bits->data(), rid);
-        }
-    }
-
-    return true;
-}
-
 static bool table_has_predicate_witness(const ClauseTablePlan &tp,
                                         const TableData &ti,
                                         const std::unordered_map<std::string, const uint8 *> *restrict_bits)
@@ -2601,65 +2695,6 @@ static bool table_has_predicate_witness(const ClauseTablePlan &tp,
             return true;
     }
     return false;
-}
-
-static bool build_rid_bits_for_clause_nojoins(const ClausePlan &cl,
-                                              const Loaded &loaded,
-                                              std::vector<uint8_t> *out_bits,
-                                              const std::unordered_map<std::string, const uint8 *> *restrict_bits,
-                                              bool *out_clause_global_ok)
-{
-    if (!out_bits || !out_clause_global_ok)
-        return false;
-
-    *out_clause_global_ok = true;
-
-    const ClauseTablePlan *target_tp = nullptr;
-    const TableData *target_ti = nullptr;
-
-    for (const auto &tp : cl.tables) {
-        auto it_t = loaded.tables.find(tp.table);
-        if (it_t == loaded.tables.end())
-            return false;
-        const TableData &ti = it_t->second;
-
-        if (tp.table == cl.target) {
-            target_tp = &tp;
-            target_ti = &ti;
-        } else {
-            if (!table_has_predicate_witness(tp, ti, restrict_bits)) {
-                *out_clause_global_ok = false;
-                break;
-            }
-        }
-    }
-
-    if (!*out_clause_global_ok)
-        return true;
-
-    if (!target_tp || !target_ti) {
-        auto it_tt = loaded.tables.find(cl.target);
-        if (it_tt == loaded.tables.end())
-            return false;
-        const TableData &tt = it_tt->second;
-        out_bits->assign((tt.nrows + 7u) / 8u, 0xFF);
-        if ((tt.nrows & 7u) != 0u)
-            out_bits->back() &= (uint8)((1u << (tt.nrows & 7u)) - 1u);
-        return true;
-    }
-
-    out_bits->assign((target_ti->nrows + 7u) / 8u, 0);
-    const uint8 *rbits = nullptr;
-    if (restrict_bits) {
-        auto it_rb = restrict_bits->find(cl.target);
-        if (it_rb != restrict_bits->end())
-            rbits = it_rb->second;
-    }
-    for (uint32 rid = 0; rid < target_ti->nrows; rid++) {
-        if (row_matches_table_predicates_only(*target_tp, rid, rbits))
-            rid_bit_set(out_bits->data(), rid);
-    }
-    return true;
 }
 
 static bool build_rid_bits_for_target_local_formula(const TargetPlan &tp,
@@ -2806,14 +2841,17 @@ static std::string profile_query()
 static void log_policy_profile_query(const BuildProfile &p, int filtered_targets)
 {
     elog(NOTICE,
-         "policy_profile_query: K=%d query_id=%s total_ms=%.3f load_ms=%.3f local_ms=0.000 prop_ms=%.3f decode_ms=%.3f sat_calls=0 cache_hits=0 closure_tables=0 filtered_targets=%d",
+         "policy_profile_query: K=%d query_id=%s total_ms=%.3f load_ms=%.3f local_ms=0.000 prop_ms=%.3f decode_ms=%.3f sat_calls=0 cache_hits=0 closure_tables=0 filtered_targets=%d clause_plan_count_max=%d prop_join_scans_total=%llu unique_join_struct_sigs_max=%d",
          profile_k(),
          profile_query().c_str(),
          p.total_ms,
          p.artifact_parse_ms,
          p.propagate_ms,
          p.decode_ms,
-         filtered_targets);
+         filtered_targets,
+         p.clause_plan_count_max,
+         (unsigned long long)p.prop_join_scans_total,
+         p.unique_join_struct_sigs_max);
 }
 
 static bool load_phase(const PolicyArtifactC *arts,
@@ -2838,14 +2876,27 @@ static bool load_phase(const PolicyArtifactC *arts,
         std::string target = in->target_tables[i];
         out->target_order.push_back(target);
         const char *ast = (in->target_asts && in->target_asts[i]) ? in->target_asts[i] : "";
-        if (!compile_target_plan(target, ast, out, profile))
-            return false;
+        const char *perm_ast = (in->target_perm_asts && in->target_perm_asts[i]) ? in->target_perm_asts[i] : "";
+        const char *rest_ast = (in->target_rest_asts && in->target_rest_asts[i]) ? in->target_rest_asts[i] : "";
+        if (in->target_perm_asts || in->target_rest_asts) {
+            if (!compile_target_plan_factored(target, ast, perm_ast, rest_ast, out, profile))
+                return false;
+        } else {
+            if (!compile_target_plan(target, ast, out, profile))
+                return false;
+        }
     }
 
     for (auto &tkv : out->targets) {
         for (auto &cl : tkv.second.clauses) {
             if (!bind_clause_views(&cl, out))
                 return false;
+        }
+        for (auto &clset : tkv.second.restrictive_clause_sets) {
+            for (auto &cl : clset) {
+                if (!bind_clause_views(&cl, out))
+                    return false;
+            }
         }
         if (!bind_target_local_views(&tkv.second, out))
             return false;
@@ -2864,6 +2915,12 @@ static bool load_phase(const PolicyArtifactC *arts,
         for (auto &cl : tkv.second.clauses) {
             if (!bind_clause_views(&cl, out))
                 return false;
+        }
+        for (auto &clset : tkv.second.restrictive_clause_sets) {
+            for (auto &cl : clset) {
+                if (!bind_clause_views(&cl, out))
+                    return false;
+            }
         }
         if (!bind_target_local_views(&tkv.second, out))
             return false;
@@ -2892,6 +2949,29 @@ static bool build_target_allow_list(const Loaded &loaded,
     }
     const TableData &target_ti = it_t->second;
     std::vector<uint8_t> final_bits((target_ti.nrows + 7u) / 8u, 0);
+
+    size_t total_clause_plans = tp.clauses.size();
+    for (const auto &clset : tp.restrictive_clause_sets)
+        total_clause_plans += clset.size();
+    profile->clause_plan_count_max = std::max(profile->clause_plan_count_max, (int)total_clause_plans);
+    if (total_clause_plans > 0) {
+        std::unordered_set<std::string> sigs;
+        sigs.reserve(total_clause_plans * 2u);
+        for (const ClausePlan &cl : tp.clauses) {
+            if (cl.unsat)
+                continue;
+            sigs.insert(clause_join_structure_signature(cl));
+        }
+        for (const auto &clset : tp.restrictive_clause_sets) {
+            for (const ClausePlan &cl : clset) {
+                if (cl.unsat)
+                    continue;
+                sigs.insert(clause_join_structure_signature(cl));
+            }
+        }
+        profile->unique_join_struct_sigs_max =
+            std::max(profile->unique_join_struct_sigs_max, (int)sigs.size());
+    }
 
     if (tp.local_formula_enabled) {
         auto t_proj0 = Clock::now();
@@ -2992,7 +3072,7 @@ static bool build_target_allow_list(const Loaded &loaded,
             std::vector<TokenBitset> allowed;
             int iters = 0;
             double ms_prop = 0.0;
-            if (!propagate_clause(cl, loaded, &allowed, &iters, restrict_bits, &ms_prop))
+            if (!propagate_clause(cl, loaded, &allowed, &iters, restrict_bits, &ms_prop, profile))
                 return false;
             profile->propagate_ms += ms_prop;
             profile->prop_iters += iters;
@@ -3680,6 +3760,47 @@ static bool build_target_allow_list(const Loaded &loaded,
         }
     }
 
+    if (!tp.local_formula_enabled && tp.factored_enabled) {
+        if (tp.deny_all) {
+            std::fill(final_bits.begin(), final_bits.end(), 0);
+        } else if (!tp.restrictive_clause_sets.empty()) {
+            std::vector<uint8_t> rest_bits;
+            for (const auto &clset : tp.restrictive_clause_sets) {
+                TargetPlan rest_tp;
+                rest_tp.target = tp.target;
+                rest_tp.clauses = clset;
+                rest_tp.factored_enabled = false;
+                rest_tp.local_formula_enabled = false;
+
+                PolicyTableAllowC tmp_item{};
+                if (!build_target_allow_list(loaded,
+                                             rest_tp,
+                                             &tmp_item,
+                                             profile,
+                                             restrict_bits,
+                                             &rest_bits)) {
+                    return false;
+                }
+                if (tmp_item.block_words)
+                    pfree(tmp_item.block_words);
+                if (rest_bits.size() != final_bits.size())
+                    return false;
+                for (size_t i = 0; i < final_bits.size(); i++)
+                    final_bits[i] &= rest_bits[i];
+
+                bool any = false;
+                for (uint8_t b : final_bits) {
+                    if (b != 0) {
+                        any = true;
+                        break;
+                    }
+                }
+                if (!any)
+                    break;
+            }
+        }
+    }
+
     std::vector<uint8_t> *bits_for_decode = &final_bits;
     if (out_rid_bits) {
         *out_rid_bits = std::move(final_bits);
@@ -3740,6 +3861,10 @@ static void fill_run_profile(const BuildProfile &bp, PolicyRunProfileC *out)
     out->prop_iters = bp.prop_iters;
     out->decode_ms = bp.decode_ms;
     out->policy_total_ms = bp.total_ms;
+    out->clause_plan_count_max = bp.clause_plan_count_max;
+    out->prop_join_scans_total = bp.prop_join_scans_total;
+    out->unique_join_struct_sigs_max = bp.unique_join_struct_sigs_max;
+    out->prop_table_scans = bp.prop_table_scans_compact.empty() ? nullptr : pstrdup(bp.prop_table_scans_compact.c_str());
 }
 
 PolicyRunHandle *
@@ -3803,6 +3928,25 @@ policy_run(const PolicyArtifactC *arts, int art_count, const PolicyEngineInputC 
                         if (di == ti)
                             continue;
                         deps.insert(di);
+                    }
+                }
+                for (const auto &clset : tp.restrictive_clause_sets) {
+                    for (const ClausePlan &cl : clset) {
+                        if (cl.unsat)
+                            continue;
+                        for (const auto &tbl : cl.tables) {
+                            if (tbl.table == tname)
+                                continue;
+                            if (loaded.targets.find(tbl.table) == loaded.targets.end())
+                                continue;  // referenced table has no policy => unrestricted
+                            auto it_dep = idx.find(tbl.table);
+                            if (it_dep == idx.end())
+                                continue;
+                            int di = it_dep->second;
+                            if (di == ti)
+                                continue;
+                            deps.insert(di);
+                        }
                     }
                 }
             }
@@ -3869,6 +4013,7 @@ policy_run(const PolicyArtifactC *arts, int art_count, const PolicyEngineInputC 
 
     auto t1 = Clock::now();
     profile.total_ms = Ms(t1 - t0).count();
+    profile.prop_table_scans_compact = format_prop_table_scan_counts(profile.prop_table_scan_counts);
 
     fill_run_profile(profile, &h->profile);
 
