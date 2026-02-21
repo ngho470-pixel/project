@@ -91,6 +91,10 @@ typedef struct PolicyRunProfileC {
     int prop_iters;
     double decode_ms;
     double policy_total_ms;
+    int clause_plan_count_max;
+    uint64 prop_join_scans_total;
+    int unique_join_struct_sigs_max;
+    const char *prop_table_scans;
 } PolicyRunProfileC;
 
 typedef struct PolicyRunHandle PolicyRunHandle;
@@ -1163,6 +1167,10 @@ typedef struct PolicyQueryState
     size_t project_mask_bytes;
     int project_n_join_evals_max;
     int project_clause_words_max;
+    int clause_plan_count_max;
+    uint64 prop_join_scans_total;
+    int unique_join_struct_sigs_max;
+    char *prop_table_scans;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
@@ -1567,7 +1575,8 @@ cf_log_query_metrics(PolicyQueryState *qs)
         return;
     elog(NOTICE,
          "policy_profile: eval_ms=%.3f artifact_load_ms=%.3f artifact_parse_ms=%.3f atoms_ms=%.3f propagate_ms=%.3f project_ms=%.3f "
-         "project_mask_ms=%.3f project_row_ms=%.3f project_mask_bytes=%zu project_n_join_evals_max=%d project_clause_words_max=%d "
+         "project_mask_ms=%.3f project_row_ms=%.3f project_mask_bytes=%zu project_n_join_evals_max=%d project_clause_words_max=%d clause_plan_count_max=%d "
+         "prop_join_scans_total=%llu unique_join_struct_sigs_max=%d prop_table_scans=%s "
          "stamp_ms=%.3f bin_ms=%.3f local_sat_ms=%.3f fill_ms=%.3f prop_ms=%.3f prop_iters=%d "
          "decode_ms=%.3f policy_total_ms=%.3f ctid_map_ms=%.3f filter_ms=%.3f "
          "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f "
@@ -1587,6 +1596,10 @@ cf_log_query_metrics(PolicyQueryState *qs)
          qs->project_mask_bytes,
          qs->project_n_join_evals_max,
          qs->project_clause_words_max,
+         qs->clause_plan_count_max,
+         (unsigned long long) qs->prop_join_scans_total,
+         qs->unique_join_struct_sigs_max,
+         (qs->prop_table_scans && qs->prop_table_scans[0]) ? qs->prop_table_scans : "none",
          qs->stamp_ms,
          qs->bin_ms,
          qs->local_sat_ms,
@@ -2252,6 +2265,8 @@ cf_build_query_state(EState *estate, const char *query_str)
         in.target_rest_asts = eval_res->target_rest_asts;
         in.atom_count = eval_res->atom_count;
         in.atoms = eval_res->atoms;
+        in.bundle_count = eval_res->bundle_count;
+        in.bundles = eval_res->bundles;
         CF_TRACE_LOG( "custom_filter: calling policy_run once target_count=%d atom_count=%d",
              in.target_count, in.atom_count);
         MemoryContext old_policy_ctx = MemoryContextSwitchTo(qctx);
@@ -2275,6 +2290,25 @@ cf_build_query_state(EState *estate, const char *query_str)
                 qs->project_n_join_evals_max = pp->project_n_join_evals_max;
             if (pp->project_clause_words_max > qs->project_clause_words_max)
                 qs->project_clause_words_max = pp->project_clause_words_max;
+            if (pp->clause_plan_count_max > qs->clause_plan_count_max)
+                qs->clause_plan_count_max = pp->clause_plan_count_max;
+            qs->prop_join_scans_total += pp->prop_join_scans_total;
+            if (pp->unique_join_struct_sigs_max > qs->unique_join_struct_sigs_max)
+                qs->unique_join_struct_sigs_max = pp->unique_join_struct_sigs_max;
+            if (pp->prop_table_scans && pp->prop_table_scans[0]) {
+                if (!qs->prop_table_scans) {
+                    qs->prop_table_scans = MemoryContextStrdup(qctx, pp->prop_table_scans);
+                } else {
+                    size_t old_len = strlen(qs->prop_table_scans);
+                    size_t add_len = strlen(pp->prop_table_scans);
+                    char *merged = (char *) MemoryContextAlloc(qctx, old_len + 1 + add_len + 1);
+                    memcpy(merged, qs->prop_table_scans, old_len);
+                    merged[old_len] = ';';
+                    memcpy(merged + old_len + 1, pp->prop_table_scans, add_len);
+                    merged[old_len + 1 + add_len] = '\0';
+                    qs->prop_table_scans = merged;
+                }
+            }
             qs->stamp_ms += pp->stamp_ms;
             qs->bin_ms += pp->bin_ms;
             qs->local_sat_ms += pp->local_sat_ms;

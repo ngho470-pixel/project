@@ -32,6 +32,8 @@ typedef struct PolicyAtomC {
     char **const_values;         /* unquoted literal strings */
 } PolicyAtomC;
 
+typedef struct PolicyBundleC PolicyBundleC;
+
 typedef struct PolicyEngineInputC {
     int target_count;
     char **target_tables;
@@ -40,14 +42,18 @@ typedef struct PolicyEngineInputC {
     char **target_rest_asts;
     int atom_count;
     PolicyAtomC *atoms;
+    int bundle_count;
+    PolicyBundleC *bundles;
 } PolicyEngineInputC;
 
-typedef struct PolicyBundleC {
+struct PolicyBundleC {
     char *target_table;
     char *ast;
+    int policy_id;
+    int permissive; /* 1=permissive, 0=restrictive */
     int atom_count;
     PolicyAtomC *atoms;
-} PolicyBundleC;
+};
 
 typedef struct PolicyEvalResultC {
     int needed_count;

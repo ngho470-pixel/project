@@ -390,6 +390,12 @@ struct AstParser {
         if (pos >= src.size() || (src[pos] != 'y' && src[pos] != 'Y'))
             return nullptr;
         size_t p = pos + 1;
+        int sign = 1;
+        if (p < src.size() && (src[p] == '+' || src[p] == '-')) {
+            if (src[p] == '-')
+                sign = -1;
+            p++;
+        }
         int id = 0;
         bool any = false;
         while (p < src.size() && std::isdigit((unsigned char)src[p])) {
@@ -399,7 +405,7 @@ struct AstParser {
         }
         if (!any) return nullptr;
         pos = p;
-        return node(AstType::VAR, id);
+        return node(AstType::VAR, sign * id);
     }
 
     BoolAst *parse_atom()
@@ -822,6 +828,7 @@ struct Loaded {
     std::unordered_set<std::string> dict_sorted;
 
     std::unordered_map<int, Atom> atoms_by_id;
+    std::unordered_map<std::string, int> atom_id_by_canon;
 
     std::unordered_map<std::string, int> join_class_by_col;
     std::map<int, std::vector<std::string>> join_class_cols;
@@ -851,6 +858,103 @@ struct BuildProfile {
     std::unordered_map<std::string, uint64> prop_table_scan_counts;
     std::string prop_table_scans_compact;
 };
+
+static int find_global_atom_id_for_bundle_atom(const PolicyAtomC *ba, const Loaded *out)
+{
+    if (!ba || !out)
+        return -1;
+    if (ba->canon_key && ba->canon_key[0]) {
+        auto it = out->atom_id_by_canon.find(ba->canon_key);
+        if (it != out->atom_id_by_canon.end())
+            return it->second;
+    }
+    for (const auto &kv : out->atoms_by_id) {
+        const Atom &a = kv.second;
+        if (a.kind == AtomKind::JOIN && ba->kind == POLICY_ATOM_JOIN_EQ) {
+            if (ba->lhs_schema_key && ba->rhs_schema_key &&
+                a.lhs_schema_key == ba->lhs_schema_key &&
+                a.rhs_schema_key == ba->rhs_schema_key) {
+                return a.id;
+            }
+        } else if (a.kind == AtomKind::CONST && ba->kind == POLICY_ATOM_COL_CONST) {
+            if (ba->lhs_schema_key && a.lhs_schema_key == ba->lhs_schema_key &&
+                (int)a.op == ba->op && (int)a.values.size() == ba->const_count) {
+                bool vals_ok = true;
+                for (int i = 0; i < ba->const_count; i++) {
+                    const char *v = (ba->const_values && ba->const_values[i]) ? ba->const_values[i] : "";
+                    if ((size_t)i >= a.values.size() || a.values[(size_t)i] != v) {
+                        vals_ok = false;
+                        break;
+                    }
+                }
+                if (vals_ok)
+                    return a.id;
+            }
+        }
+    }
+    return -1;
+}
+
+static bool build_bundle_local_to_global_map(const PolicyBundleC *b,
+                                             const Loaded *out,
+                                             std::vector<int> *local_to_global)
+{
+    if (!b || !out || !local_to_global)
+        return false;
+    local_to_global->assign((size_t)b->atom_count + 1u, -1);
+    for (int i = 0; i < b->atom_count; i++) {
+        const PolicyAtomC *ba = &b->atoms[i];
+        if (!ba || ba->atom_id <= 0 || ba->atom_id > b->atom_count)
+            continue;
+        int gid = find_global_atom_id_for_bundle_atom(ba, out);
+        if (gid > 0)
+            (*local_to_global)[(size_t)ba->atom_id] = gid;
+    }
+    return true;
+}
+
+static std::string rewrite_bundle_ast_to_global(const char *ast,
+                                                const std::vector<int> &local_to_global)
+{
+    std::string in = ast ? ast : "";
+    if (in.empty())
+        return in;
+    std::string out;
+    out.reserve(in.size() + 16u);
+    size_t p = 0;
+    while (p < in.size()) {
+        if (in[p] == 'y' || in[p] == 'Y') {
+            size_t q = p + 1;
+            int sign = 1;
+            if (q < in.size() && (in[q] == '+' || in[q] == '-')) {
+                if (in[q] == '-')
+                    sign = -1;
+                q++;
+            }
+            int id = 0;
+            bool any = false;
+            while (q < in.size() && std::isdigit((unsigned char)in[q])) {
+                id = id * 10 + (in[q] - '0');
+                any = true;
+                q++;
+            }
+            if (any) {
+                int mapped = 0;
+                if (sign > 0 && id > 0 && (size_t)id < local_to_global.size() &&
+                    local_to_global[(size_t)id] > 0) {
+                    mapped = local_to_global[(size_t)id];
+                }
+                out += "y";
+                out += std::to_string(mapped);
+                p = q;
+                continue;
+            }
+        }
+        out.push_back(in[p]);
+        p++;
+    }
+    return out;
+}
 
 static std::string format_prop_table_scan_counts(const std::unordered_map<std::string, uint64> &counts)
 {
@@ -1117,6 +1221,9 @@ static bool load_atoms(const PolicyEngineInputC *in, Loaded *out)
         }
 
         out->atoms_by_id[a.id] = std::move(a);
+        if (pa->canon_key && pa->canon_key[0]) {
+            out->atom_id_by_canon[pa->canon_key] = pa->atom_id;
+        }
     }
 
     auto t1 = Clock::now();
@@ -1911,6 +2018,7 @@ static bool compile_target_plan_factored(const std::string &target,
                                          const char *combined_ast_str,
                                          const char *perm_ast_str,
                                          const char *rest_ast_str,
+                                         const PolicyEngineInputC *in,
                                          Loaded *out,
                                          BuildProfile *profile)
 {
@@ -1946,46 +2054,98 @@ static bool compile_target_plan_factored(const std::string &target,
     std::string perm_ast = trim_ws(perm_ast_str ? perm_ast_str : "");
     std::string rest_ast = trim_ws(rest_ast_str ? rest_ast_str : "");
 
-    if (!perm_ast.empty()) {
-        AstParser parser(perm_ast);
-        BoolAst *root = parser.parse_or();
-        parser.skip_ws();
-        if (!root || parser.pos != parser.src.size()) {
-            ereport(ERROR,
-                    (errmsg("policy: failed to parse permissive AST target=%s ast=%s",
-                            target.c_str(), perm_ast.c_str())));
-        }
+    bool used_bundle_mode = false;
+    bool any_perm_bundle = false;
 
-        // Keep permissive side factored by policy-composition boundaries.
-        std::vector<const BoolAst *> perm_terms;
-        flatten_policy_composition_chain(root, AstType::OR, &perm_terms);
-        if (perm_terms.empty())
-            perm_terms.push_back(root);
-        for (const BoolAst *term : perm_terms) {
-            if (!append_clause_plans_from_ast(target, term, 4096, out, &tp.clauses))
+    if (in && in->bundle_count > 0 && in->bundles) {
+        for (int bi = 0; bi < in->bundle_count; bi++) {
+            const PolicyBundleC *b = &in->bundles[bi];
+            if (!b || !b->target_table)
+                continue;
+            if (target != b->target_table)
+                continue;
+
+            used_bundle_mode = true;
+
+            std::vector<int> local_to_global;
+            if (!build_bundle_local_to_global_map(b, out, &local_to_global))
                 return false;
+            std::string bast = rewrite_bundle_ast_to_global(b->ast, local_to_global);
+            bast = trim_ws(bast);
+            if (bast.empty())
+                continue;
+
+            AstParser parser(bast);
+            BoolAst *root = parser.parse_or();
+            parser.skip_ws();
+            if (!root || parser.pos != parser.src.size()) {
+                ereport(ERROR,
+                        (errmsg("policy: failed to parse bundle AST target=%s policy_id=%d ast=%s",
+                                target.c_str(),
+                                b->policy_id,
+                                bast.c_str())));
+            }
+
+            bool permissive = (b->permissive != 0);
+            if (b->policy_id > 0)
+                permissive = ((b->policy_id % 2) == 1);
+
+            if (permissive) {
+                any_perm_bundle = true;
+                if (!append_clause_plans_from_ast(target, root, 4096, out, &tp.clauses))
+                    return false;
+            } else {
+                std::vector<ClausePlan> rest_clauses;
+                if (!append_clause_plans_from_ast(target, root, 4096, out, &rest_clauses))
+                    return false;
+                tp.restrictive_clause_sets.push_back(std::move(rest_clauses));
+            }
         }
-    } else {
-        // Postgres semantics: no permissive policy means deny-all.
-        tp.deny_all = true;
     }
 
-    if (!rest_ast.empty()) {
-        AstParser parser(rest_ast);
-        BoolAst *root = parser.parse_or();
-        parser.skip_ws();
-        if (!root || parser.pos != parser.src.size()) {
-            ereport(ERROR,
-                    (errmsg("policy: failed to parse restrictive AST target=%s ast=%s",
-                            target.c_str(), rest_ast.c_str())));
+    if (used_bundle_mode) {
+        if (!any_perm_bundle)
+            tp.deny_all = true;
+    } else {
+        if (!perm_ast.empty()) {
+            AstParser parser(perm_ast);
+            BoolAst *root = parser.parse_or();
+            parser.skip_ws();
+            if (!root || parser.pos != parser.src.size()) {
+                ereport(ERROR,
+                        (errmsg("policy: failed to parse permissive AST target=%s ast=%s",
+                                target.c_str(), perm_ast.c_str())));
+            }
+
+            // Keep permissive side factored by policy-composition boundaries.
+            std::vector<const BoolAst *> perm_terms;
+            flatten_policy_composition_chain(root, AstType::OR, &perm_terms);
+            if (perm_terms.empty())
+                perm_terms.push_back(root);
+            for (const BoolAst *term : perm_terms) {
+                if (!append_clause_plans_from_ast(target, term, 4096, out, &tp.clauses))
+                    return false;
+            }
+        } else {
+            // Postgres semantics: no permissive policy means deny-all.
+            tp.deny_all = true;
         }
-        // Correctness first: keep restrictive formula intact as one subtree.
-        // Splitting arbitrary AND nodes can break existential witness coupling.
-        std::vector<ClausePlan> rest_clauses;
-        if (!append_clause_plans_from_ast(target, root, 4096, out, &rest_clauses))
-            return false;
-        tp.restrictive_clause_sets.clear();
-        tp.restrictive_clause_sets.push_back(std::move(rest_clauses));
+
+        if (!rest_ast.empty()) {
+            AstParser parser(rest_ast);
+            BoolAst *root = parser.parse_or();
+            parser.skip_ws();
+            if (!root || parser.pos != parser.src.size()) {
+                ereport(ERROR,
+                        (errmsg("policy: failed to parse restrictive AST target=%s ast=%s",
+                                target.c_str(), rest_ast.c_str())));
+            }
+            std::vector<ClausePlan> rest_clauses;
+            if (!append_clause_plans_from_ast(target, root, 4096, out, &rest_clauses))
+                return false;
+            tp.restrictive_clause_sets.clear();
+            tp.restrictive_clause_sets.push_back(std::move(rest_clauses));
+        }
     }
 
     auto t_atoms1 = Clock::now();
@@ -3002,7 +3162,7 @@ static bool load_phase(const PolicyArtifactC *arts,
         const char *perm_ast = (in->target_perm_asts && in->target_perm_asts[i]) ? in->target_perm_asts[i] : "";
         const char *rest_ast = (in->target_rest_asts && in->target_rest_asts[i]) ? in->target_rest_asts[i] : "";
         if (in->target_perm_asts || in->target_rest_asts) {
-            if (!compile_target_plan_factored(target, ast, perm_ast, rest_ast, out, profile))
+            if (!compile_target_plan_factored(target, ast, perm_ast, rest_ast, in, out, profile))
                 return false;
         } else {
             if (!compile_target_plan(target, ast, out, profile))

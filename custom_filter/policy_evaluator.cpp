@@ -1030,6 +1030,8 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
     struct BundleDef {
         std::string target;
         std::string ast;
+        int policy_id = -1;
+        bool permissive = true;
         std::vector<Policy::AtomDef> atoms;
     };
     std::vector<BundleDef> bundles;
@@ -1040,6 +1042,9 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
             continue;
         if (!pol.ast)
             continue;
+        bool permissive = true;
+        if (pol.policy_id > 0)
+            permissive = (pol.policy_id % 2 == 1);
         std::set<std::string> keys;
         collect_ast_keys(pol.ast, keys);
         std::map<std::string, Policy::AtomDef> b_defs;
@@ -1066,6 +1071,8 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         BundleDef b;
         b.target = pol.target;
         b.ast = b_ast_str;
+        b.policy_id = pol.policy_id;
+        b.permissive = permissive;
         b.atoms.reserve(b_list.size());
         for (const auto &k : b_list) {
             auto it = b_defs.find(k);
@@ -1124,6 +1131,8 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         PolicyBundleC *outb = &res->bundles[i];
         outb->target_table = pstrdup(b.target.c_str());
         outb->ast = b.ast.empty() ? pstrdup("") : pstrdup(b.ast.c_str());
+        outb->policy_id = b.policy_id;
+        outb->permissive = b.permissive ? 1 : 0;
         outb->atom_count = static_cast<int>(b.atoms.size());
         outb->atoms = outb->atom_count ? (PolicyAtomC *)palloc0(sizeof(PolicyAtomC) * outb->atom_count) : nullptr;
         for (int j = 0; j < outb->atom_count; j++) {
