@@ -540,6 +540,24 @@ static void flatten_ast_by_op(const BoolAst *node,
     out->push_back(node);
 }
 
+static void flatten_policy_composition_chain(const BoolAst *node,
+                                             AstType op,
+                                             std::vector<const BoolAst *> *out)
+{
+    if (!node || !out)
+        return;
+    std::vector<const BoolAst *> rev;
+    const BoolAst *cur = node;
+    while (cur && cur->type == op && cur->left && cur->right) {
+        rev.push_back(cur->right);
+        cur = cur->left;
+    }
+    if (cur)
+        rev.push_back(cur);
+    for (auto it = rev.rbegin(); it != rev.rend(); ++it)
+        out->push_back(*it);
+}
+
 struct ColRef {
     std::string table;
     std::string col;
@@ -909,79 +927,7 @@ static uint64_t hash_token_bitset_words(const TokenBitset &bs)
     return h;
 }
 
-static std::string clause_non_target_eval_signature(const ClausePlan &cl)
-{
-    std::string out = "t=" + cl.target;
-    out += ";j=";
-    for (size_t i = 0; i < cl.join_classes.size(); i++) {
-        if (i > 0) out.push_back(',');
-        out += std::to_string(cl.join_classes[i]);
-    }
-
-    std::vector<std::string> parts;
-    parts.reserve(cl.tables.size());
-    for (const auto &tp : cl.tables) {
-        if (tp.table == cl.target)
-            continue;
-        std::string p = tp.table;
-        p += "|cg=";
-        std::vector<std::string> cgs;
-        cgs.reserve(tp.class_groups.size());
-        for (const auto &cg : tp.class_groups) {
-            std::string s = std::to_string(cg.class_id);
-            s.push_back('[');
-            std::vector<int> cols = cg.col_idxs;
-            std::sort(cols.begin(), cols.end());
-            cols.erase(std::unique(cols.begin(), cols.end()), cols.end());
-            for (size_t i = 0; i < cols.size(); i++) {
-                if (i > 0) s.push_back(',');
-                s += std::to_string(cols[i]);
-            }
-            s.push_back(']');
-            cgs.push_back(std::move(s));
-        }
-        std::sort(cgs.begin(), cgs.end());
-        for (size_t i = 0; i < cgs.size(); i++) {
-            if (i > 0) p.push_back(';');
-            p += cgs[i];
-        }
-
-        p += "|pred=";
-        std::vector<std::string> preds;
-        preds.reserve(tp.predicates.size());
-        for (const auto &pred : tp.predicates) {
-            uint64_t ph = hash_token_bitset_words(pred.allowed);
-            std::string s = std::to_string(pred.col_idx);
-            s.push_back(':');
-            char hbuf[32];
-            snprintf(hbuf, sizeof(hbuf), "%016llx", (unsigned long long)ph);
-            s += hbuf;
-            preds.push_back(std::move(s));
-        }
-        std::sort(preds.begin(), preds.end());
-        for (size_t i = 0; i < preds.size(); i++) {
-            if (i > 0) p.push_back(';');
-            p += preds[i];
-        }
-        parts.push_back(std::move(p));
-    }
-    std::sort(parts.begin(), parts.end());
-    for (const auto &p : parts) {
-        out += "|";
-        out += p;
-    }
-    return out;
-}
-
-struct CachedClauseEval {
-    bool computed = false;
-    bool global_ok = false;
-    bool empty = true;
-    std::vector<TokenBitset> allowed;
-};
-
 struct ClauseEvalCache {
-    std::unordered_map<std::string, CachedClauseEval> clause_eval;
     std::unordered_map<std::string, bool> table_witness;
 };
 
@@ -2010,9 +1956,9 @@ static bool compile_target_plan_factored(const std::string &target,
                             target.c_str(), perm_ast.c_str())));
         }
 
-        // Keep permissive side as OR of components (no need to materialize one giant DNF term-set).
+        // Keep permissive side factored by policy-composition boundaries.
         std::vector<const BoolAst *> perm_terms;
-        flatten_ast_by_op(root, AstType::OR, &perm_terms);
+        flatten_policy_composition_chain(root, AstType::OR, &perm_terms);
         if (perm_terms.empty())
             perm_terms.push_back(root);
         for (const BoolAst *term : perm_terms) {
@@ -2033,21 +1979,13 @@ static bool compile_target_plan_factored(const std::string &target,
                     (errmsg("policy: failed to parse restrictive AST target=%s ast=%s",
                             target.c_str(), rest_ast.c_str())));
         }
-        // Critical: keep restrictive side as AND over components to avoid global
-        // DNF expansion across policy boundaries.
-        std::vector<const BoolAst *> rest_terms;
-        flatten_ast_by_op(root, AstType::AND, &rest_terms);
-        if (rest_terms.empty())
-            rest_terms.push_back(root);
-
+        // Correctness first: keep restrictive formula intact as one subtree.
+        // Splitting arbitrary AND nodes can break existential witness coupling.
+        std::vector<ClausePlan> rest_clauses;
+        if (!append_clause_plans_from_ast(target, root, 4096, out, &rest_clauses))
+            return false;
         tp.restrictive_clause_sets.clear();
-        tp.restrictive_clause_sets.reserve(rest_terms.size());
-        for (const BoolAst *term : rest_terms) {
-            std::vector<ClausePlan> rest_clauses;
-            if (!append_clause_plans_from_ast(target, term, 4096, out, &rest_clauses))
-                return false;
-            tp.restrictive_clause_sets.push_back(std::move(rest_clauses));
-        }
+        tp.restrictive_clause_sets.push_back(std::move(rest_clauses));
     }
 
     auto t_atoms1 = Clock::now();
@@ -3205,19 +3143,12 @@ static bool build_target_allow_list(const Loaded &loaded,
                         continue;
                     }
 
-                    if (tp_tbl.predicates.empty()) {
-                        if (ti.nrows == 0) {
-                            clause_global_ok = false;
-                            break;
-                        }
-                    } else {
-                        if (!table_has_predicate_witness(tp_tbl,
-                                                         ti,
-                                                         restrict_bits,
-                                                         &eval_cache->table_witness)) {
-                            clause_global_ok = false;
-                            break;
-                        }
+                    if (!table_has_predicate_witness(tp_tbl,
+                                                     ti,
+                                                     restrict_bits,
+                                                     &eval_cache->table_witness)) {
+                        clause_global_ok = false;
+                        break;
                     }
                 }
                 if (!clause_global_ok)
@@ -3260,65 +3191,47 @@ static bool build_target_allow_list(const Loaded &loaded,
                 continue;
             }
 
-            const std::string eval_sig = clause_non_target_eval_signature(cl);
-            CachedClauseEval *ce = nullptr;
-            auto it_ce = eval_cache->clause_eval.find(eval_sig);
-            if (it_ce == eval_cache->clause_eval.end()) {
-                CachedClauseEval fresh;
-                int iters = 0;
-                double ms_prop = 0.0;
-                if (!propagate_clause(cl, loaded, &fresh.allowed, &iters, restrict_bits, &ms_prop, profile))
-                    return false;
-                profile->propagate_ms += ms_prop;
-                profile->prop_iters += iters;
+            std::vector<TokenBitset> allowed;
+            int iters = 0;
+            double ms_prop = 0.0;
+            if (!propagate_clause(cl, loaded, &allowed, &iters, restrict_bits, &ms_prop, profile))
+                return false;
+            profile->propagate_ms += ms_prop;
+            profile->prop_iters += iters;
 
-                fresh.empty = false;
-                for (const auto &b : fresh.allowed) {
-                    if (!b.any()) {
-                        fresh.empty = true;
-                        break;
-                    }
+            bool empty = false;
+            for (const auto &b : allowed) {
+                if (!b.any()) {
+                    empty = true;
+                    break;
                 }
-
-                fresh.global_ok = !fresh.empty;
-                if (fresh.global_ok) {
-                    // Global predicate-only tables (no join columns) must have at least one witness row,
-                    // otherwise the clause is unsatisfiable regardless of the target row.
-                    for (const auto &tp_tbl : cl.tables) {
-                        if (!tp_tbl.class_groups.empty())
-                            continue;
-                        if (tp_tbl.table == cl.target)
-                            continue;  // target-local predicates checked per-row below.
-
-                        auto it_t = loaded.tables.find(tp_tbl.table);
-                        if (it_t == loaded.tables.end())
-                            return false;
-                        const TableData &ti = it_t->second;
-
-                        if (tp_tbl.predicates.empty()) {
-                            if (ti.nrows == 0) {
-                                fresh.global_ok = false;
-                                break;
-                            }
-                        } else {
-                            if (!table_has_predicate_witness(tp_tbl,
-                                                             ti,
-                                                             restrict_bits,
-                                                             &eval_cache->table_witness)) {
-                                fresh.global_ok = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-                fresh.computed = true;
-                auto ins = eval_cache->clause_eval.emplace(eval_sig, std::move(fresh));
-                ce = &ins.first->second;
-            } else {
-                ce = &it_ce->second;
             }
+            if (empty)
+                continue;
 
-            if (!ce || !ce->computed || !ce->global_ok || ce->empty)
+            // Global predicate-only tables (no join columns) must have at least one witness row,
+            // otherwise the clause is unsatisfiable regardless of the target row.
+            bool clause_global_ok = true;
+            for (const auto &tp_tbl : cl.tables) {
+                if (!tp_tbl.class_groups.empty())
+                    continue;
+                if (tp_tbl.table == cl.target)
+                    continue;  // target-local predicates checked per-row below.
+
+                auto it_t = loaded.tables.find(tp_tbl.table);
+                if (it_t == loaded.tables.end())
+                    return false;
+                const TableData &ti = it_t->second;
+
+                if (!table_has_predicate_witness(tp_tbl,
+                                                 ti,
+                                                 restrict_bits,
+                                                 &eval_cache->table_witness)) {
+                    clause_global_ok = false;
+                    break;
+                }
+            }
+            if (!clause_global_ok)
                 continue;
 
             if (!cl.target_present) {
@@ -3339,7 +3252,7 @@ static bool build_target_allow_list(const Loaded &loaded,
 
             JoinClauseEval je;
             je.target_tp = target_tp;
-            je.allowed = ce->allowed;
+            je.allowed = std::move(allowed);
             join_evals.push_back(std::move(je));
         }
 
