@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -525,6 +526,20 @@ static void emit_ast_rpn(const BoolAst *node, std::vector<FormulaToken> *out)
         out->push_back({FormulaTokKind::OR, -1});
 }
 
+static void flatten_ast_by_op(const BoolAst *node,
+                              AstType op,
+                              std::vector<const BoolAst *> *out)
+{
+    if (!node || !out)
+        return;
+    if (node->type == op) {
+        flatten_ast_by_op(node->left, op, out);
+        flatten_ast_by_op(node->right, op, out);
+        return;
+    }
+    out->push_back(node);
+}
+
 struct ColRef {
     std::string table;
     std::string col;
@@ -878,6 +893,122 @@ static std::string clause_join_structure_signature(const ClausePlan &cl)
     return out;
 }
 
+static inline uint64_t hash_combine_u64(uint64_t h, uint64_t v)
+{
+    // 64-bit mix (boost-like).
+    h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    return h;
+}
+
+static uint64_t hash_token_bitset_words(const TokenBitset &bs)
+{
+    uint64_t h = 1469598103934665603ULL;
+    h = hash_combine_u64(h, (uint64_t)bs.nbits);
+    for (uint64_t w : bs.words)
+        h = hash_combine_u64(h, w);
+    return h;
+}
+
+static std::string clause_non_target_eval_signature(const ClausePlan &cl)
+{
+    std::string out = "t=" + cl.target;
+    out += ";j=";
+    for (size_t i = 0; i < cl.join_classes.size(); i++) {
+        if (i > 0) out.push_back(',');
+        out += std::to_string(cl.join_classes[i]);
+    }
+
+    std::vector<std::string> parts;
+    parts.reserve(cl.tables.size());
+    for (const auto &tp : cl.tables) {
+        if (tp.table == cl.target)
+            continue;
+        std::string p = tp.table;
+        p += "|cg=";
+        std::vector<std::string> cgs;
+        cgs.reserve(tp.class_groups.size());
+        for (const auto &cg : tp.class_groups) {
+            std::string s = std::to_string(cg.class_id);
+            s.push_back('[');
+            std::vector<int> cols = cg.col_idxs;
+            std::sort(cols.begin(), cols.end());
+            cols.erase(std::unique(cols.begin(), cols.end()), cols.end());
+            for (size_t i = 0; i < cols.size(); i++) {
+                if (i > 0) s.push_back(',');
+                s += std::to_string(cols[i]);
+            }
+            s.push_back(']');
+            cgs.push_back(std::move(s));
+        }
+        std::sort(cgs.begin(), cgs.end());
+        for (size_t i = 0; i < cgs.size(); i++) {
+            if (i > 0) p.push_back(';');
+            p += cgs[i];
+        }
+
+        p += "|pred=";
+        std::vector<std::string> preds;
+        preds.reserve(tp.predicates.size());
+        for (const auto &pred : tp.predicates) {
+            uint64_t ph = hash_token_bitset_words(pred.allowed);
+            std::string s = std::to_string(pred.col_idx);
+            s.push_back(':');
+            char hbuf[32];
+            snprintf(hbuf, sizeof(hbuf), "%016llx", (unsigned long long)ph);
+            s += hbuf;
+            preds.push_back(std::move(s));
+        }
+        std::sort(preds.begin(), preds.end());
+        for (size_t i = 0; i < preds.size(); i++) {
+            if (i > 0) p.push_back(';');
+            p += preds[i];
+        }
+        parts.push_back(std::move(p));
+    }
+    std::sort(parts.begin(), parts.end());
+    for (const auto &p : parts) {
+        out += "|";
+        out += p;
+    }
+    return out;
+}
+
+struct CachedClauseEval {
+    bool computed = false;
+    bool global_ok = false;
+    bool empty = true;
+    std::vector<TokenBitset> allowed;
+};
+
+struct ClauseEvalCache {
+    std::unordered_map<std::string, CachedClauseEval> clause_eval;
+    std::unordered_map<std::string, bool> table_witness;
+};
+
+static std::string table_witness_signature(const ClauseTablePlan &tp, const uint8 *rbits)
+{
+    std::string key = tp.table;
+    key += "|rb=" + std::to_string((unsigned long long)(uintptr_t)rbits);
+    key += "|pred=";
+    std::vector<std::string> preds;
+    preds.reserve(tp.predicates.size());
+    for (const auto &pred : tp.predicates) {
+        uint64_t ph = hash_token_bitset_words(pred.allowed);
+        std::string s = std::to_string(pred.col_idx);
+        s.push_back(':');
+        char hbuf[32];
+        snprintf(hbuf, sizeof(hbuf), "%016llx", (unsigned long long)ph);
+        s += hbuf;
+        preds.push_back(std::move(s));
+    }
+    std::sort(preds.begin(), preds.end());
+    for (size_t i = 0; i < preds.size(); i++) {
+        if (i > 0) key.push_back(';');
+        key += preds[i];
+    }
+    return key;
+}
+
 static bool has_magic(const ArtifactBlob &b, const char *magic, size_t n)
 {
     return b.data && b.len >= n && std::memcmp(b.data, magic, n) == 0;
@@ -1144,7 +1275,11 @@ static bool load_artifact_metadata(const PolicyArtifactC *arts, int art_count, L
             auto p = rest.find('/');
             if (p == std::string::npos) continue;
             std::string key = rest.substr(0, p) + "." + rest.substr(p + 1);
-            out->dict_sorted.insert(key);
+            std::string val((const char *)bb.data, bb.len);
+            std::string low = lower_str(trim_ws(val));
+            bool sorted = !(low.empty() || low == "0" || low == "off" || low == "false" || low == "no");
+            if (sorted)
+                out->dict_sorted.insert(key);
             continue;
         }
 
@@ -1874,8 +2009,16 @@ static bool compile_target_plan_factored(const std::string &target,
                     (errmsg("policy: failed to parse permissive AST target=%s ast=%s",
                             target.c_str(), perm_ast.c_str())));
         }
-        if (!append_clause_plans_from_ast(target, root, 4096, out, &tp.clauses))
-            return false;
+
+        // Keep permissive side as OR of components (no need to materialize one giant DNF term-set).
+        std::vector<const BoolAst *> perm_terms;
+        flatten_ast_by_op(root, AstType::OR, &perm_terms);
+        if (perm_terms.empty())
+            perm_terms.push_back(root);
+        for (const BoolAst *term : perm_terms) {
+            if (!append_clause_plans_from_ast(target, term, 4096, out, &tp.clauses))
+                return false;
+        }
     } else {
         // Postgres semantics: no permissive policy means deny-all.
         tp.deny_all = true;
@@ -1890,10 +2033,21 @@ static bool compile_target_plan_factored(const std::string &target,
                     (errmsg("policy: failed to parse restrictive AST target=%s ast=%s",
                             target.c_str(), rest_ast.c_str())));
         }
-        std::vector<ClausePlan> rest_clauses;
-        if (!append_clause_plans_from_ast(target, root, 4096, out, &rest_clauses))
-            return false;
-        tp.restrictive_clause_sets.push_back(std::move(rest_clauses));
+        // Critical: keep restrictive side as AND over components to avoid global
+        // DNF expansion across policy boundaries.
+        std::vector<const BoolAst *> rest_terms;
+        flatten_ast_by_op(root, AstType::AND, &rest_terms);
+        if (rest_terms.empty())
+            rest_terms.push_back(root);
+
+        tp.restrictive_clause_sets.clear();
+        tp.restrictive_clause_sets.reserve(rest_terms.size());
+        for (const BoolAst *term : rest_terms) {
+            std::vector<ClausePlan> rest_clauses;
+            if (!append_clause_plans_from_ast(target, term, 4096, out, &rest_clauses))
+                return false;
+            tp.restrictive_clause_sets.push_back(std::move(rest_clauses));
+        }
     }
 
     auto t_atoms1 = Clock::now();
@@ -2179,7 +2333,7 @@ static bool compute_table_support(const ClausePlan &cl,
                                   const TableData &ti,
                                   const std::vector<TokenBitset> &allowed,
                                   std::vector<TokenBitset> *support,
-                                  const std::unordered_map<std::string, const uint8 *> *restrict_bits,
+                                  const uint8 *row_mask,
                                   bool *table_has_any)
 {
     if (!support) return false;
@@ -2193,29 +2347,13 @@ static bool compute_table_support(const ClausePlan &cl,
         support->emplace_back(al.nbits);
     }
 
-    const uint8 *rbits = nullptr;
-    if (restrict_bits) {
-        auto it_rb = restrict_bits->find(tp.table);
-        if (it_rb != restrict_bits->end())
-            rbits = it_rb->second;
-    }
-
     bool any_row = false;
     std::vector<int32_t> toks(tp.class_groups.size(), -1);
 
     for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        if (rbits && !rid_bit_test(rbits, rid))
+        if (row_mask && !rid_bit_test(row_mask, rid))
             continue;
-
         bool ok = true;
-        for (const auto &pred : tp.predicates) {
-            if (!pred.col_data || rid >= pred.col_data->size()) return false;
-            int32_t tok = (*pred.col_data)[rid];
-            if (tok < 0) { ok = false; break; }
-            if (!pred.allowed.test((size_t)tok)) { ok = false; break; }
-        }
-        if (!ok)
-            continue;
 
         for (size_t g = 0; g < tp.class_groups.size(); g++) {
             const ClauseClassGroup &cg = tp.class_groups[g];
@@ -2251,7 +2389,7 @@ static bool compute_table_support_one(const ClauseTablePlan &tp,
                                       const std::vector<TokenBitset> &allowed,
                                       int class_pos,
                                       TokenBitset *out_support,
-                                      const uint8 *rbits)
+                                      const uint8 *row_mask)
 {
     if (!out_support || class_pos < 0 || class_pos >= (int)allowed.size())
         return false;
@@ -2272,18 +2410,9 @@ static bool compute_table_support_one(const ClauseTablePlan &tp,
     std::vector<int32_t> toks(tp.class_groups.size(), -1);
 
     for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        if (rbits && !rid_bit_test(rbits, rid))
+        if (row_mask && !rid_bit_test(row_mask, rid))
             continue;
-
         bool ok = true;
-        for (const auto &pred : tp.predicates) {
-            if (!pred.col_data || rid >= pred.col_data->size()) return false;
-            int32_t tok = (*pred.col_data)[rid];
-            if (tok < 0) { ok = false; break; }
-            if (!pred.allowed.test((size_t)tok)) { ok = false; break; }
-        }
-        if (!ok)
-            continue;
 
         for (size_t g = 0; g < tp.class_groups.size(); g++) {
             const ClauseClassGroup &cg = tp.class_groups[g];
@@ -2312,7 +2441,7 @@ static bool compute_table_support_one(const ClauseTablePlan &tp,
 static bool compute_unary_support(const ClauseTablePlan &tp,
                                   const TableData &ti,
                                   int class_pos,
-                                  const std::unordered_map<std::string, const uint8 *> *restrict_bits,
+                                  const uint8 *row_mask,
                                   TokenBitset *out_support,
                                   const std::vector<TokenBitset> &allowed)
 {
@@ -2324,29 +2453,13 @@ static bool compute_unary_support(const ClauseTablePlan &tp,
     if (cg.col_data.empty())
         return false;
 
-    const uint8 *rbits = nullptr;
-    if (restrict_bits) {
-        auto it_rb = restrict_bits->find(tp.table);
-        if (it_rb != restrict_bits->end())
-            rbits = it_rb->second;
-    }
-
     out_support->reset(allowed[class_pos].nbits);
     out_support->clear_all();
 
     for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        if (rbits && !rid_bit_test(rbits, rid))
+        if (row_mask && !rid_bit_test(row_mask, rid))
             continue;
-
         bool ok = true;
-        for (const auto &pred : tp.predicates) {
-            if (!pred.col_data || rid >= pred.col_data->size()) return false;
-            int32_t tok = (*pred.col_data)[rid];
-            if (tok < 0) { ok = false; break; }
-            if (!pred.allowed.test((size_t)tok)) { ok = false; break; }
-        }
-        if (!ok)
-            continue;
 
         int32_t tok = (*cg.col_data[0])[rid];
         if (tok < 0)
@@ -2509,6 +2622,57 @@ static bool propagate_clause(const ClausePlan &cl,
         profile->prop_table_scan_counts[table]++;
     };
 
+    std::unordered_map<const ClauseTablePlan *, const uint8 *> row_mask_cache;
+    row_mask_cache.reserve(cl.tables.size() * 2u);
+    std::unordered_map<const ClauseTablePlan *, std::vector<uint8_t>> row_mask_store;
+    row_mask_store.reserve(cl.tables.size() * 2u);
+    bool row_mask_error = false;
+
+    auto base_restrict_for_table = [&](const std::string &table) -> const uint8 * {
+        if (!restrict_bits)
+            return nullptr;
+        auto it_rb = restrict_bits->find(table);
+        if (it_rb == restrict_bits->end())
+            return nullptr;
+        return it_rb->second;
+    };
+
+    auto get_row_mask = [&](const ClauseTablePlan &tp, const TableData &ti) -> const uint8 * {
+        auto it = row_mask_cache.find(&tp);
+        if (it != row_mask_cache.end())
+            return it->second;
+
+        const uint8 *base = base_restrict_for_table(tp.table);
+        const uint8 *out_mask = base;
+
+        if (!tp.predicates.empty()) {
+            std::vector<uint8_t> &mask = row_mask_store[&tp];
+            mask.assign((ti.nrows + 7u) / 8u, 0);
+            for (uint32 rid = 0; rid < ti.nrows; rid++) {
+                if (base && !rid_bit_test(base, rid))
+                    continue;
+                bool ok = true;
+                for (const auto &pred : tp.predicates) {
+                    if (!pred.col_data || rid >= pred.col_data->size()) {
+                        row_mask_error = true;
+                        return nullptr;
+                    }
+                    int32_t tok = (*pred.col_data)[rid];
+                    if (tok < 0 || !pred.allowed.test((size_t)tok)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok)
+                    rid_bit_set(mask.data(), rid);
+            }
+            out_mask = mask.empty() ? nullptr : mask.data();
+        }
+
+        row_mask_cache.emplace(&tp, out_mask);
+        return out_mask;
+    };
+
     allowed_out->clear();
     allowed_out->reserve(cl.join_classes.size());
     for (int cid : cl.join_classes) {
@@ -2532,7 +2696,10 @@ static bool propagate_clause(const ClausePlan &cl,
         const TableData &ti = it_t->second;
         int class_pos = tp.class_groups[0].class_pos;
         TokenBitset unary;
-        if (!compute_unary_support(tp, ti, class_pos, restrict_bits, &unary, *allowed_out))
+        const uint8 *row_mask = get_row_mask(tp, ti);
+        if (row_mask_error)
+            return false;
+        if (!compute_unary_support(tp, ti, class_pos, row_mask, &unary, *allowed_out))
             return false;
         (void)(*allowed_out)[class_pos].intersect_with_changed(unary);
         if (!(*allowed_out)[class_pos].any()) {
@@ -2587,16 +2754,13 @@ static bool propagate_clause(const ClausePlan &cl,
                 const TableData &ti = *factor_data[(size_t)fi];
                 int pv = parent_fac[(size_t)fi];
 
-                const uint8 *rbits = nullptr;
-                if (restrict_bits) {
-                    auto it_rb = restrict_bits->find(tp.table);
-                    if (it_rb != restrict_bits->end())
-                        rbits = it_rb->second;
-                }
+                const uint8 *row_mask = get_row_mask(tp, ti);
+                if (row_mask_error)
+                    return false;
 
                 TokenBitset support;
                 record_factor_scan(tp.table);
-                if (!compute_table_support_one(tp, ti, *allowed_out, pv, &support, rbits))
+                if (!compute_table_support_one(tp, ti, *allowed_out, pv, &support, row_mask))
                     return false;
                 (void)(*allowed_out)[pv].intersect_with_changed(support);
                 if (!(*allowed_out)[pv].any()) {
@@ -2611,10 +2775,13 @@ static bool propagate_clause(const ClausePlan &cl,
                 const ClauseTablePlan &tp = *factors[(size_t)fi];
                 const TableData &ti = *factor_data[(size_t)fi];
                 int pv = parent_fac[(size_t)fi];
+                const uint8 *row_mask = get_row_mask(tp, ti);
+                if (row_mask_error)
+                    return false;
 
                 std::vector<TokenBitset> support;
                 record_factor_scan(tp.table);
-                if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
+                if (!compute_table_support(cl, tp, ti, *allowed_out, &support, row_mask, nullptr))
                     return false;
                 for (size_t g = 0; g < tp.class_groups.size(); g++) {
                     int v = tp.class_groups[g].class_pos;
@@ -2647,9 +2814,12 @@ static bool propagate_clause(const ClausePlan &cl,
         for (size_t i = 0; i < factors.size(); i++) {
             const ClauseTablePlan &tp = *factors[i];
             const TableData &ti = *factor_data[i];
+            const uint8 *row_mask = get_row_mask(tp, ti);
+            if (row_mask_error)
+                return false;
             std::vector<TokenBitset> support;
             record_factor_scan(tp.table);
-            if (!compute_table_support(cl, tp, ti, *allowed_out, &support, restrict_bits, nullptr))
+            if (!compute_table_support(cl, tp, ti, *allowed_out, &support, row_mask, nullptr))
                 return false;
             for (size_t g = 0; g < tp.class_groups.size(); g++) {
                 int v = tp.class_groups[g].class_pos;
@@ -2682,7 +2852,8 @@ static bool propagate_clause(const ClausePlan &cl,
 
 static bool table_has_predicate_witness(const ClauseTablePlan &tp,
                                         const TableData &ti,
-                                        const std::unordered_map<std::string, const uint8 *> *restrict_bits)
+                                        const std::unordered_map<std::string, const uint8 *> *restrict_bits,
+                                        std::unordered_map<std::string, bool> *witness_cache = nullptr)
 {
     const uint8 *rbits = nullptr;
     if (restrict_bits) {
@@ -2690,11 +2861,25 @@ static bool table_has_predicate_witness(const ClauseTablePlan &tp,
         if (it_rb != restrict_bits->end())
             rbits = it_rb->second;
     }
-    for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        if (row_matches_table_predicates_only(tp, rid, rbits))
-            return true;
+
+    std::string cache_key;
+    if (witness_cache) {
+        cache_key = table_witness_signature(tp, rbits);
+        auto it = witness_cache->find(cache_key);
+        if (it != witness_cache->end())
+            return it->second;
     }
-    return false;
+
+    bool found = false;
+    for (uint32 rid = 0; rid < ti.nrows; rid++) {
+        if (row_matches_table_predicates_only(tp, rid, rbits)) {
+            found = true;
+            break;
+        }
+    }
+    if (witness_cache)
+        (*witness_cache)[cache_key] = found;
+    return found;
 }
 
 static bool build_rid_bits_for_target_local_formula(const TargetPlan &tp,
@@ -2937,7 +3122,8 @@ static bool build_target_allow_list(const Loaded &loaded,
                                     PolicyTableAllowC *out_item,
                                     BuildProfile *profile,
                                     const std::unordered_map<std::string, const uint8 *> *restrict_bits = nullptr,
-                                    std::vector<uint8_t> *out_rid_bits = nullptr)
+                                    std::vector<uint8_t> *out_rid_bits = nullptr,
+                                    ClauseEvalCache *shared_cache = nullptr)
 {
     if (!out_item || !profile)
         return false;
@@ -2949,6 +3135,8 @@ static bool build_target_allow_list(const Loaded &loaded,
     }
     const TableData &target_ti = it_t->second;
     std::vector<uint8_t> final_bits((target_ti.nrows + 7u) / 8u, 0);
+    ClauseEvalCache local_cache;
+    ClauseEvalCache *eval_cache = shared_cache ? shared_cache : &local_cache;
 
     size_t total_clause_plans = tp.clauses.size();
     for (const auto &clset : tp.restrictive_clause_sets)
@@ -3023,7 +3211,10 @@ static bool build_target_allow_list(const Loaded &loaded,
                             break;
                         }
                     } else {
-                        if (!table_has_predicate_witness(tp_tbl, ti, restrict_bits)) {
+                        if (!table_has_predicate_witness(tp_tbl,
+                                                         ti,
+                                                         restrict_bits,
+                                                         &eval_cache->table_witness)) {
                             clause_global_ok = false;
                             break;
                         }
@@ -3069,51 +3260,65 @@ static bool build_target_allow_list(const Loaded &loaded,
                 continue;
             }
 
-            std::vector<TokenBitset> allowed;
-            int iters = 0;
-            double ms_prop = 0.0;
-            if (!propagate_clause(cl, loaded, &allowed, &iters, restrict_bits, &ms_prop, profile))
-                return false;
-            profile->propagate_ms += ms_prop;
-            profile->prop_iters += iters;
-
-            bool empty = false;
-            for (const auto &b : allowed) {
-                if (!b.any()) {
-                    empty = true;
-                    break;
-                }
-            }
-            if (empty)
-                continue;
-
-            // Global predicate-only tables (no join columns) must have at least one witness row,
-            // otherwise the clause is unsatisfiable regardless of the target row.
-            bool clause_global_ok = true;
-            for (const auto &tp_tbl : cl.tables) {
-                if (!tp_tbl.class_groups.empty())
-                    continue;
-                if (tp_tbl.table == cl.target)
-                    continue;  // target-local predicates checked per-row below.
-
-                auto it_t = loaded.tables.find(tp_tbl.table);
-                if (it_t == loaded.tables.end())
+            const std::string eval_sig = clause_non_target_eval_signature(cl);
+            CachedClauseEval *ce = nullptr;
+            auto it_ce = eval_cache->clause_eval.find(eval_sig);
+            if (it_ce == eval_cache->clause_eval.end()) {
+                CachedClauseEval fresh;
+                int iters = 0;
+                double ms_prop = 0.0;
+                if (!propagate_clause(cl, loaded, &fresh.allowed, &iters, restrict_bits, &ms_prop, profile))
                     return false;
-                const TableData &ti = it_t->second;
+                profile->propagate_ms += ms_prop;
+                profile->prop_iters += iters;
 
-                if (tp_tbl.predicates.empty()) {
-                    if (ti.nrows == 0) {
-                        clause_global_ok = false;
-                        break;
-                    }
-                } else {
-                    if (!table_has_predicate_witness(tp_tbl, ti, restrict_bits)) {
-                        clause_global_ok = false;
+                fresh.empty = false;
+                for (const auto &b : fresh.allowed) {
+                    if (!b.any()) {
+                        fresh.empty = true;
                         break;
                     }
                 }
+
+                fresh.global_ok = !fresh.empty;
+                if (fresh.global_ok) {
+                    // Global predicate-only tables (no join columns) must have at least one witness row,
+                    // otherwise the clause is unsatisfiable regardless of the target row.
+                    for (const auto &tp_tbl : cl.tables) {
+                        if (!tp_tbl.class_groups.empty())
+                            continue;
+                        if (tp_tbl.table == cl.target)
+                            continue;  // target-local predicates checked per-row below.
+
+                        auto it_t = loaded.tables.find(tp_tbl.table);
+                        if (it_t == loaded.tables.end())
+                            return false;
+                        const TableData &ti = it_t->second;
+
+                        if (tp_tbl.predicates.empty()) {
+                            if (ti.nrows == 0) {
+                                fresh.global_ok = false;
+                                break;
+                            }
+                        } else {
+                            if (!table_has_predicate_witness(tp_tbl,
+                                                             ti,
+                                                             restrict_bits,
+                                                             &eval_cache->table_witness)) {
+                                fresh.global_ok = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                fresh.computed = true;
+                auto ins = eval_cache->clause_eval.emplace(eval_sig, std::move(fresh));
+                ce = &ins.first->second;
+            } else {
+                ce = &it_ce->second;
             }
-            if (!clause_global_ok)
+
+            if (!ce || !ce->computed || !ce->global_ok || ce->empty)
                 continue;
 
             if (!cl.target_present) {
@@ -3134,7 +3339,7 @@ static bool build_target_allow_list(const Loaded &loaded,
 
             JoinClauseEval je;
             je.target_tp = target_tp;
-            je.allowed = std::move(allowed);
+            je.allowed = ce->allowed;
             join_evals.push_back(std::move(je));
         }
 
@@ -3778,7 +3983,8 @@ static bool build_target_allow_list(const Loaded &loaded,
                                              &tmp_item,
                                              profile,
                                              restrict_bits,
-                                             &rest_bits)) {
+                                             &rest_bits,
+                                             eval_cache)) {
                     return false;
                 }
                 if (tmp_item.block_words)
