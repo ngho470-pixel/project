@@ -9,6 +9,8 @@
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 #include "utils/timestamp.h"
+#include "utils/date.h"
+#include "utils/varlena.h"
 #include "lib/stringinfo.h"
 #include "access/htup_details.h"
 #include "access/table.h"
@@ -85,12 +87,23 @@ typedef struct {
     HTAB *tok_map;
     int32 next_tok;
     Oid typid;
+    bool uses_join_map;
+    int join_class_id;
 } ConstColumn;
+
+typedef enum {
+    DICT_KEY_TEXT = 0,
+    DICT_KEY_INT64 = 1,
+    DICT_KEY_BYTES = 2
+} DictKeyKind;
 
 typedef struct DictTokEntry DictTokEntry;
 struct DictTokEntry {
     uint64 hkey;
     int32 tok;
+    int32 blen;
+    DictKeyKind key_kind;
+    int64 ival;
     char *val;
     DictTokEntry *next;
 };
@@ -197,18 +210,31 @@ static inline double elapsed_ms(TimestampTz t0)
     return ((double) (GetCurrentTimestamp() - t0)) / 1000.0;
 }
 
-static void insert_file(const char *name, bytea *data) {
+static SPIPlanPtr g_insert_file_plan = NULL;
+
+static void prepare_insert_file_plan(void)
+{
     Oid argtypes[2] = {TEXTOID, BYTEAOID};
+    SPIPlanPtr plan = SPI_prepare(
+        "INSERT INTO public.files (name, file) VALUES ($1, $2)",
+        2, argtypes);
+    if (!plan)
+        ereport(ERROR, (errmsg("artifact_builder: SPI_prepare insert plan failed")));
+    g_insert_file_plan = SPI_saveplan(plan);
+    SPI_freeplan(plan);
+    if (!g_insert_file_plan)
+        ereport(ERROR, (errmsg("artifact_builder: SPI_saveplan insert plan failed")));
+}
+
+static void insert_file(const char *name, bytea *data) {
     Datum values[2];
     char nulls[2] = {' ', ' '};
+    if (!g_insert_file_plan)
+        ereport(ERROR, (errmsg("artifact_builder: insert plan not initialized")));
     values[0] = CStringGetTextDatum(name);
     values[1] = PointerGetDatum(data);
-    int ret = SPI_execute_with_args(
-        "INSERT INTO public.files (name, file) "
-        "VALUES ($1, $2) "
-        "ON CONFLICT (name) DO UPDATE SET file = EXCLUDED.file",
-        2, argtypes, values, nulls, false, 0);
-    if (ret != SPI_OK_INSERT && ret != SPI_OK_UPDATE)
+    int ret = SPI_execute_plan(g_insert_file_plan, values, nulls, false, 0);
+    if (ret != SPI_OK_INSERT)
         ereport(ERROR, (errmsg("failed to insert file %s", name)));
 }
 
@@ -320,9 +346,52 @@ static const char *dict_type_label_for_oid(Oid typid) {
     return "text";
 }
 
-static uint64 dict_hash_key(const char *val) {
+static uint64 dict_hash_key_text(const char *val) {
     if (!val) return 0;
     return hash_bytes_extended((const unsigned char *)val, strlen(val), 0);
+}
+
+static uint64 dict_hash_key_bytes(const char *data, int32 len)
+{
+    if (!data || len <= 0)
+        return 0;
+    return hash_bytes_extended((const unsigned char *) data, (size_t) len, 0);
+}
+
+static uint64 dict_hash_key_int64(int64 ival)
+{
+    return hash_bytes_extended((const unsigned char *) &ival, sizeof(int64), 0);
+}
+
+static inline bool dict_typid_uses_intkey(Oid typid)
+{
+    return typid == INT2OID || typid == INT4OID || typid == INT8OID ||
+           typid == OIDOID || typid == DATEOID;
+}
+
+static inline int64 dict_datum_to_intkey(Oid typid, Datum v)
+{
+    switch (typid) {
+        case INT2OID:
+            return (int64) DatumGetInt16(v);
+        case INT4OID:
+            return (int64) DatumGetInt32(v);
+        case INT8OID:
+            return (int64) DatumGetInt64(v);
+        case OIDOID:
+            return (int64) DatumGetObjectId(v);
+        case DATEOID:
+            return (int64) DatumGetDateADT(v);
+        default:
+            ereport(ERROR, (errmsg("artifact_builder: unsupported int-key typid=%u", typid)));
+    }
+    return 0;
+}
+
+static inline bool dict_typid_uses_bytekey(Oid typid)
+{
+    return typid == TEXTOID || typid == VARCHAROID ||
+           typid == BPCHAROID || typid == NUMERICOID;
 }
 
 static HTAB *dict_map_create(const char *name, long est_rows, MemoryContext mcxt) {
@@ -335,14 +404,14 @@ static HTAB *dict_map_create(const char *name, long est_rows, MemoryContext mcxt
     return hash_create(name, est_rows, &ctl, HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 }
 
-static int32 dict_map_get_or_insert(HTAB *map,
-                                    MemoryContext mcxt,
-                                    const char *val,
-                                    int32 *next_tok,
-                                    bool *out_inserted)
+static int32 dict_map_get_or_insert_text(HTAB *map,
+                                         MemoryContext mcxt,
+                                         const char *val,
+                                         int32 *next_tok,
+                                         bool *out_inserted)
 {
     bool found = false;
-    uint64 hkey = dict_hash_key(val);
+    uint64 hkey = dict_hash_key_text(val);
     DictTokEntry *head = (DictTokEntry *) hash_search(map, &hkey, HASH_ENTER, &found);
     if (!head)
         ereport(ERROR, (errmsg("artifact_builder: hash insert failed")));
@@ -352,6 +421,9 @@ static int32 dict_map_get_or_insert(HTAB *map,
         (*next_tok)++;
         head->hkey = hkey;
         head->tok = tok;
+        head->blen = val ? (int32) strlen(val) : 0;
+        head->key_kind = DICT_KEY_TEXT;
+        head->ival = 0;
         head->val = MemoryContextStrdup(mcxt, val);
         head->next = NULL;
         if (out_inserted) *out_inserted = true;
@@ -359,7 +431,7 @@ static int32 dict_map_get_or_insert(HTAB *map,
     }
 
     for (DictTokEntry *cur = head; cur; cur = cur->next) {
-        if (strcmp(cur->val, val) == 0) {
+        if (cur->key_kind == DICT_KEY_TEXT && cur->val && strcmp(cur->val, val) == 0) {
             if (out_inserted) *out_inserted = false;
             return cur->tok;
         }
@@ -369,6 +441,9 @@ static int32 dict_map_get_or_insert(HTAB *map,
             DictTokEntry *extra = (DictTokEntry *) MemoryContextAlloc(mcxt, sizeof(DictTokEntry));
             extra->hkey = hkey;
             extra->tok = tok;
+            extra->blen = val ? (int32) strlen(val) : 0;
+            extra->key_kind = DICT_KEY_TEXT;
+            extra->ival = 0;
             extra->val = MemoryContextStrdup(mcxt, val);
             extra->next = NULL;
             cur->next = extra;
@@ -377,18 +452,137 @@ static int32 dict_map_get_or_insert(HTAB *map,
         }
     }
 
-    ereport(ERROR, (errmsg("artifact_builder: unreachable in dict_map_get_or_insert")));
+    ereport(ERROR, (errmsg("artifact_builder: unreachable in dict_map_get_or_insert_text")));
     return -1;
 }
 
-static void write_dict_from_map(const char *name, HTAB *map, int32 n_tokens)
+static int32 dict_map_get_or_insert_int64(HTAB *map,
+                                          MemoryContext mcxt,
+                                          int64 ival,
+                                          int32 *next_tok,
+                                          bool *out_inserted)
+{
+    bool found = false;
+    uint64 hkey = dict_hash_key_int64(ival);
+    DictTokEntry *head = (DictTokEntry *) hash_search(map, &hkey, HASH_ENTER, &found);
+    if (!head)
+        ereport(ERROR, (errmsg("artifact_builder: hash insert failed")));
+
+    if (!found) {
+        int32 tok = *next_tok;
+        (*next_tok)++;
+        head->hkey = hkey;
+        head->tok = tok;
+        head->blen = 0;
+        head->key_kind = DICT_KEY_INT64;
+        head->ival = ival;
+        head->val = NULL;
+        head->next = NULL;
+        if (out_inserted) *out_inserted = true;
+        return tok;
+    }
+
+    for (DictTokEntry *cur = head; cur; cur = cur->next) {
+        if (cur->key_kind == DICT_KEY_INT64 && cur->ival == ival) {
+            if (out_inserted) *out_inserted = false;
+            return cur->tok;
+        }
+        if (!cur->next) {
+            int32 tok = *next_tok;
+            (*next_tok)++;
+            DictTokEntry *extra = (DictTokEntry *) MemoryContextAlloc(mcxt, sizeof(DictTokEntry));
+            extra->hkey = hkey;
+            extra->tok = tok;
+            extra->blen = 0;
+            extra->key_kind = DICT_KEY_INT64;
+            extra->ival = ival;
+            extra->val = NULL;
+            extra->next = NULL;
+            cur->next = extra;
+            if (out_inserted) *out_inserted = true;
+            return tok;
+        }
+    }
+
+    ereport(ERROR, (errmsg("artifact_builder: unreachable in dict_map_get_or_insert_int64")));
+    return -1;
+}
+
+static int32 dict_map_get_or_insert_bytes(HTAB *map,
+                                          MemoryContext mcxt,
+                                          const char *data,
+                                          int32 len,
+                                          int32 *next_tok,
+                                          bool *out_inserted)
+{
+    bool found = false;
+    uint64 hkey = dict_hash_key_bytes(data, len);
+    DictTokEntry *head = (DictTokEntry *) hash_search(map, &hkey, HASH_ENTER, &found);
+    if (!head)
+        ereport(ERROR, (errmsg("artifact_builder: hash insert failed")));
+
+    if (!found) {
+        int32 tok = *next_tok;
+        (*next_tok)++;
+        head->hkey = hkey;
+        head->tok = tok;
+        head->blen = len;
+        head->key_kind = DICT_KEY_BYTES;
+        head->ival = 0;
+        if (len > 0) {
+            head->val = (char *) MemoryContextAlloc(mcxt, (size_t) len + 1);
+            memcpy(head->val, data, (size_t) len);
+            head->val[len] = '\0';
+        } else {
+            head->val = NULL;
+        }
+        head->next = NULL;
+        if (out_inserted) *out_inserted = true;
+        return tok;
+    }
+
+    for (DictTokEntry *cur = head; cur; cur = cur->next) {
+        if (cur->key_kind == DICT_KEY_BYTES && cur->blen == len) {
+            if (len == 0 || (cur->val && data && memcmp(cur->val, data, (size_t) len) == 0)) {
+                if (out_inserted) *out_inserted = false;
+                return cur->tok;
+            }
+        }
+        if (!cur->next) {
+            int32 tok = *next_tok;
+            (*next_tok)++;
+            DictTokEntry *extra = (DictTokEntry *) MemoryContextAlloc(mcxt, sizeof(DictTokEntry));
+            extra->hkey = hkey;
+            extra->tok = tok;
+            extra->blen = len;
+            extra->key_kind = DICT_KEY_BYTES;
+            extra->ival = 0;
+            if (len > 0) {
+                extra->val = (char *) MemoryContextAlloc(mcxt, (size_t) len + 1);
+                memcpy(extra->val, data, (size_t) len);
+                extra->val[len] = '\0';
+            } else {
+                extra->val = NULL;
+            }
+            extra->next = NULL;
+            cur->next = extra;
+            if (out_inserted) *out_inserted = true;
+            return tok;
+        }
+    }
+
+    ereport(ERROR, (errmsg("artifact_builder: unreachable in dict_map_get_or_insert_bytes")));
+    return -1;
+}
+
+static void write_dict_from_map(const char *name, HTAB *map, int32 n_tokens, Oid dict_typid)
 {
     if (!name || !map || n_tokens < 0)
         ereport(ERROR, (errmsg("artifact_builder: invalid write_dict_from_map args")));
 
-    char **vals = NULL;
+    DictTokEntry **vals = NULL;
     if (n_tokens > 0)
-        vals = (char **) palloc0(sizeof(char *) * (size_t) n_tokens);
+        vals = (DictTokEntry **) palloc0(sizeof(DictTokEntry *) * (size_t) n_tokens);
 
     HASH_SEQ_STATUS seq;
     hash_seq_init(&seq, map);
@@ -397,17 +591,63 @@ static void write_dict_from_map(const char *name, HTAB *map, int32 n_tokens)
         for (DictTokEntry *cur = head; cur; cur = cur->next) {
             if (cur->tok < 0 || cur->tok >= n_tokens)
                 ereport(ERROR, (errmsg("artifact_builder: dict token out of range tok=%d n=%d", cur->tok, n_tokens)));
-            vals[cur->tok] = cur->val;
+            vals[cur->tok] = cur;
         }
     }
 
+    Oid typed_out_func = InvalidOid;
+    bool typed_out_varlena = false;
+    if (dict_typid == DATEOID || dict_typid == NUMERICOID)
+        getTypeOutputInfo(dict_typid, &typed_out_func, &typed_out_varlena);
+    (void) typed_out_varlena;
+
     ByteaBuilder *bb = bb_create();
     for (int32 tok = 0; tok < n_tokens; tok++) {
-        char *val = vals ? vals[tok] : NULL;
-        int32 len = val ? (int32) strlen(val) : 0;
+        DictTokEntry *ent = vals ? vals[tok] : NULL;
+        const char *val = NULL;
+        char intbuf[64];
+        int32 len = 0;
+        char *tmp_out = NULL;
+        struct varlena *tmp_num = NULL;
+
+        if (ent) {
+            if (ent->key_kind == DICT_KEY_TEXT) {
+                val = ent->val ? ent->val : "";
+                len = (int32) strlen(val);
+            } else if (ent->key_kind == DICT_KEY_INT64) {
+                if (dict_typid == DATEOID) {
+                    tmp_out = OidOutputFunctionCall(typed_out_func, DateADTGetDatum((DateADT) ent->ival));
+                    val = tmp_out ? tmp_out : "";
+                    len = (int32) strlen(val);
+                } else {
+                    len = (int32) snprintf(intbuf, sizeof(intbuf), "%lld", (long long) ent->ival);
+                    if (len < 0)
+                        len = 0;
+                    val = intbuf;
+                }
+            } else if (ent->key_kind == DICT_KEY_BYTES) {
+                if (dict_typid == NUMERICOID) {
+                    tmp_num = (struct varlena *) palloc((size_t) ent->blen + VARHDRSZ);
+                    SET_VARSIZE(tmp_num, (size_t) ent->blen + VARHDRSZ);
+                    if (ent->blen > 0)
+                        memcpy(VARDATA(tmp_num), ent->val, (size_t) ent->blen);
+                    tmp_out = OidOutputFunctionCall(typed_out_func, PointerGetDatum(tmp_num));
+                    val = tmp_out ? tmp_out : "";
+                    len = (int32) strlen(val);
+                } else {
+                    val = ent->val ? ent->val : "";
+                    len = ent->blen > 0 ? ent->blen : 0;
+                }
+            }
+        }
+
         bb_append_int32(bb, len);
         if (len > 0)
             bb_append_bytes(bb, val, (size_t) len);
+        if (tmp_out)
+            pfree(tmp_out);
+        if (tmp_num)
+            pfree(tmp_num);
     }
     insert_file(name, bb_to_bytea(bb));
     bb_free(bb);
@@ -445,12 +685,10 @@ Datum build_base(PG_FUNCTION_ARGS) {
     SPI_execute("SET LOCAL search_path TO public, pg_catalog", false, 0);
     SPI_execute("SET LOCAL synchronous_commit TO off", false, 0);
     SPI_execute("CREATE TABLE IF NOT EXISTS public.files (name text, file bytea)", false, 0);
-    SPI_execute(
-        "DELETE FROM public.files f "
-        "USING public.files f2 "
-        "WHERE f.name = f2.name AND f.ctid < f2.ctid",
-        false, 0);
-    SPI_execute("CREATE UNIQUE INDEX IF NOT EXISTS files_name_uidx ON public.files(name)", false, 0);
+    SPI_execute("TRUNCATE TABLE public.files", false, 0);
+    SPI_execute("DROP INDEX IF EXISTS files_name_uidx", false, 0);
+    g_insert_file_plan = NULL;
+    prepare_insert_file_plan();
 
     int join_atom_count = 0;
     int *col_class = NULL;
@@ -706,13 +944,27 @@ Datum build_base(PG_FUNCTION_ARGS) {
         const_cols[n_const].col = const_cols_list.items[i];
         const_cols[n_const].typid = column_type_oid(const_cols[n_const].col.table,
                                                     const_cols[n_const].col.column);
-        size_t est_rows = estimate_table_rows(const_cols[n_const].col.table);
-        if (est_rows > (size_t) LONG_MAX)
-            est_rows = (size_t) LONG_MAX;
-        char map_name[NAMEDATALEN * 2];
-        snprintf(map_name, sizeof(map_name), "const_tok_map_%d", n_const);
-        const_cols[n_const].tok_map = dict_map_create(map_name, (long) est_rows, build_mcxt);
-        const_cols[n_const].next_tok = 0;
+        const_cols[n_const].uses_join_map = false;
+        const_cols[n_const].join_class_id = -1;
+
+        int col_idx = column_index(&cols,
+                                   const_cols[n_const].col.table,
+                                   const_cols[n_const].col.column);
+        int cid = (col_idx >= 0 && col_class && col_idx < col_class_cap) ? col_class[col_idx] : -1;
+        if (col_idx >= 0 && is_join_col[col_idx] && cid >= 0) {
+            const_cols[n_const].uses_join_map = true;
+            const_cols[n_const].join_class_id = cid;
+            const_cols[n_const].tok_map = classes[cid].tok_map;
+            const_cols[n_const].next_tok = 0;
+        } else {
+            size_t est_rows = estimate_table_rows(const_cols[n_const].col.table);
+            if (est_rows > (size_t) LONG_MAX)
+                est_rows = (size_t) LONG_MAX;
+            char map_name[NAMEDATALEN * 2];
+            snprintf(map_name, sizeof(map_name), "const_tok_map_%d", n_const);
+            const_cols[n_const].tok_map = dict_map_create(map_name, (long) est_rows, build_mcxt);
+            const_cols[n_const].next_tok = 0;
+        }
         n_const++;
     }
 
@@ -856,35 +1108,60 @@ Datum build_base(PG_FUNCTION_ARGS) {
                 Datum v = slot_getattr(slot, tokcols[i].attnum, &isnull);
                 int32 tval = -1;
                 if (!isnull) {
-                    char *txt = OidOutputFunctionCall(tokcols[i].typoutput, v);
-                    if (txt) {
+                    int32 *next_tok_ptr = NULL;
+                    if (tokcols[i].is_join) {
+                        int jc = tokcols[i].join_class_id;
+                        if (jc < 0 || jc >= nclasses)
+                            ereport(ERROR, (errmsg("invalid join class index %d", jc)));
+                        next_tok_ptr = &classes[jc].next_tok;
+                    } else {
+                        int ci = tokcols[i].const_col_idx;
+                        if (ci < 0 || ci >= n_const)
+                            ereport(ERROR, (errmsg("invalid const column index %d", ci)));
+                        next_tok_ptr = &const_cols[ci].next_tok;
+                    }
+
+                    if (dict_typid_uses_intkey(tokcols[i].typid)) {
+                        int64 ikey = dict_datum_to_intkey(tokcols[i].typid, v);
+                        tval = dict_map_get_or_insert_int64(tokcols[i].tok_map,
+                                                            build_mcxt,
+                                                            ikey,
+                                                            next_tok_ptr,
+                                                            NULL);
+                    } else if (dict_typid_uses_bytekey(tokcols[i].typid)) {
+                        struct varlena *vl_orig = (struct varlena *) DatumGetPointer(v);
+                        struct varlena *vl = PG_DETOAST_DATUM_PACKED(v);
+                        const char *bytes = VARDATA_ANY(vl);
+                        int32 blen = (int32) VARSIZE_ANY_EXHDR(vl);
                         if (tokcols[i].typid == BPCHAROID) {
-                            size_t n = strlen(txt);
-                            while (n > 0 && txt[n - 1] == ' ') {
-                                txt[n - 1] = '\0';
-                                n--;
+                            while (blen > 0 && bytes[blen - 1] == ' ')
+                                blen--;
+                        }
+                        tval = dict_map_get_or_insert_bytes(tokcols[i].tok_map,
+                                                            build_mcxt,
+                                                            bytes,
+                                                            blen,
+                                                            next_tok_ptr,
+                                                            NULL);
+                        if (vl != vl_orig)
+                            pfree(vl);
+                    } else {
+                        char *txt = OidOutputFunctionCall(tokcols[i].typoutput, v);
+                        if (txt) {
+                            if (tokcols[i].typid == BPCHAROID) {
+                                size_t n = strlen(txt);
+                                while (n > 0 && txt[n - 1] == ' ') {
+                                    txt[n - 1] = '\0';
+                                    n--;
+                                }
                             }
+                            tval = dict_map_get_or_insert_text(tokcols[i].tok_map,
+                                                               build_mcxt,
+                                                               txt,
+                                                               next_tok_ptr,
+                                                               NULL);
+                            pfree(txt);
                         }
-                        if (tokcols[i].is_join) {
-                            int jc = tokcols[i].join_class_id;
-                            if (jc < 0 || jc >= nclasses)
-                                ereport(ERROR, (errmsg("invalid join class index %d", jc)));
-                            tval = dict_map_get_or_insert(tokcols[i].tok_map,
-                                                          build_mcxt,
-                                                          txt,
-                                                          &classes[jc].next_tok,
-                                                          NULL);
-                        } else {
-                            int ci = tokcols[i].const_col_idx;
-                            if (ci < 0 || ci >= n_const)
-                                ereport(ERROR, (errmsg("invalid const column index %d", ci)));
-                            tval = dict_map_get_or_insert(tokcols[i].tok_map,
-                                                          build_mcxt,
-                                                          txt,
-                                                          &const_cols[ci].next_tok,
-                                                          NULL);
-                        }
-                        pfree(txt);
                     }
                 }
                 row_tokens[i] = tval;
@@ -947,7 +1224,14 @@ Datum build_base(PG_FUNCTION_ARGS) {
         char dict_name[NAMEDATALEN * 3];
         snprintf(dict_name, sizeof(dict_name), "dict/%s/%s",
                  const_cols[i].col.table, const_cols[i].col.column);
-        write_dict_from_map(dict_name, const_cols[i].tok_map, const_cols[i].next_tok);
+        int32 ntoks = const_cols[i].next_tok;
+        if (const_cols[i].uses_join_map) {
+            int cid = const_cols[i].join_class_id;
+            if (cid < 0 || cid >= nclasses)
+                ereport(ERROR, (errmsg("invalid const join class %d", cid)));
+            ntoks = classes[cid].next_tok;
+        }
+        write_dict_from_map(dict_name, const_cols[i].tok_map, ntoks, const_cols[i].typid);
 
         char dtype_name[NAMEDATALEN * 3];
         snprintf(dtype_name, sizeof(dtype_name), "meta/dict_type/%s/%s",
@@ -958,14 +1242,21 @@ Datum build_base(PG_FUNCTION_ARGS) {
         snprintf(sorted_name, sizeof(sorted_name), "meta/dict_sorted/%s/%s",
                  const_cols[i].col.table, const_cols[i].col.column);
         insert_file_text(sorted_name, "0");
+
         elog(NOTICE,
              "artifact_builder: const_dict table=%s col=%s tokens=%d sorted=0 ms=%.3f",
              const_cols[i].col.table, const_cols[i].col.column,
-             const_cols[i].next_tok, elapsed_ms(dict_t0));
+             ntoks, elapsed_ms(dict_t0));
     }
 
     elog(NOTICE, "artifact_builder: total_ms=%.3f tables=%d join_classes=%d const_cols=%d",
          elapsed_ms(build_t0), tables.count, nclasses, n_const);
+
+    if (g_insert_file_plan) {
+        SPI_freeplan(g_insert_file_plan);
+        g_insert_file_plan = NULL;
+    }
+    SPI_execute("CREATE UNIQUE INDEX IF NOT EXISTS files_name_uidx ON public.files(name)", false, 0);
 
     MemoryContextDelete(build_mcxt);
     SPI_finish();
