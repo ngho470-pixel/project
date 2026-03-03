@@ -1835,9 +1835,7 @@ cf_executor_start(QueryDesc *queryDesc, int eflags)
         qs->query_short_circuit_decided = true;
         qs->query_short_circuit_reason[0] = '\0';
 
-        if (!cf_runtime_strict_mode_enabled())
-            reason = "strict_mode_off";
-        else if (!any_empty)
+        if (!any_empty)
             reason = "no_empty_allow";
         else
         {
@@ -3171,12 +3169,11 @@ cf_scan_slot(PlanState *child, TupleTableSlot *fallback)
 static bool
 cf_runtime_strict_mode_enabled(void)
 {
-    const char *g = GetConfigOption("custom_filter.strict_mode", true, false);
-    if (!g)
-        return false;
-    if (pg_strcasecmp(g, "on") == 0 || strcmp(g, "1") == 0 || pg_strcasecmp(g, "true") == 0)
-        return true;
-    return false;
+    /*
+     * Class-engine-only runtime: once the extension is enabled for a session,
+     * strict routing is always active.
+     */
+    return true;
 }
 
 static bool
@@ -3373,10 +3370,6 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
         else if (!cf_tidscan_seqscan)
         {
             reason = "tidscan_disabled";
-        }
-        else if (!cf_runtime_strict_mode_enabled())
-        {
-            reason = "strict_mode_off";
         }
         else if (!child)
         {

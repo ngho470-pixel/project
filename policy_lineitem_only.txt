@@ -1,1 +1,0 @@
-lineitem : lineitem.l_shipmode IN ('MAIL','SHIP')

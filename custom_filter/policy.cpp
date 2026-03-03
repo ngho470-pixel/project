@@ -171,31 +171,11 @@ static inline void rid_bit_set(uint8 *bits, uint32 rid)
 
 static bool policy_runtime_strict_mode_enabled()
 {
-    auto norm = [](const char *s) -> std::string {
-        if (!s) return "";
-        std::string v(s);
-        size_t b = 0;
-        while (b < v.size() && std::isspace((unsigned char)v[b])) b++;
-        size_t e = v.size();
-        while (e > b && std::isspace((unsigned char)v[e - 1])) e--;
-        v = v.substr(b, e - b);
-        for (char &c : v)
-            c = (char)std::tolower((unsigned char)c);
-        return v;
-    };
-    const char *g = GetConfigOption("custom_filter.strict_mode", true, false);
-    if (g && g[0]) {
-        std::string s = norm(g);
-        if (s == "on" || s == "true" || s == "1" || s == "yes")
-            return true;
-        if (s == "off" || s == "false" || s == "0" || s == "no")
-            return false;
-    }
-    const char *e = std::getenv("CF_POLICY_STRICT_MODE");
-    if (!e || !e[0])
-        return false;
-    std::string s = norm(e);
-    return (s == "1" || s == "on" || s == "true" || s == "yes");
+    /*
+     * Class-engine-only runtime: when policy evaluation is invoked, strict
+     * semantics are always enforced.
+     */
+    return true;
 }
 
 static bytea *
@@ -8067,15 +8047,8 @@ static inline int class_td_width_limit()
 static inline bool class_td_reduction_enabled()
 {
     const char *g = GetConfigOption("custom_filter.class_td_reduction", true, false);
-    if (!g || !g[0]) {
-        const char *sm = GetConfigOption("custom_filter.strict_mode", true, false);
-        if (sm && sm[0]) {
-            std::string v = lower_str(trim_ws(sm));
-            if (!(v.empty() || v == "0" || v == "off" || v == "false" || v == "no"))
-                return true;
-        }
-        return false;
-    }
+    if (!g || !g[0])
+        return true; // class-engine default
     std::string v = lower_str(trim_ws(g));
     return !(v.empty() || v == "0" || v == "off" || v == "false" || v == "no");
 }

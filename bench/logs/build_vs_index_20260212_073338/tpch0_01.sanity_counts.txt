@@ -1,3 +1,0 @@
-customer|1500
-lineitem|60175
-orders|15000

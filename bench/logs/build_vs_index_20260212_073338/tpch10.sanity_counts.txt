@@ -1,3 +1,0 @@
-customer|1500000
-lineitem|0
-orders|0

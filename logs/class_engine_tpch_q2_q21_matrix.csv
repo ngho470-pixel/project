@@ -1,9 +1,0 @@
-db,policy_set,policy_ids,query_id,status,correctness,reason,route_main,route_summary,route_reject_reason,ours_rows,ours_hash,gt_rows,gt_hash,policy_total_ms,pf2_terms_supported,pf2_terms_failed_shape,class_terms_ok,class_terms_reject,class_route_single_hub,class_route_two_hop,class_route_tree,class_route_cycle_rect,class_route_td_cycle,class_route_reject,pf2_cmp_total,pf2_cmp_supported,pf2_cmp_key_arity_max,proj_sig_count,proj_mask_or_ops,proj_rid_iters,hygiene_ok,hygiene_diag
-tpch1,A,1,2,ok,PASS,,,,,477,85a4897fccad69361b498bb20d2df030,477,85a4897fccad69361b498bb20d2df030,,,,,,,,,,,,,,,,,,1,"[pg_hygiene] connecting db=tpch1
-[pg_hygiene] before active_sessions=0 managed_locks=0
-[pg_hygiene] clean
-[pg_hygiene] no non-idle backends remaining"
-tpch1,A,1,21,ERROR,ERROR,ERROR:  canceling statement due to statement timeout; ERROR:  canceling statement due to statement timeout; ERROR:  canceling statement due to statement timeout,single_hub,single_hub:2,,,,,,,0,0,2,0,2,0,0,0,0,0,0,0,0,0,0,0,1,"[pg_hygiene] connecting db=tpch1
-[pg_hygiene] before active_sessions=0 managed_locks=0
-[pg_hygiene] clean
-[pg_hygiene] no non-idle backends remaining"
