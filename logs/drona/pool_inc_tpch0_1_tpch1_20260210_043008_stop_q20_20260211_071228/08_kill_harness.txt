@@ -1,4 +1,0 @@
- 
-bash: -c: option requires an argument
-Harness pid=67667
-    PID STAT     ELAPSED %CPU %MEM CMD

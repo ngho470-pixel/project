@@ -6,18 +6,17 @@ extern "C" {
 
 typedef enum {
     POLICY_ATOM_JOIN_EQ = 1,
-    POLICY_ATOM_COL_CONST = 2
+    POLICY_ATOM_COL_CONST = 2,
+    POLICY_ATOM_COL_COL = 3
 } PolicyAtomKindC;
 
 typedef enum {
     POLICY_OP_EQ = 1,
-    POLICY_OP_IN = 2,
-    POLICY_OP_LIKE = 3,
-    POLICY_OP_LT = 4,
-    POLICY_OP_LE = 5,
-    POLICY_OP_GT = 6,
-    POLICY_OP_GE = 7,
-    POLICY_OP_NE = 8
+    POLICY_OP_LT = 2,
+    POLICY_OP_LE = 3,
+    POLICY_OP_GT = 4,
+    POLICY_OP_GE = 5,
+    POLICY_OP_NE = 6
 } PolicyConstOpC;
 
 typedef struct PolicyAtomC {
@@ -34,6 +33,20 @@ typedef struct PolicyAtomC {
 
 typedef struct PolicyBundleC PolicyBundleC;
 
+typedef enum {
+    POLICY_SCAN_QUAL_COL_CONST = 1,
+    POLICY_SCAN_QUAL_COL_COL = 2
+} PolicyScanQualKindC;
+
+typedef struct PolicyScanQualAtomC {
+    char *target_table;           /* base table name (target) */
+    int kind;                     /* PolicyScanQualKindC */
+    char *lhs_schema_key;         /* table.col */
+    int op;                       /* PolicyConstOpC */
+    char *rhs_schema_key;         /* table.col (COL_COL only) */
+    char *const_value;            /* unquoted literal text (COL_CONST only) */
+} PolicyScanQualAtomC;
+
 typedef struct PolicyEngineInputC {
     int target_count;
     char **target_tables;
@@ -44,6 +57,8 @@ typedef struct PolicyEngineInputC {
     PolicyAtomC *atoms;
     int bundle_count;
     PolicyBundleC *bundles;
+    int scan_qual_atom_count;
+    PolicyScanQualAtomC *scan_qual_atoms;
 } PolicyEngineInputC;
 
 struct PolicyBundleC {

@@ -1,3 +1,0 @@
-run_id,ts,db,K,policy_ids,ours_artifact_build_ms_total,ours_artifact_bytes_db,ours_artifact_bytes_disk,rls_index_build_ms_total,rls_index_bytes
-matrix_factored_w11_20_retry_20260220_1122,2026-02-20T11:21:29+05:30,tpch0_1,10,"11,12,13,14,15,16,17,18,19,20",2337.568,15983309,16687104,4036.223,73252864
-matrix_factored_w11_20_retry_20260220_1122,2026-02-20T11:25:57+05:30,tpch1,10,"11,12,13,14,15,16,17,18,19,20",24505.505,163777976,170041344,46572.419,727015424

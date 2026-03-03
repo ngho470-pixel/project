@@ -199,6 +199,8 @@ static int parse_policy_atoms(const char *target, Token *toks, int ntok, AtomLis
 
         if (i + 1 < ntok && toks[i + 1].type == TOK_OP) {
             const char *op = toks[i + 1].text;
+            if (strcmp(op, "<>") == 0)
+                op = "!=";
             if (i + 2 < ntok && toks[i + 2].type == TOK_IDENT) {
                 if (!is_column_ident(&toks[i + 2])) continue;
                 if (strcmp(op, "=") == 0) {
@@ -214,6 +216,26 @@ static int parse_policy_atoms(const char *target, Token *toks, int ntok, AtomLis
                                      a.rhs_col, sizeof(a.rhs_col)) != 0)
                         return -1;
                     copy_str(a.op, sizeof(a.op), "=");
+                    if (atom_push(out, &a) != 0) return -1;
+                    continue;
+                }
+                if (strcmp(op, "!=") == 0 ||
+                    strcmp(op, "<") == 0 ||
+                    strcmp(op, "<=") == 0 ||
+                    strcmp(op, ">") == 0 ||
+                    strcmp(op, ">=") == 0) {
+                    PolicyAtom a;
+                    memset(&a, 0, sizeof(a));
+                    a.type = ATOM_COL_COL;
+                    if (parse_column(toks[i].text, target,
+                                     a.lhs_table, sizeof(a.lhs_table),
+                                     a.lhs_col, sizeof(a.lhs_col)) != 0)
+                        return -1;
+                    if (parse_column(toks[i + 2].text, target,
+                                     a.rhs_table, sizeof(a.rhs_table),
+                                     a.rhs_col, sizeof(a.rhs_col)) != 0)
+                        return -1;
+                    copy_str(a.op, sizeof(a.op), op);
                     if (atom_push(out, &a) != 0) return -1;
                     continue;
                 }
@@ -233,45 +255,11 @@ static int parse_policy_atoms(const char *target, Token *toks, int ntok, AtomLis
             }
         }
 
-        if (i + 1 < ntok && is_keyword(&toks[i + 1], "in")) {
-            PolicyAtom a;
-            memset(&a, 0, sizeof(a));
-            a.type = ATOM_COL_CONST;
-            if (parse_column(toks[i].text, target,
-                             a.lhs_table, sizeof(a.lhs_table),
-                             a.lhs_col, sizeof(a.lhs_col)) != 0)
-                return -1;
-            copy_str(a.op, sizeof(a.op), "in");
-            if (atom_push(out, &a) != 0) return -1;
-            // advance to closing paren of the IN list (do not skip outer parens)
-            int depth = 0;
-            for (int j = i + 2; j < ntok; j++) {
-                if (toks[j].type == TOK_LPAREN) {
-                    depth++;
-                    continue;
-                }
-                if (toks[j].type == TOK_RPAREN) {
-                    if (depth <= 1) { i = j; break; }
-                    depth--;
-                }
-            }
-            continue;
-        }
+        if (i + 1 < ntok && is_keyword(&toks[i + 1], "in"))
+            return -1;
 
-        if (i + 1 < ntok && is_keyword(&toks[i + 1], "like") &&
-            i + 2 < ntok && toks[i + 2].type == TOK_STRING) {
-            PolicyAtom a;
-            memset(&a, 0, sizeof(a));
-            a.type = ATOM_COL_CONST;
-            if (parse_column(toks[i].text, target,
-                             a.lhs_table, sizeof(a.lhs_table),
-                             a.lhs_col, sizeof(a.lhs_col)) != 0)
-                return -1;
-            copy_str(a.op, sizeof(a.op), "like");
-            copy_str(a.literal, sizeof(a.literal), toks[i + 2].text);
-            if (atom_push(out, &a) != 0) return -1;
-            continue;
-        }
+        if (i + 1 < ntok && is_keyword(&toks[i + 1], "like"))
+            return -1;
     }
     return 0;
 }

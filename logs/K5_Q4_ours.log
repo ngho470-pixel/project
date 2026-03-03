@@ -1,5 +1,0 @@
-QUERY:
-SELECT COUNT(*) FROM orders o JOIN customer c ON o.o_custkey=c.c_custkey;
-COUNT: 150000
---- NOTICES ---
-

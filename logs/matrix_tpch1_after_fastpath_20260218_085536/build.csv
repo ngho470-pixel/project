@@ -1,3 +1,0 @@
-run_id,ts,db,K,policy_ids,ours_artifact_build_ms_total,ours_artifact_bytes_db,ours_artifact_bytes_disk,rls_index_build_ms_total,rls_index_bytes
-matrix_tpch1_after_fastpath_20260218_085536,2026-02-17T09:03:16+05:30,tpch1,5,"1,2,3,4,5",47497.210,91302745,94797824,49639.742,753713152
-matrix_tpch1_after_fastpath_20260218_085536,2026-02-17T09:08:42+05:30,tpch1,15,"1,2,3,4,5,6,7,8,9,10,11,12,13,14,15",61184.980,128614973,133513216,56137.525,918839296

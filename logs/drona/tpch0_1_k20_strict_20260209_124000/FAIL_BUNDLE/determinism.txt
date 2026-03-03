@@ -1,3 +1,0 @@
-run1: same_error
-run2: same_error
-run3: same_error

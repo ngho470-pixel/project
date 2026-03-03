@@ -7,6 +7,7 @@
 #include "utils/hsearch.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/numeric.h"
 #include "utils/snapmgr.h"
 #include "utils/timestamp.h"
 #include "utils/date.h"
@@ -27,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <errno.h>
 
 #include "artifact_builder.hpp"
 #include "policy_spec.h"
@@ -68,6 +70,7 @@ typedef struct {
     IntList cols;
     HTAB *tok_map;
     int32 next_tok;
+    int type_class;
 } JoinClass;
 
 typedef struct {
@@ -81,6 +84,15 @@ typedef struct {
     Oid typoutput;
     bool typisvarlena;
 } TokenColumn;
+
+typedef struct {
+    int col_idx;
+    int domain_id;
+    AttrNumber attnum;
+    Oid typid;
+    Oid typoutput;
+    bool typisvarlena;
+} BinTokCol;
 
 typedef struct {
     ABColumnRef col;
@@ -107,6 +119,13 @@ struct DictTokEntry {
     char *val;
     DictTokEntry *next;
 };
+
+typedef enum {
+    DOMAIN_TYPE_UNSUPPORTED = 0,
+    DOMAIN_TYPE_NUMERIC = 1,
+    DOMAIN_TYPE_DATE = 2,
+    DOMAIN_TYPE_TEXT = 3
+} DomainTypeClass;
 
 static void str_list_add_unique(StringList *list, const char *value) {
     for (int i = 0; i < list->count; i++) {
@@ -212,12 +231,44 @@ static inline double elapsed_ms(TimestampTz t0)
 
 static SPIPlanPtr g_insert_file_plan = NULL;
 
+static char *
+files_table_sql_ident(bool *is_default_out)
+{
+    const char *cfg = GetConfigOption("custom_filter.files_table", true, false);
+    const char *raw = (cfg && cfg[0]) ? cfg : "public.files";
+    const char *dot = strchr(raw, '.');
+    bool is_default = (strcmp(raw, "public.files") == 0);
+    char *out = NULL;
+
+    if (dot && strchr(dot + 1, '.') == NULL)
+    {
+        char *schema = pnstrdup(raw, dot - raw);
+        char *table = pstrdup(dot + 1);
+        out = quote_qualified_identifier(schema, table);
+        pfree(schema);
+        pfree(table);
+    }
+    else
+    {
+        out = pstrdup(quote_identifier(raw));
+    }
+
+    if (is_default_out)
+        *is_default_out = is_default;
+    return out;
+}
+
 static void prepare_insert_file_plan(void)
 {
     Oid argtypes[2] = {TEXTOID, BYTEAOID};
-    SPIPlanPtr plan = SPI_prepare(
-        "INSERT INTO public.files (name, file) VALUES ($1, $2)",
-        2, argtypes);
+    char *table_sql = files_table_sql_ident(NULL);
+    char *sql = psprintf(
+        "INSERT INTO %s (run_id, name, file) "
+        "VALUES (COALESCE(current_setting('custom_filter.run_id', true), ''), $1, $2)",
+        table_sql);
+    SPIPlanPtr plan = SPI_prepare(sql, 2, argtypes);
+    pfree(sql);
+    pfree(table_sql);
     if (!plan)
         ereport(ERROR, (errmsg("artifact_builder: SPI_prepare insert plan failed")));
     g_insert_file_plan = SPI_saveplan(plan);
@@ -241,6 +292,19 @@ static void insert_file(const char *name, bytea *data) {
 static void insert_file_text(const char *name, const char *text) {
     bytea *ba = cstring_to_bytea(text);
     insert_file(name, ba);
+}
+
+static void insert_file_u32_array(const char *name, const uint32 *vals, size_t nvals)
+{
+    size_t bytes = nvals * sizeof(uint32);
+    if (bytes > (size_t)INT_MAX)
+        ereport(ERROR, (errmsg("artifact_builder: u32 artifact too large %s bytes=%zu", name, bytes)));
+    bytea *ba = (bytea *)palloc(VARHDRSZ + bytes);
+    SET_VARSIZE(ba, VARHDRSZ + bytes);
+    if (bytes > 0 && vals)
+        memcpy(VARDATA(ba), vals, bytes);
+    insert_file(name, ba);
+    pfree(ba);
 }
 
 static void flush_code_chunk(const char *table,
@@ -284,6 +348,93 @@ static void flush_code_chunk(const char *table,
     *code_payload_bb_ptr = NULL;
     *chunk_rows = 0;
     (*chunk_idx)++;
+}
+
+static uint16
+bit_width_u32(uint32 v)
+{
+    uint16 bw = 1;
+    while ((v >> bw) != 0 && bw < 32)
+        bw++;
+    return bw;
+}
+
+static void
+flush_code_col_chunks(const char *table,
+                      int chunk_idx,
+                      uint32 chunk_rows,
+                      const int32 *chunk_tokens,
+                      int token_count)
+{
+    if (!table || chunk_rows == 0 || token_count <= 0 || !chunk_tokens)
+        return;
+
+    for (int col = 0; col < token_count; col++) {
+        uint32 max_enc = 0;
+        for (uint32 r = 0; r < chunk_rows; r++) {
+            int32 tok = chunk_tokens[(size_t)r * (size_t)token_count + (size_t)col];
+            uint32 enc = (tok < 0) ? 0u : (uint32)tok + 1u;
+            if (enc > max_enc)
+                max_enc = enc;
+        }
+        uint16 bw = bit_width_u32(max_enc);
+        size_t payload_bits = (size_t)chunk_rows * (size_t)bw;
+        size_t payload_len = (payload_bits + 7u) / 8u;
+        if (payload_len > (size_t)INT32_MAX)
+            ereport(ERROR, (errmsg("code column payload too large table=%s col=%d chunk=%d bytes=%zu",
+                                   table, col, chunk_idx, payload_len)));
+
+        uint8 *payload = payload_len > 0 ? (uint8 *)palloc0(payload_len) : NULL;
+        size_t out_pos = 0;
+        uint64 acc = 0;
+        int acc_bits = 0;
+        for (uint32 r = 0; r < chunk_rows; r++) {
+            int32 tok = chunk_tokens[(size_t)r * (size_t)token_count + (size_t)col];
+            uint32 enc = (tok < 0) ? 0u : (uint32)tok + 1u;
+            acc |= ((uint64)enc) << acc_bits;
+            acc_bits += (int)bw;
+            while (acc_bits >= 8) {
+                if (out_pos >= payload_len)
+                    ereport(ERROR, (errmsg("code column pack overflow table=%s col=%d chunk=%d",
+                                           table, col, chunk_idx)));
+                payload[out_pos++] = (uint8)(acc & 0xFFu);
+                acc >>= 8;
+                acc_bits -= 8;
+            }
+        }
+        if (acc_bits > 0) {
+            if (out_pos >= payload_len)
+                ereport(ERROR, (errmsg("code column tail overflow table=%s col=%d chunk=%d",
+                                       table, col, chunk_idx)));
+            payload[out_pos++] = (uint8)(acc & 0xFFu);
+        }
+        if (out_pos != payload_len)
+            ereport(ERROR, (errmsg("code column pack size mismatch table=%s col=%d chunk=%d out=%zu payload=%zu",
+                                   table, col, chunk_idx, out_pos, payload_len)));
+
+        ByteaBuilder *bb = bb_create();
+        const char magic[4] = {'C', 'C', '0', '4'};
+        bb_append_bytes(bb, magic, sizeof(magic));
+        bb_append_int32(bb, (int32)chunk_rows);
+        bb_append_bytes(bb, &bw, sizeof(uint16));
+        {
+            uint16 reserved = 0;
+            bb_append_bytes(bb, &reserved, sizeof(uint16));
+        }
+        bb_append_int32(bb, (int32)payload_len);
+        if (payload_len > 0)
+            bb_append_bytes(bb, payload, payload_len);
+
+        char chunk_name[NAMEDATALEN * 3];
+        snprintf(chunk_name, sizeof(chunk_name), "%s_code_col_%d_chunk_%d", table, col, chunk_idx);
+        bytea *chunk_ba = bb_to_bytea(bb);
+        insert_file(chunk_name, chunk_ba);
+        if (chunk_ba)
+            pfree(chunk_ba);
+        bb_free(bb);
+        if (payload)
+            pfree(payload);
+    }
 }
 
 static size_t estimate_table_rows(const char *table) {
@@ -334,12 +485,154 @@ static Oid column_type_oid(const char *table, const char *col) {
     return DatumGetObjectId(d);
 }
 
+static bool flag_trueish(const char *v)
+{
+    if (!v)
+        return false;
+    while (*v && isspace((unsigned char)*v))
+        v++;
+    if (*v == '\0')
+        return false;
+    if (pg_strcasecmp(v, "0") == 0 ||
+        pg_strcasecmp(v, "off") == 0 ||
+        pg_strcasecmp(v, "false") == 0 ||
+        pg_strcasecmp(v, "no") == 0)
+        return false;
+    return true;
+}
+
+static bool strict_mode_enabled(void)
+{
+    const char *gucv = GetConfigOption("custom_filter.strict_mode", true, false);
+    if (flag_trueish(gucv))
+        return true;
+    return flag_trueish(getenv("CF_POLICY_STRICT_MODE"));
+}
+
+static DomainTypeClass domain_type_class_for_oid(Oid typid)
+{
+    if (typid == INT2OID || typid == INT4OID || typid == INT8OID || typid == NUMERICOID)
+        return DOMAIN_TYPE_NUMERIC;
+    if (typid == DATEOID)
+        return DOMAIN_TYPE_DATE;
+    if (typid == TEXTOID || typid == VARCHAROID || typid == BPCHAROID)
+        return DOMAIN_TYPE_TEXT;
+    return DOMAIN_TYPE_UNSUPPORTED;
+}
+
+static const char *domain_type_class_name(DomainTypeClass tc)
+{
+    switch (tc) {
+        case DOMAIN_TYPE_NUMERIC: return "numeric";
+        case DOMAIN_TYPE_DATE: return "date";
+        case DOMAIN_TYPE_TEXT: return "text";
+        default: break;
+    }
+    return "unsupported";
+}
+
+static Oid dict_typid_for_domain_type_class(DomainTypeClass tc)
+{
+    switch (tc) {
+        case DOMAIN_TYPE_NUMERIC: return NUMERICOID;
+        case DOMAIN_TYPE_DATE: return DATEOID;
+        case DOMAIN_TYPE_TEXT: return TEXTOID;
+        default: break;
+    }
+    return TEXTOID;
+}
+
+static char *normalize_numeric_string(const char *src)
+{
+    if (!src)
+        return pstrdup("0");
+    const char *p = src;
+    while (*p && isspace((unsigned char)*p))
+        p++;
+
+    bool neg = false;
+    if (*p == '+' || *p == '-') {
+        neg = (*p == '-');
+        p++;
+    }
+
+    const char *mant_start = p;
+    const char *exp_pos = NULL;
+    for (const char *q = p; *q; q++) {
+        if (*q == 'e' || *q == 'E') {
+            exp_pos = q;
+            break;
+        }
+    }
+    const char *mant_end = exp_pos ? exp_pos : (p + strlen(p));
+    while (mant_end > mant_start && isspace((unsigned char)mant_end[-1]))
+        mant_end--;
+
+    const char *dot = NULL;
+    for (const char *q = mant_start; q < mant_end; q++) {
+        if (*q == '.') {
+            dot = q;
+            break;
+        }
+    }
+
+    const char *int_start = mant_start;
+    const char *int_end = dot ? dot : mant_end;
+    while (int_start < int_end && *int_start == '0')
+        int_start++;
+    bool int_is_zero = (int_start == int_end);
+
+    const char *frac_start = dot ? (dot + 1) : mant_end;
+    const char *frac_end = mant_end;
+    while (frac_end > frac_start && frac_end[-1] == '0')
+        frac_end--;
+
+    StringInfoData out;
+    initStringInfo(&out);
+    if (neg)
+        appendStringInfoChar(&out, '-');
+    if (!int_is_zero)
+        appendBinaryStringInfo(&out, int_start, int_end - int_start);
+    else
+        appendStringInfoChar(&out, '0');
+    if (frac_end > frac_start) {
+        appendStringInfoChar(&out, '.');
+        appendBinaryStringInfo(&out, frac_start, frac_end - frac_start);
+    }
+
+    if (exp_pos) {
+        const char *e = exp_pos + 1;
+        while (*e && isspace((unsigned char)*e))
+            e++;
+        bool e_neg = false;
+        if (*e == '+' || *e == '-') {
+            e_neg = (*e == '-');
+            e++;
+        }
+        while (*e == '0')
+            e++;
+        if (*e) {
+            appendStringInfoChar(&out, 'e');
+            if (e_neg)
+                appendStringInfoChar(&out, '-');
+            appendStringInfoString(&out, e);
+        }
+    }
+
+    /* Canonicalize signed zero -> zero. */
+    if (strcmp(out.data, "-0") == 0)
+        out.data[0] = '0', out.data[1] = '\0';
+    return out.data;
+}
+
 static const char *dict_type_label_for_oid(Oid typid) {
     if (typid == INT2OID || typid == INT4OID || typid == INT8OID)
         return "int";
     if (typid == DATEOID)
         return "date";
-    if (typid == FLOAT4OID || typid == FLOAT8OID || typid == NUMERICOID)
+    if (typid == NUMERICOID)
+        return "numeric";
+    if (typid == FLOAT4OID || typid == FLOAT8OID)
         return "float";
     if (typid == BPCHAROID)
         return "bpchar";
@@ -575,6 +868,53 @@ static int32 dict_map_get_or_insert_bytes(HTAB *map,
     return -1;
 }
 
+static int32 domain_tokenize_with_map(HTAB *tok_map,
+                                      MemoryContext mcxt,
+                                      Datum v,
+                                      Oid typid,
+                                      Oid typoutput,
+                                      DomainTypeClass tc,
+                                      int32 *next_tok)
+{
+    if (tc == DOMAIN_TYPE_DATE) {
+        int64 ikey = dict_datum_to_intkey(typid, v);
+        return dict_map_get_or_insert_int64(tok_map, mcxt, ikey, next_tok, NULL);
+    }
+
+    if (tc == DOMAIN_TYPE_NUMERIC) {
+        char *txt = OidOutputFunctionCall(typoutput, v);
+        if (!txt)
+            return -1;
+        char *canon = normalize_numeric_string(txt);
+        int32 tval = dict_map_get_or_insert_text(tok_map, mcxt, canon, next_tok, NULL);
+        if (canon != txt)
+            pfree(canon);
+        pfree(txt);
+        return tval;
+    }
+
+    if (typid == BPCHAROID) {
+        char *txt = OidOutputFunctionCall(typoutput, v);
+        if (!txt)
+            return -1;
+        size_t n = strlen(txt);
+        while (n > 0 && txt[n - 1] == ' ') {
+            txt[n - 1] = '\0';
+            n--;
+        }
+        int32 tval = dict_map_get_or_insert_text(tok_map, mcxt, txt, next_tok, NULL);
+        pfree(txt);
+        return tval;
+    }
+
+    char *txt = OidOutputFunctionCall(typoutput, v);
+    if (!txt)
+        return -1;
+    int32 tval = dict_map_get_or_insert_text(tok_map, mcxt, txt, next_tok, NULL);
+    pfree(txt);
+    return tval;
+}
+
 static void write_dict_from_map(const char *name, HTAB *map, int32 n_tokens, Oid dict_typid)
 {
     if (!name || !map || n_tokens < 0)
@@ -655,6 +995,187 @@ static void write_dict_from_map(const char *name, HTAB *map, int32 n_tokens, Oid
         pfree(vals);
 }
 
+typedef struct {
+    int32 tok;
+    int64 ival;
+    bool has_ival;
+    double num;
+    bool has_num;
+    Numeric numv;
+    char *txt;
+} RankTok;
+
+static int cmp_ranktok(const void *ap, const void *bp, void *arg)
+{
+    Oid typid = *((Oid *)arg);
+    const RankTok *a = (const RankTok *)ap;
+    const RankTok *b = (const RankTok *)bp;
+
+    if (dict_typid_uses_intkey(typid) && a->has_ival && b->has_ival) {
+        if (a->ival < b->ival) return -1;
+        if (a->ival > b->ival) return 1;
+    } else if (typid == NUMERICOID && a->numv && b->numv) {
+        int32 cmp = DatumGetInt32(DirectFunctionCall2(numeric_cmp,
+                                                      NumericGetDatum(a->numv),
+                                                      NumericGetDatum(b->numv)));
+        if (cmp < 0) return -1;
+        if (cmp > 0) return 1;
+    } else if ((typid == FLOAT4OID || typid == FLOAT8OID || typid == NUMERICOID) &&
+               a->has_num && b->has_num) {
+        if (a->num < b->num) return -1;
+        if (a->num > b->num) return 1;
+    } else {
+        const char *at = a->txt ? a->txt : "";
+        const char *bt = b->txt ? b->txt : "";
+        int c = strcmp(at, bt);
+        if (c != 0) return c;
+    }
+    if (a->tok < b->tok) return -1;
+    if (a->tok > b->tok) return 1;
+    return 0;
+}
+
+static void write_rank_from_map(const char *name, HTAB *map, int32 n_tokens, Oid dict_typid)
+{
+    if (!name || !map || n_tokens < 0)
+        ereport(ERROR, (errmsg("artifact_builder: invalid write_rank_from_map args")));
+
+    RankTok *rows = NULL;
+    DictTokEntry **vals = NULL;
+    if (n_tokens > 0) {
+        rows = (RankTok *)palloc0(sizeof(RankTok) * (size_t)n_tokens);
+        vals = (DictTokEntry **)palloc0(sizeof(DictTokEntry *) * (size_t)n_tokens);
+    }
+
+    HASH_SEQ_STATUS seq;
+    hash_seq_init(&seq, map);
+    DictTokEntry *head = NULL;
+    while ((head = (DictTokEntry *) hash_seq_search(&seq)) != NULL) {
+        for (DictTokEntry *cur = head; cur; cur = cur->next) {
+            if (cur->tok < 0 || cur->tok >= n_tokens)
+                ereport(ERROR, (errmsg("artifact_builder: rank token out of range tok=%d n=%d", cur->tok, n_tokens)));
+            vals[cur->tok] = cur;
+        }
+    }
+
+    Oid typed_out_func = InvalidOid;
+    bool typed_out_varlena = false;
+    if (dict_typid == DATEOID || dict_typid == NUMERICOID)
+        getTypeOutputInfo(dict_typid, &typed_out_func, &typed_out_varlena);
+    (void)typed_out_varlena;
+
+    for (int32 tok = 0; tok < n_tokens; tok++) {
+        RankTok *rt = &rows[tok];
+        rt->tok = tok;
+        rt->ival = 0;
+        rt->has_ival = false;
+        rt->num = 0.0;
+        rt->has_num = false;
+        rt->numv = NULL;
+        rt->txt = NULL;
+
+        DictTokEntry *ent = vals ? vals[tok] : NULL;
+        if (!ent)
+            continue;
+
+        char intbuf[64];
+        const char *val = "";
+        int32 vlen = 0;
+        char *tmp_out = NULL;
+        struct varlena *tmp_num = NULL;
+
+        if (ent->key_kind == DICT_KEY_TEXT) {
+            val = ent->val ? ent->val : "";
+            vlen = (int32)strlen(val);
+        } else if (ent->key_kind == DICT_KEY_INT64) {
+            rt->ival = ent->ival;
+            rt->has_ival = true;
+            if (dict_typid == DATEOID) {
+                tmp_out = OidOutputFunctionCall(typed_out_func, DateADTGetDatum((DateADT)ent->ival));
+                val = tmp_out ? tmp_out : "";
+                vlen = (int32)strlen(val);
+            } else {
+                vlen = (int32)snprintf(intbuf, sizeof(intbuf), "%lld", (long long)ent->ival);
+                if (vlen < 0) vlen = 0;
+                val = intbuf;
+            }
+        } else if (ent->key_kind == DICT_KEY_BYTES) {
+            if (dict_typid == NUMERICOID) {
+                tmp_num = (struct varlena *)palloc((size_t)ent->blen + VARHDRSZ);
+                SET_VARSIZE(tmp_num, (size_t)ent->blen + VARHDRSZ);
+                if (ent->blen > 0)
+                    memcpy(VARDATA(tmp_num), ent->val, (size_t)ent->blen);
+                rt->numv = (Numeric)palloc(VARSIZE_ANY(tmp_num));
+                memcpy(rt->numv, tmp_num, VARSIZE_ANY(tmp_num));
+                tmp_out = OidOutputFunctionCall(typed_out_func, PointerGetDatum(tmp_num));
+                val = tmp_out ? tmp_out : "";
+                vlen = (int32)strlen(val);
+            } else {
+                val = ent->val ? ent->val : "";
+                vlen = ent->blen > 0 ? ent->blen : 0;
+            }
+        }
+
+        rt->txt = (char *)palloc((size_t)vlen + 1u);
+        if (vlen > 0)
+            memcpy(rt->txt, val, (size_t)vlen);
+        rt->txt[vlen] = '\0';
+
+        if (dict_typid == NUMERICOID) {
+            rt->numv = DatumGetNumeric(DirectFunctionCall3(numeric_in,
+                                                           CStringGetDatum(rt->txt),
+                                                           ObjectIdGetDatum(InvalidOid),
+                                                           Int32GetDatum(-1)));
+        } else if (dict_typid == FLOAT4OID || dict_typid == FLOAT8OID) {
+            char *endp = NULL;
+            errno = 0;
+            double d = strtod(rt->txt, &endp);
+            if (errno == 0 && endp && *endp == '\0') {
+                rt->num = d;
+                rt->has_num = true;
+            }
+        }
+
+        if (tmp_out)
+            pfree(tmp_out);
+        if (tmp_num)
+            pfree(tmp_num);
+    }
+
+    if (n_tokens > 1)
+        qsort_arg(rows, (size_t)n_tokens, sizeof(RankTok), cmp_ranktok, &dict_typid);
+
+    int32 *rank_by_tok = NULL;
+    if (n_tokens > 0)
+        rank_by_tok = (int32 *)palloc0(sizeof(int32) * (size_t)n_tokens);
+    for (int32 i = 0; i < n_tokens; i++) {
+        int32 tok = rows[i].tok;
+        if (tok < 0 || tok >= n_tokens)
+            ereport(ERROR, (errmsg("artifact_builder: invalid tok in rank sort tok=%d n=%d", tok, n_tokens)));
+        rank_by_tok[tok] = i;
+    }
+
+    ByteaBuilder *bb = bb_create();
+    for (int32 tok = 0; tok < n_tokens; tok++)
+        bb_append_int32(bb, rank_by_tok[tok]);
+    insert_file(name, bb_to_bytea(bb));
+    bb_free(bb);
+
+    if (rank_by_tok)
+        pfree(rank_by_tok);
+    if (rows) {
+        for (int32 i = 0; i < n_tokens; i++) {
+            if (rows[i].txt)
+                pfree(rows[i].txt);
+            if (rows[i].numv)
+                pfree(rows[i].numv);
+        }
+        pfree(rows);
+    }
+    if (vals)
+        pfree(vals);
+}
+
 Datum build_base(PG_FUNCTION_ARGS);
 PG_FUNCTION_INFO_V1(build_base);
 
@@ -684,19 +1205,43 @@ Datum build_base(PG_FUNCTION_ARGS) {
     SetConfigOption("parallel_leader_participation", "off", PGC_USERSET, PGC_S_SESSION);
     SPI_execute("SET LOCAL search_path TO public, pg_catalog", false, 0);
     SPI_execute("SET LOCAL synchronous_commit TO off", false, 0);
-    SPI_execute("CREATE TABLE IF NOT EXISTS public.files (name text, file bytea)", false, 0);
-    SPI_execute("TRUNCATE TABLE public.files", false, 0);
-    SPI_execute("DROP INDEX IF EXISTS files_name_uidx", false, 0);
+    {
+        bool files_table_default = false;
+        char *table_sql = files_table_sql_ident(&files_table_default);
+        char *sql = psprintf("CREATE TABLE IF NOT EXISTS %s (run_id text, name text, file bytea)", table_sql);
+        SPI_execute(sql, false, 0);
+        pfree(sql);
+        sql = psprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS run_id text", table_sql);
+        SPI_execute(sql, false, 0);
+        pfree(sql);
+        sql = psprintf("UPDATE %s SET run_id='' WHERE run_id IS NULL", table_sql);
+        SPI_execute(sql, false, 0);
+        pfree(sql);
+        sql = psprintf(
+            "DELETE FROM %s "
+            "WHERE COALESCE(run_id,'') = COALESCE(current_setting('custom_filter.run_id', true), '')",
+            table_sql);
+        SPI_execute(sql, false, 0);
+        pfree(sql);
+        if (files_table_default)
+        {
+            SPI_execute("DROP INDEX IF EXISTS files_name_uidx", false, 0);
+            SPI_execute("DROP INDEX IF EXISTS files_runid_name_uidx", false, 0);
+            SPI_execute("DROP INDEX IF EXISTS files_runid_name_idx", false, 0);
+        }
+        pfree(table_sql);
+    }
     g_insert_file_plan = NULL;
     prepare_insert_file_plan();
 
-    int join_atom_count = 0;
+    bool strict_mode = strict_mode_enabled();
+    int colcmp_atom_count = 0;
     int *col_class = NULL;
     int col_class_cap = 0;
-    int *join_left = NULL;
-    int *join_right = NULL;
-    int join_cap = 0;
-    int join_count = 0;
+    int *edge_left = NULL;
+    int *edge_right = NULL;
+    int edge_cap = 0;
+    int edge_count = 0;
     /*
      * Keep token dictionaries in a context that survives SPI statement memory
      * resets for the whole build.
@@ -716,25 +1261,50 @@ Datum build_base(PG_FUNCTION_ARGS) {
             int lidx = column_add_unique(&cols, a->lhs_table, a->lhs_col);
             str_list_add_unique(&tables, a->lhs_table);
             if (a->type == ATOM_COL_CONST) {
+                if (strict_mode) {
+                    const char *op = a->op;
+                    bool ok = (strcmp(op, "=") == 0 || strcmp(op, "!=") == 0 ||
+                               strcmp(op, "<") == 0 || strcmp(op, "<=") == 0 ||
+                               strcmp(op, ">") == 0 || strcmp(op, ">=") == 0);
+                    if (!ok) {
+                        ereport(ERROR,
+                                (errmsg("strict mode: unsupported col-const operator %s on %s.%s",
+                                        op, a->lhs_table, a->lhs_col)));
+                    }
+                }
                 column_add_unique(&const_cols_list, a->lhs_table, a->lhs_col);
             }
-            if (a->type == ATOM_JOIN_EQ) {
+            if (a->type == ATOM_JOIN_EQ || a->type == ATOM_COL_COL) {
                 if (a->rhs_table[0] == '\0' || a->rhs_col[0] == '\0')
-                    ereport(ERROR, (errmsg("join atom missing rhs table/col")));
+                    ereport(ERROR, (errmsg("col-col atom missing rhs table/col")));
                 int ridx = column_add_unique(&cols, a->rhs_table, a->rhs_col);
                 str_list_add_unique(&tables, a->rhs_table);
-                join_atom_count++;
-                if (join_count >= join_cap) {
-                    int newcap = join_cap == 0 ? 32 : join_cap * 2;
-                    join_left = join_left ? (int *)repalloc(join_left, sizeof(int) * newcap)
+                colcmp_atom_count++;
+                if (edge_count >= edge_cap) {
+                    int newcap = edge_cap == 0 ? 32 : edge_cap * 2;
+                    edge_left = edge_left ? (int *)repalloc(edge_left, sizeof(int) * newcap)
                                           : (int *)palloc(sizeof(int) * newcap);
-                    join_right = join_right ? (int *)repalloc(join_right, sizeof(int) * newcap)
+                    edge_right = edge_right ? (int *)repalloc(edge_right, sizeof(int) * newcap)
                                             : (int *)palloc(sizeof(int) * newcap);
-                    join_cap = newcap;
+                    edge_cap = newcap;
                 }
-                join_left[join_count] = lidx;
-                join_right[join_count] = ridx;
-                join_count++;
+                edge_left[edge_count] = lidx;
+                edge_right[edge_count] = ridx;
+                edge_count++;
+                if (a->type == ATOM_COL_COL && strict_mode) {
+                    bool ok = (strcmp(a->op, "=") == 0 || strcmp(a->op, "!=") == 0 ||
+                               strcmp(a->op, "<") == 0 || strcmp(a->op, "<=") == 0 ||
+                               strcmp(a->op, ">") == 0 || strcmp(a->op, ">=") == 0);
+                    if (!ok) {
+                        ereport(ERROR,
+                                (errmsg("strict mode: unsupported col-col operator %s on %s.%s and %s.%s",
+                                        a->op, a->lhs_table, a->lhs_col, a->rhs_table, a->rhs_col)));
+                    }
+                }
+            }
+            if (a->type == ATOM_COL_COL) {
+                column_add_unique(&const_cols_list, a->lhs_table, a->lhs_col);
+                column_add_unique(&const_cols_list, a->rhs_table, a->rhs_col);
             }
         }
     }
@@ -758,19 +1328,71 @@ Datum build_base(PG_FUNCTION_ARGS) {
     bool *is_join_col = (bool *)palloc0(sizeof(bool) * ncols);
     int nclasses = 0;
     JoinClass *classes = NULL;
+    Oid *class_typid = NULL;
+    Oid *col_typid = NULL;
+    DomainTypeClass *col_type_class = NULL;
 
-    if (join_atom_count > 0) {
+    if (ncols > 0) {
+        col_typid = (Oid *) palloc0(sizeof(Oid) * ncols);
+        col_type_class = (DomainTypeClass *) palloc0(sizeof(DomainTypeClass) * ncols);
+        for (int i = 0; i < ncols; i++) {
+            Oid typid = column_type_oid(cols.items[i].table, cols.items[i].column);
+            if (!OidIsValid(typid)) {
+                ereport(ERROR,
+                        (errmsg("unable to resolve type OID for %s.%s",
+                                cols.items[i].table, cols.items[i].column)));
+            }
+            col_typid[i] = typid;
+            col_type_class[i] = domain_type_class_for_oid(typid);
+        }
+    }
+
+    if (ncols > 0) {
         int *parent = (int *)palloc(sizeof(int) * ncols);
+        uint8 *rankv = (uint8 *)palloc0(sizeof(uint8) * ncols);
         for (int i = 0; i < ncols; i++) parent[i] = i;
-        for (int i = 0; i < join_count; i++) {
-            int li = join_left[i];
-            int ri = join_right[i];
+
+        for (int i = 0; i < edge_count; i++) {
+            int li = edge_left[i];
+            int ri = edge_right[i];
+            if (li < 0 || ri < 0 || li >= ncols || ri >= ncols)
+                continue;
             is_join_col[li] = true;
             is_join_col[ri] = true;
-            int a = li, b = ri;
-            while (parent[a] != a) a = parent[a];
-            while (parent[b] != b) b = parent[b];
-            if (a != b) parent[b] = a;
+
+            DomainTypeClass ltc = col_type_class[li];
+            DomainTypeClass rtc = col_type_class[ri];
+            if (ltc == DOMAIN_TYPE_UNSUPPORTED || rtc == DOMAIN_TYPE_UNSUPPORTED) {
+                ereport(ERROR,
+                        (errmsg("unsupported type class for col-col atom: %s.%s (%s) %s.%s (%s)",
+                                cols.items[li].table, cols.items[li].column, format_type_be(col_typid[li]),
+                                cols.items[ri].table, cols.items[ri].column, format_type_be(col_typid[ri]))));
+            }
+            if (ltc != rtc) {
+                ereport(ERROR,
+                        (errmsg("type-class mismatch for col-col atom: %s.%s (%s) vs %s.%s (%s)",
+                                cols.items[li].table, cols.items[li].column, domain_type_class_name(ltc),
+                                cols.items[ri].table, cols.items[ri].column, domain_type_class_name(rtc))));
+            }
+
+            int a = li;
+            int b = ri;
+            while (parent[a] != a) {
+                parent[a] = parent[parent[a]];
+                a = parent[a];
+            }
+            while (parent[b] != b) {
+                parent[b] = parent[parent[b]];
+                b = parent[b];
+            }
+            if (a != b) {
+                if (rankv[a] < rankv[b]) {
+                    int t = a; a = b; b = t;
+                }
+                parent[b] = a;
+                if (rankv[a] == rankv[b])
+                    rankv[a]++;
+            }
         }
 
         int *root_map = (int *)palloc(sizeof(int) * ncols);
@@ -785,9 +1407,11 @@ Datum build_base(PG_FUNCTION_ARGS) {
         JoinClassTmp *tmp = (JoinClassTmp *)palloc0(sizeof(JoinClassTmp) * ncols);
         int tmp_count = 0;
         for (int i = 0; i < ncols; i++) {
-            if (!is_join_col[i]) continue;
             int r = i;
-            while (parent[r] != r) r = parent[r];
+            while (parent[r] != r) {
+                parent[r] = parent[parent[r]];
+                r = parent[r];
+            }
             int idx = root_map[r];
             if (idx < 0) {
                 idx = tmp_count++;
@@ -817,14 +1441,15 @@ Datum build_base(PG_FUNCTION_ARGS) {
                     }
                 }
             }
-            StringInfoData key;
-            initStringInfo(&key);
-            for (int j = 0; j < tmp[i].cols.count; j++) {
-                ABColumnRef *c = &g_cols->items[tmp[i].cols.items[j]];
-                if (j > 0) appendStringInfoChar(&key, ',');
+            if (tmp[i].cols.count > 0) {
+                ABColumnRef *c = &g_cols->items[tmp[i].cols.items[0]];
+                StringInfoData key;
+                initStringInfo(&key);
                 appendStringInfo(&key, "%s.%s", c->table, c->column);
+                tmp[i].key = pstrdup(key.data);
+            } else {
+                tmp[i].key = pstrdup("");
             }
-            tmp[i].key = pstrdup(key.data);
         }
 
         for (int i = 0; i < tmp_count; i++) {
@@ -840,15 +1465,30 @@ Datum build_base(PG_FUNCTION_ARGS) {
         nclasses = tmp_count;
         if (nclasses > 0) {
             classes = (JoinClass *)palloc0(sizeof(JoinClass) * nclasses);
-            for (int i = 0; i < nclasses; i++) classes[i].id = i;
             for (int i = 0; i < nclasses; i++) {
+                classes[i].id = i;
+                classes[i].type_class = DOMAIN_TYPE_TEXT;
+                DomainTypeClass tc = DOMAIN_TYPE_UNSUPPORTED;
                 for (int j = 0; j < tmp[i].cols.count; j++) {
                     int col_idx = tmp[i].cols.items[j];
                     int_list_add(&classes[i].cols, col_idx);
+                    if (col_idx >= 0 && col_idx < ncols) {
+                        DomainTypeClass cur = col_type_class[col_idx];
+                        if (tc == DOMAIN_TYPE_UNSUPPORTED)
+                            tc = cur;
+                        else if (tc != cur) {
+                            ereport(ERROR,
+                                    (errmsg("internal domain type-class mismatch for component id=%d", i)));
+                        }
+                    }
                 }
+                if (tc == DOMAIN_TYPE_UNSUPPORTED)
+                    tc = DOMAIN_TYPE_TEXT;
+                classes[i].type_class = tc;
             }
         }
     }
+
     if (ncols > 0) {
         col_class_cap = ncols;
         col_class = (int *)palloc0(sizeof(int) * col_class_cap);
@@ -860,15 +1500,42 @@ Datum build_base(PG_FUNCTION_ARGS) {
                     col_class[col_idx] = i;
             }
         }
+        for (int i = 0; i < ncols; i++) {
+            if (col_class[i] >= 0)
+                is_join_col[i] = true;
+        }
     }
-    if (join_atom_count > 0 && nclasses <= 0)
-        ereport(ERROR, (errmsg("join atoms present but no join classes")));
-    if (join_atom_count > 0) {
-        int join_col_total = 0;
-        for (int i = 0; i < nclasses; i++)
-            join_col_total += classes[i].cols.count;
-        if (join_col_total <= 0)
-            ereport(ERROR, (errmsg("join atoms present but join classes empty")));
+
+    if (colcmp_atom_count > 0 && nclasses <= 0)
+        ereport(ERROR, (errmsg("col-col atoms present but no domains built")));
+
+    if (nclasses > 0) {
+        class_typid = (Oid *) palloc0(sizeof(Oid) * nclasses);
+        for (int i = 0; i < nclasses; i++) {
+            class_typid[i] = dict_typid_for_domain_type_class((DomainTypeClass)classes[i].type_class);
+        }
+    }
+    bool *class_need_rank = NULL;
+    if (nclasses > 0)
+        class_need_rank = (bool *)palloc0(sizeof(bool) * nclasses);
+    for (int p = 0; p < ps.policy_count; p++) {
+        Policy *pol = &ps.policies[p];
+        for (int i = 0; i < pol->atom_count; i++) {
+            PolicyAtom *a = &pol->atoms[i];
+            if (a->type != ATOM_COL_COL)
+                continue;
+            if (!(strcmp(a->op, "<") == 0 || strcmp(a->op, "<=") == 0 ||
+                  strcmp(a->op, ">") == 0 || strcmp(a->op, ">=") == 0))
+                continue;
+            int li = column_index(&cols, a->lhs_table, a->lhs_col);
+            int ri = column_index(&cols, a->rhs_table, a->rhs_col);
+            if (li < 0 || ri < 0)
+                continue;
+            int lc = (col_class && li < col_class_cap) ? col_class[li] : -1;
+            int rc = (col_class && ri < col_class_cap) ? col_class[ri] : -1;
+            if (lc >= 0 && lc == rc && lc < nclasses && class_need_rank)
+                class_need_rank[lc] = true;
+        }
     }
 
     // meta/tables
@@ -910,6 +1577,22 @@ Datum build_base(PG_FUNCTION_ARGS) {
             appendStringInfoChar(&buf, '\n');
         }
         insert_file_text("meta/join_classes", buf.data);
+    }
+
+    // meta/col_domain
+    {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        for (int i = 0; i < nclasses; i++) {
+            for (int j = 0; j < classes[i].cols.count; j++) {
+                int col_idx = classes[i].cols.items[j];
+                appendStringInfo(&buf, "%s.%s=%d\n",
+                                 cols.items[col_idx].table,
+                                 cols.items[col_idx].column,
+                                 i);
+            }
+        }
+        insert_file_text("meta/col_domain", buf.data);
     }
 
     free_policy_set(&ps);
@@ -1036,31 +1719,24 @@ Datum build_base(PG_FUNCTION_ARGS) {
         }
 
         ByteaBuilder *ctid_bb = bb_create();
-        /* Chunk code payloads to avoid >1GB bytea / allocator limits on large tables (e.g., tpch10 lineitem). */
-        const uint32 code_chunk_max_rows = 1000000; /* keep per-chunk payload comfortably <256MB */
-        ByteaBuilder *code_payload_bb = NULL;
+        /* Columnar code chunks for compactness. */
+        const uint32 code_chunk_max_rows = 1000000;
         size_t est_rows = estimate_table_rows(table);
         if (est_rows == 0)
             est_rows = 1024;
         if (est_rows > (SIZE_MAX / (sizeof(int32) * 2)))
             est_rows = SIZE_MAX / (sizeof(int32) * 2);
         bb_reserve(ctid_bb, est_rows * sizeof(int32) * 2);
-        size_t payload_per_row = sizeof(uint16);
-        if (token_count > 0) {
-            if ((size_t) token_count > (SIZE_MAX - payload_per_row) / sizeof(int32))
-                ereport(ERROR, (errmsg("token count overflow for %s", table)));
-            payload_per_row += (size_t) token_count * sizeof(int32);
-        }
-        if (est_rows > 0 && payload_per_row > 0) {
-            size_t max_rows = SIZE_MAX / payload_per_row;
-            if (est_rows > max_rows)
-                est_rows = max_rows;
-        }
         int32 *row_tokens = NULL;
         if (token_count > 0)
             row_tokens = (int32 *) palloc(sizeof(int32) * token_count);
-        if (token_count > (int) UINT16_MAX)
-            ereport(ERROR, (errmsg("too many token columns for %s: %d", table, token_count)));
+        int32 *chunk_tokens = NULL;
+        if (token_count > 0) {
+            size_t chunk_cap = (size_t) code_chunk_max_rows * (size_t) token_count;
+            if (chunk_cap > 0 && chunk_cap > SIZE_MAX / sizeof(int32))
+                ereport(ERROR, (errmsg("token chunk allocation overflow for %s", table)));
+            chunk_tokens = (int32 *) palloc(sizeof(int32) * chunk_cap);
+        }
 
         Oid relid = RelnameGetRelid(table);
         if (!OidIsValid(relid))
@@ -1092,17 +1768,6 @@ Datum build_base(PG_FUNCTION_ARGS) {
             int32 off = (int32) ItemPointerGetOffsetNumber(&slot->tts_tid);
             bb_append_int32(ctid_bb, blk);
             bb_append_int32(ctid_bb, off);
-
-            if (!code_payload_bb) {
-                code_payload_bb = bb_create();
-                size_t reserve_rows = code_chunk_max_rows;
-                if (reserve_rows > (SIZE_MAX / payload_per_row))
-                    reserve_rows = SIZE_MAX / payload_per_row;
-                bb_reserve(code_payload_bb, reserve_rows * payload_per_row);
-            }
-
-            uint16 ntoks = (uint16) token_count;
-            bb_append_bytes(code_payload_bb, &ntoks, sizeof(uint16));
             for (int i = 0; i < token_count; i++) {
                 bool isnull = false;
                 Datum v = slot_getattr(slot, tokcols[i].attnum, &isnull);
@@ -1120,8 +1785,40 @@ Datum build_base(PG_FUNCTION_ARGS) {
                             ereport(ERROR, (errmsg("invalid const column index %d", ci)));
                         next_tok_ptr = &const_cols[ci].next_tok;
                     }
-
-                    if (dict_typid_uses_intkey(tokcols[i].typid)) {
+                    if (tokcols[i].is_join) {
+                        int jc = tokcols[i].join_class_id;
+                        DomainTypeClass tc = (DomainTypeClass)classes[jc].type_class;
+                        if (tc == DOMAIN_TYPE_DATE) {
+                            int64 ikey = dict_datum_to_intkey(tokcols[i].typid, v);
+                            tval = dict_map_get_or_insert_int64(tokcols[i].tok_map,
+                                                                build_mcxt,
+                                                                ikey,
+                                                                next_tok_ptr,
+                                                                NULL);
+                        } else {
+                            char *txt = OidOutputFunctionCall(tokcols[i].typoutput, v);
+                            if (txt) {
+                                char *canon = txt;
+                                if (tc == DOMAIN_TYPE_NUMERIC) {
+                                    canon = normalize_numeric_string(txt);
+                                } else if (tokcols[i].typid == BPCHAROID) {
+                                    size_t n = strlen(canon);
+                                    while (n > 0 && canon[n - 1] == ' ') {
+                                        canon[n - 1] = '\0';
+                                        n--;
+                                    }
+                                }
+                                tval = dict_map_get_or_insert_text(tokcols[i].tok_map,
+                                                                   build_mcxt,
+                                                                   canon,
+                                                                   next_tok_ptr,
+                                                                   NULL);
+                                if (canon != txt)
+                                    pfree(canon);
+                                pfree(txt);
+                            }
+                        }
+                    } else if (dict_typid_uses_intkey(tokcols[i].typid)) {
                         int64 ikey = dict_datum_to_intkey(tokcols[i].typid, v);
                         tval = dict_map_get_or_insert_int64(tokcols[i].tok_map,
                                                             build_mcxt,
@@ -1166,12 +1863,16 @@ Datum build_base(PG_FUNCTION_ARGS) {
                 }
                 row_tokens[i] = tval;
             }
-            if (token_count > 0)
-                bb_append_bytes(code_payload_bb, row_tokens, (size_t) token_count * sizeof(int32));
+            if (token_count > 0) {
+                size_t base = (size_t) chunk_rows * (size_t) token_count;
+                memcpy(chunk_tokens + base, row_tokens, sizeof(int32) * (size_t) token_count);
+            }
             total_rows++;
             chunk_rows++;
             if (chunk_rows >= code_chunk_max_rows) {
-                flush_code_chunk(table, &chunk_idx, &chunk_rows, &code_payload_bb);
+                flush_code_col_chunks(table, chunk_idx, chunk_rows, chunk_tokens, token_count);
+                chunk_rows = 0;
+                chunk_idx++;
             }
         }
         table_endscan(scan);
@@ -1184,13 +1885,15 @@ Datum build_base(PG_FUNCTION_ARGS) {
         snprintf(name_ctid, sizeof(name_ctid), "%s_ctid", table);
         snprintf(name_code, sizeof(name_code), "%s_code_base", table);
 
-        /* Flush final partial chunk and then write a small CB03 manifest at <table>_code_base. */
-        flush_code_chunk(table, &chunk_idx, &chunk_rows, &code_payload_bb);
+        /* Flush final partial chunk and then write a compact CB04 manifest at <table>_code_base. */
+        flush_code_col_chunks(table, chunk_idx, chunk_rows, chunk_tokens, token_count);
+        if (chunk_rows > 0)
+            chunk_idx++;
         if (total_rows > (int64) INT32_MAX)
             ereport(ERROR, (errmsg("row count too large for %s: " INT64_FORMAT, table, total_rows)));
 
         ByteaBuilder *manifest_bb = bb_create();
-        const char magic3[4] = {'C', 'B', '0', '3'};
+        const char magic3[4] = {'C', 'B', '0', '4'};
         bb_append_bytes(manifest_bb, magic3, sizeof(magic3));
         bb_append_int32(manifest_bb, (int32) total_rows);
         bb_append_int32(manifest_bb, (int32) code_chunk_max_rows);
@@ -1207,30 +1910,66 @@ Datum build_base(PG_FUNCTION_ARGS) {
 
         if (row_tokens)
             pfree(row_tokens);
+        if (chunk_tokens)
+            pfree(chunk_tokens);
         bb_free(ctid_bb);
-        if (code_payload_bb)
-            bb_free(code_payload_bb);
         bb_free(manifest_bb);
         elog(NOTICE, "artifact_builder: table_tokenize table=%s rows=%lld token_cols=%d ms=%.3f",
              table, (long long) total_rows, token_count, elapsed_ms(table_t0));
     }
 
     /*
-     * Persist const-column dictionaries after tokenization. Token assignment is
-     * insertion-order based (unsorted), so mark dict_sorted=0.
+     * Persist one shared dictionary per join-domain. Token assignment is
+     * insertion-order based (unsorted), so dict_sorted remains 0.
+     * For domains used by ordered col-col predicates, also persist token->rank.
+     */
+    for (int i = 0; i < nclasses; i++) {
+        TimestampTz dict_t0 = GetCurrentTimestamp();
+        char dict_name[NAMEDATALEN * 3];
+        snprintf(dict_name, sizeof(dict_name), "dict/domain/%d", i);
+        write_dict_from_map(dict_name, classes[i].tok_map, classes[i].next_tok, class_typid ? class_typid[i] : TEXTOID);
+
+        char dtype_name[NAMEDATALEN * 3];
+        snprintf(dtype_name, sizeof(dtype_name), "meta/dict_type/domain/%d", i);
+        insert_file_text(dtype_name, dict_type_label_for_oid(class_typid ? class_typid[i] : TEXTOID));
+
+        char sorted_name[NAMEDATALEN * 3];
+        snprintf(sorted_name, sizeof(sorted_name), "meta/dict_sorted/domain/%d", i);
+        insert_file_text(sorted_name, "0");
+
+        char rank_meta_name[NAMEDATALEN * 3];
+        snprintf(rank_meta_name, sizeof(rank_meta_name), "meta/dict_rank/domain/%d", i);
+        if (class_need_rank && class_need_rank[i]) {
+            char rank_name[NAMEDATALEN * 3];
+            snprintf(rank_name, sizeof(rank_name), "rank/domain/%d", i);
+            write_rank_from_map(rank_name,
+                                classes[i].tok_map,
+                                classes[i].next_tok,
+                                class_typid ? class_typid[i] : TEXTOID);
+            insert_file_text(rank_meta_name, "1");
+        } else {
+            insert_file_text(rank_meta_name, "0");
+        }
+
+        elog(NOTICE,
+             "artifact_builder: domain_dict class=%d tokens=%d sorted=0 rank=%d ms=%.3f",
+             i, classes[i].next_tok,
+             (class_need_rank && class_need_rank[i]) ? 1 : 0,
+             elapsed_ms(dict_t0));
+    }
+
+    /*
+     * Persist non-join const-column dictionaries after tokenization.
+     * Join-class columns are served by dict/domain/<class_id>.
      */
     for (int i = 0; i < n_const; i++) {
+        if (const_cols[i].uses_join_map)
+            continue;
         TimestampTz dict_t0 = GetCurrentTimestamp();
         char dict_name[NAMEDATALEN * 3];
         snprintf(dict_name, sizeof(dict_name), "dict/%s/%s",
                  const_cols[i].col.table, const_cols[i].col.column);
         int32 ntoks = const_cols[i].next_tok;
-        if (const_cols[i].uses_join_map) {
-            int cid = const_cols[i].join_class_id;
-            if (cid < 0 || cid >= nclasses)
-                ereport(ERROR, (errmsg("invalid const join class %d", cid)));
-            ntoks = classes[cid].next_tok;
-        }
         write_dict_from_map(dict_name, const_cols[i].tok_map, ntoks, const_cols[i].typid);
 
         char dtype_name[NAMEDATALEN * 3];
@@ -1249,6 +1988,211 @@ Datum build_base(PG_FUNCTION_ARGS) {
              ntoks, elapsed_ms(dict_t0));
     }
 
+    /* Build CSR token->RID bin indexes for all policy-scoped (table, domain) pairs. */
+    {
+        StringInfoData bin_meta;
+        initStringInfo(&bin_meta);
+
+        for (int ti = 0; ti < tables.count; ti++) {
+            TimestampTz bin_t0 = GetCurrentTimestamp();
+            char *table = tables.items[ti];
+
+            IntList table_cols = {0};
+            for (int i = 0; i < ncols; i++) {
+                if (strcmp(cols.items[i].table, table) != 0)
+                    continue;
+                int cid = (col_class && i < col_class_cap) ? col_class[i] : -1;
+                if (cid >= 0)
+                    int_list_add(&table_cols, i);
+            }
+            if (table_cols.count == 0)
+                continue;
+            sort_columns_by_name(&cols, &table_cols);
+
+            IntList bin_domains = {0};
+            IntList bin_col_idxs = {0};
+            for (int i = 0; i < table_cols.count; i++) {
+                int col_idx = table_cols.items[i];
+                int cid = (col_class && col_idx < col_class_cap) ? col_class[col_idx] : -1;
+                if (cid < 0 || cid >= nclasses)
+                    continue;
+                bool seen = false;
+                for (int j = 0; j < bin_domains.count; j++) {
+                    if (bin_domains.items[j] == cid) {
+                        seen = true;
+                        break;
+                    }
+                }
+                if (!seen) {
+                    int_list_add(&bin_domains, cid);
+                    int_list_add(&bin_col_idxs, col_idx);
+                }
+            }
+            if (bin_domains.count == 0)
+                continue;
+
+            for (int i = 0; i < bin_domains.count; i++) {
+                for (int j = i + 1; j < bin_domains.count; j++) {
+                    if (bin_domains.items[i] > bin_domains.items[j]) {
+                        int td = bin_domains.items[i];
+                        int tc = bin_col_idxs.items[i];
+                        bin_domains.items[i] = bin_domains.items[j];
+                        bin_col_idxs.items[i] = bin_col_idxs.items[j];
+                        bin_domains.items[j] = td;
+                        bin_col_idxs.items[j] = tc;
+                    }
+                }
+            }
+
+            BinTokCol *bcols = (BinTokCol *)palloc0(sizeof(BinTokCol) * bin_domains.count);
+
+            Oid relid = RelnameGetRelid(table);
+            if (!OidIsValid(relid))
+                ereport(ERROR, (errmsg("relation not found for bin index: %s", table)));
+            Relation rel = table_open(relid, AccessShareLock);
+            TupleDesc rel_desc = RelationGetDescr(rel);
+            for (int i = 0; i < bin_domains.count; i++) {
+                int col_idx = bin_col_idxs.items[i];
+                int did = bin_domains.items[i];
+                bcols[i].col_idx = col_idx;
+                bcols[i].domain_id = did;
+                bcols[i].attnum = get_attnum(relid, cols.items[col_idx].column);
+                if (bcols[i].attnum == InvalidAttrNumber)
+                    ereport(ERROR, (errmsg("missing bin attribute %s.%s", table, cols.items[col_idx].column)));
+                bcols[i].typid = TupleDescAttr(rel_desc, bcols[i].attnum - 1)->atttypid;
+                getTypeOutputInfo(bcols[i].typid, &bcols[i].typoutput, &bcols[i].typisvarlena);
+            }
+
+            uint32 **counts_by_bin = (uint32 **)palloc0(sizeof(uint32 *) * bin_domains.count);
+            uint32 **off_by_bin = (uint32 **)palloc0(sizeof(uint32 *) * bin_domains.count);
+            uint32 **rids_by_bin = (uint32 **)palloc0(sizeof(uint32 *) * bin_domains.count);
+            uint32 **cursor_by_bin = (uint32 **)palloc0(sizeof(uint32 *) * bin_domains.count);
+            uint32 *ntokens_by_bin = (uint32 *)palloc0(sizeof(uint32) * bin_domains.count);
+
+            for (int i = 0; i < bin_domains.count; i++) {
+                int did = bin_domains.items[i];
+                if (did < 0 || did >= nclasses)
+                    ereport(ERROR, (errmsg("invalid bin domain id %d for table %s", did, table)));
+                if (classes[did].next_tok < 0)
+                    ereport(ERROR, (errmsg("invalid domain token count %d for domain %d", classes[did].next_tok, did)));
+                ntokens_by_bin[i] = (uint32)classes[did].next_tok;
+                counts_by_bin[i] = ntokens_by_bin[i] > 0 ? (uint32 *)palloc0(sizeof(uint32) * ntokens_by_bin[i]) : NULL;
+            }
+
+            PushActiveSnapshot(GetTransactionSnapshot());
+            TableScanDesc scan = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
+            TupleTableSlot *slot = MakeSingleTupleTableSlot(rel_desc, table_slot_callbacks(rel));
+            uint32 nrows = 0;
+
+            while (table_scan_getnextslot(scan, ForwardScanDirection, slot)) {
+                for (int i = 0; i < bin_domains.count; i++) {
+                    bool isnull = false;
+                    Datum v = slot_getattr(slot, bcols[i].attnum, &isnull);
+                    if (isnull)
+                        continue;
+                    int did = bcols[i].domain_id;
+                    int32 next_tok_before = classes[did].next_tok;
+                    int32 tok = domain_tokenize_with_map(classes[did].tok_map,
+                                                        build_mcxt,
+                                                        v,
+                                                        bcols[i].typid,
+                                                        bcols[i].typoutput,
+                                                        (DomainTypeClass)classes[did].type_class,
+                                                        &classes[did].next_tok);
+                    if (classes[did].next_tok != next_tok_before)
+                        ereport(ERROR, (errmsg("artifact_builder: bin pass introduced new token table=%s domain=%d", table, did)));
+                    if (tok < 0 || (uint32)tok >= ntokens_by_bin[i])
+                        ereport(ERROR, (errmsg("artifact_builder: bin token out of range table=%s domain=%d tok=%d ntokens=%u",
+                                               table, did, tok, ntokens_by_bin[i])));
+                    counts_by_bin[i][tok]++;
+                }
+                if (nrows == UINT_MAX)
+                    ereport(ERROR, (errmsg("artifact_builder: row count overflow in bin pass for %s", table)));
+                nrows++;
+                ExecClearTuple(slot);
+            }
+            table_endscan(scan);
+
+            for (int i = 0; i < bin_domains.count; i++) {
+                uint32 ntok = ntokens_by_bin[i];
+                off_by_bin[i] = (uint32 *)palloc0(sizeof(uint32) * ((size_t)ntok + 1u));
+                for (uint32 t = 0; t < ntok; t++) {
+                    off_by_bin[i][t + 1u] = off_by_bin[i][t] + (counts_by_bin[i] ? counts_by_bin[i][t] : 0u);
+                }
+                uint32 nnz = off_by_bin[i][ntok];
+                rids_by_bin[i] = nnz > 0 ? (uint32 *)palloc(sizeof(uint32) * nnz) : NULL;
+                cursor_by_bin[i] = ntok > 0 ? (uint32 *)palloc(sizeof(uint32) * ntok) : NULL;
+                if (ntok > 0)
+                    memcpy(cursor_by_bin[i], off_by_bin[i], sizeof(uint32) * ntok);
+            }
+
+            scan = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
+            uint32 rid = 0;
+            while (table_scan_getnextslot(scan, ForwardScanDirection, slot)) {
+                for (int i = 0; i < bin_domains.count; i++) {
+                    bool isnull = false;
+                    Datum v = slot_getattr(slot, bcols[i].attnum, &isnull);
+                    if (isnull)
+                        continue;
+                    int did = bcols[i].domain_id;
+                    int32 next_tok_before = classes[did].next_tok;
+                    int32 tok = domain_tokenize_with_map(classes[did].tok_map,
+                                                        build_mcxt,
+                                                        v,
+                                                        bcols[i].typid,
+                                                        bcols[i].typoutput,
+                                                        (DomainTypeClass)classes[did].type_class,
+                                                        &classes[did].next_tok);
+                    if (classes[did].next_tok != next_tok_before)
+                        ereport(ERROR, (errmsg("artifact_builder: bin fill pass introduced new token table=%s domain=%d", table, did)));
+                    if (tok < 0)
+                        continue;
+                    uint32 pos = cursor_by_bin[i][(uint32)tok]++;
+                    rids_by_bin[i][pos] = rid;
+                }
+                rid++;
+                ExecClearTuple(slot);
+            }
+            table_endscan(scan);
+            ExecDropSingleTupleTableSlot(slot);
+            PopActiveSnapshot();
+            table_close(rel, AccessShareLock);
+
+            for (int i = 0; i < bin_domains.count; i++) {
+                uint32 ntok = ntokens_by_bin[i];
+                uint32 nnz = off_by_bin[i][ntok];
+                for (uint32 t = 0; t < ntok; t++) {
+                    if (cursor_by_bin[i][t] != off_by_bin[i][t + 1u])
+                        ereport(ERROR, (errmsg("artifact_builder: bin cursor mismatch table=%s domain=%d tok=%u", table, bin_domains.items[i], t)));
+                }
+
+                char off_name[NAMEDATALEN * 4];
+                char rids_name[NAMEDATALEN * 4];
+                snprintf(off_name, sizeof(off_name), "bin/%s/domain_%d.off", table, bin_domains.items[i]);
+                snprintf(rids_name, sizeof(rids_name), "bin/%s/domain_%d.rids", table, bin_domains.items[i]);
+                insert_file_u32_array(off_name, off_by_bin[i], (size_t)ntok + 1u);
+                insert_file_u32_array(rids_name, rids_by_bin[i], (size_t)nnz);
+                appendStringInfo(&bin_meta,
+                                 "table=%s domain=%d col=%s.%s off=%s rids=%s off_type=u32 rids_type=u32 ntokens=%u nrows=%u nnz=%u\n",
+                                 table,
+                                 bin_domains.items[i],
+                                 cols.items[bin_col_idxs.items[i]].table,
+                                 cols.items[bin_col_idxs.items[i]].column,
+                                 off_name,
+                                 rids_name,
+                                 ntok,
+                                 nrows,
+                                 nnz);
+            }
+
+            elog(NOTICE,
+                 "artifact_builder: bin_index table=%s pairs=%d rows=%u ms=%.3f",
+                 table, bin_domains.count, nrows, elapsed_ms(bin_t0));
+        }
+
+        insert_file_text("meta/bin_index", bin_meta.data ? bin_meta.data : "");
+    }
+
     elog(NOTICE, "artifact_builder: total_ms=%.3f tables=%d join_classes=%d const_cols=%d",
          elapsed_ms(build_t0), tables.count, nclasses, n_const);
 
@@ -1256,7 +2200,15 @@ Datum build_base(PG_FUNCTION_ARGS) {
         SPI_freeplan(g_insert_file_plan);
         g_insert_file_plan = NULL;
     }
-    SPI_execute("CREATE UNIQUE INDEX IF NOT EXISTS files_name_uidx ON public.files(name)", false, 0);
+    {
+        bool files_table_default = false;
+        char *table_sql = files_table_sql_ident(&files_table_default);
+        if (files_table_default)
+        {
+            SPI_execute("CREATE INDEX IF NOT EXISTS files_runid_name_idx ON public.files(run_id, name)", false, 0);
+        }
+        pfree(table_sql);
+    }
 
     MemoryContextDelete(build_mcxt);
     SPI_finish();

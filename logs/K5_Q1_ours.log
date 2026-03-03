@@ -1,5 +1,0 @@
-QUERY:
-SELECT COUNT(*) FROM customer;
-COUNT: 15000
---- NOTICES ---
-

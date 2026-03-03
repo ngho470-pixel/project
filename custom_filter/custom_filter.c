@@ -32,6 +32,7 @@
 #include "access/htup_details.h"   
 #include "access/htup.h"
 #include "access/table.h"
+#include "access/tableam.h"
 #include "storage/itemptr.h"      
 #include "utils/memutils.h"       
 #include "utils/rel.h"
@@ -39,6 +40,7 @@
 #include "lib/stringinfo.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/pg_list.h"
+#include "nodes/primnodes.h"
 #include "utils/hsearch.h"
 #include "utils/array.h"
 #include "storage/fd.h"
@@ -61,10 +63,19 @@ typedef struct PolicyArtifactC {
     size_t len;
 } PolicyArtifactC;
 
+typedef enum CfScanMode
+{
+    CF_SCAN_MODE_FILTER = 0,
+    CF_SCAN_MODE_TID = 1,
+    CF_SCAN_MODE_EMPTY = 2
+} CfScanMode;
+
 typedef struct PolicyTableAllowC {
     const char *table;
     uint64 *block_words;
+    uint32 *block_ids;
     uint32 blocks;
+    uint32 total_blocks;
     uint32 n_rows;
 } PolicyTableAllowC;
 
@@ -72,6 +83,8 @@ typedef struct PolicyAllowListC {
     int count;
     PolicyTableAllowC *items;
 } PolicyAllowListC;
+
+typedef struct TableFilterState TableFilterState;
 
 typedef struct PolicyRunProfileC {
     double artifact_parse_ms;
@@ -95,6 +108,64 @@ typedef struct PolicyRunProfileC {
     uint64 prop_join_scans_total;
     int unique_join_struct_sigs_max;
     const char *prop_table_scans;
+    uint64 signature_cache_hits;
+    uint64 signature_cache_misses;
+    uint64 term_code_scans;
+    uint64 target_full_row_scans;
+    size_t target_rid_bitmap_bytes;
+    size_t signature_cache_bytes;
+    uint64 active_sig_dense_count;
+    uint64 active_sig_sparse_count;
+    double active_sig_density_sum;
+    uint64 domain_set_dense_count;
+    uint64 domain_set_sparse_count;
+    double domain_set_density_sum;
+    uint64 block_words_blocks_allocated;
+    uint64 block_words_total_blocks;
+    size_t block_words_dense_bytes;
+    uint64 block_words_nblocks;
+    uint64 block_words_nwords_per_block;
+    uint64 proj_sig_count;
+    uint64 proj_sig_total;
+    uint64 proj_sig_new;
+    uint64 proj_sig_skipped;
+    uint64 proj_mask_or_ops;
+    uint64 proj_rid_iters;
+    uint64 proj_rid_iters_scan_enforcement;
+    uint64 proj_rid_iters_dependency;
+    uint64 canon_term_map_cache_hits;
+    uint64 canon_term_map_cache_misses;
+    double canon_term_map_build_ms;
+    size_t canon_term_map_bytes;
+    double restrict_key_index_build_ms;
+    uint64 restrict_key_index_entries;
+    size_t restrict_key_index_bytes;
+    double restrict_key_prune_ms;
+    uint64 sigmask_cache_hits;
+    uint64 sigmask_cache_misses;
+    double sigmask_build_ms;
+    size_t sigmask_bytes;
+    size_t bytes_sig_ctid_masks;
+    size_t bytes_block_words;
+    size_t bytes_artifact_buffers_retained;
+    size_t bytes_decoded_buffers_retained;
+    uint64 qual_atoms_total;
+    uint64 qual_atoms_applied;
+    uint64 qual_pruned_sigs;
+    double qual_prune_ms;
+    uint64 restrict_sig_tables;
+    uint64 restrict_sig_schema_cols_total;
+    size_t restrict_sig_bytes_total;
+    double restrict_sig_apply_ms;
+    double restrict_term_apply_ms;
+    uint64 restrict_term_sigs_kept;
+    uint64 restrict_term_sigs_dropped;
+    uint64 scan_mode_tid_tables;
+    uint64 scan_mode_filter_tables;
+    uint64 tid_blocks_visited;
+    uint64 tid_tuples_fetched;
+    double tid_fetch_ms;
+    double tid_qual_ms;
 } PolicyRunProfileC;
 
 typedef struct PolicyRunHandle PolicyRunHandle;
@@ -108,7 +179,7 @@ extern const PolicyRunProfileC *policy_run_profile(const PolicyRunHandle *h);
 #define CF_WORDS_PER_BLOCK ((CF_MAX_OFF + 63u) / 64u)
 
 static inline bool
-cf_allowed_ctid_words(const uint64 *words, uint32 blocks, BlockNumber blk, OffsetNumber off)
+cf_allowed_ctid_words(const uint64 *words, const uint32 *block_ids, uint32 blocks, uint32 total_blocks, BlockNumber blk, OffsetNumber off)
 {
     uint32 blk_u;
     uint32 off_u;
@@ -119,10 +190,25 @@ cf_allowed_ctid_words(const uint64 *words, uint32 blocks, BlockNumber blk, Offse
 
     if (!words || blocks == 0)
         return false;
-    if (blk < 0)
-        return false;
     blk_u = (uint32) blk;
-    if (blk_u >= blocks)
+    if (block_ids) {
+        uint32 lo = 0, hi = blocks;
+        while (lo < hi) {
+            uint32 mid = lo + (hi - lo) / 2u;
+            uint32 v = block_ids[mid];
+            if (v < blk_u)
+                lo = mid + 1u;
+            else
+                hi = mid;
+        }
+        if (lo >= blocks || block_ids[lo] != blk_u)
+            return false;
+        blk_u = lo;
+    } else {
+        if (blk_u >= blocks)
+            return false;
+    }
+    if (total_blocks > 0 && blk_u >= total_blocks && !block_ids)
         return false;
     if (off < 1)
         return false;
@@ -135,6 +221,39 @@ cf_allowed_ctid_words(const uint64 *words, uint32 blocks, BlockNumber blk, Offse
     flat = (size_t) blk_u * (size_t) CF_WORDS_PER_BLOCK + word_idx;
     mask = 1ULL << (off0 & 63u);
     return (words[flat] & mask) != 0;
+}
+
+static inline const uint64 *
+cf_lookup_block_words(const uint64 *words,
+                      const uint32 *block_ids,
+                      uint32 blocks,
+                      uint32 total_blocks,
+                      BlockNumber blk)
+{
+    if (!words || blocks == 0)
+        return NULL;
+    uint32 blk_u = (uint32) blk;
+    if (block_ids)
+    {
+        uint32 lo = 0, hi = blocks;
+        while (lo < hi)
+        {
+            uint32 mid = lo + (hi - lo) / 2u;
+            uint32 v = block_ids[mid];
+            if (v < blk_u)
+                lo = mid + 1u;
+            else
+                hi = mid;
+        }
+        if (lo >= blocks || block_ids[lo] != blk_u)
+            return NULL;
+        return words + (size_t) lo * (size_t) CF_WORDS_PER_BLOCK;
+    }
+    if (blk_u >= blocks)
+        return NULL;
+    if (total_blocks > 0 && blk_u >= total_blocks)
+        return NULL;
+    return words + (size_t) blk_u * (size_t) CF_WORDS_PER_BLOCK;
 }
 
 #define CF_TRACE_LOG(fmt, ...) \
@@ -424,6 +543,8 @@ static char *cf_policy_path = NULL;
 static int cf_profile_k = 0;
 static char *cf_profile_query = NULL;
 static bool cf_profile_rescan = false;
+static bool cf_tidscan_seqscan = true;
+static double cf_tidscan_density_threshold = 0.20;
 
 bool
 cf_trace_enabled(void)
@@ -452,12 +573,14 @@ static bool cf_in_executor_start_init = false;
 set_rel_pathlist_hook_type prev_set_rel_pathlist_hook = NULL;
 planner_hook_type prev_planner_hook = NULL;
 ExecutorStart_hook_type prev_ExecutorStart_hook = NULL;
+ExecutorRun_hook_type prev_ExecutorRun_hook = NULL;
 
 
 void cf_rel_pathlist_hook(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry *rte);
 static PlannedStmt *cf_planner_hook(Query *parse, const char *query_string,
                                     int cursorOptions, ParamListInfo boundParams);
 static void cf_executor_start(QueryDesc *queryDesc, int eflags);
+static void cf_executor_run(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once);
 
 Plan *cf_plan_path(PlannerInfo *root, RelOptInfo *rel,struct CustomPath *best_path,List *tlist, List *clauses, List *custom_plans);
 
@@ -530,6 +653,7 @@ static bool cf_table_wrapped(PolicyQueryState *qs, const char *name);
 static const char *cf_plan_find_scan_type(Plan *plan, PlannedStmt *pstmt, Oid relid);
 static bool cf_plan_scan_relid(Plan *plan, Index *out_relid);
 static bool cf_relid_is_relation(PlannedStmt *pstmt, Index scanrelid, Oid *out_relid);
+static void cf_log_wrapper_audit(PlannedStmt *pstmt);
 typedef enum CfTidSource
 {
     CF_TID_NONE = 0,
@@ -552,6 +676,17 @@ static void cf_parse_query_targets(const char *query_str, MemoryContext mcxt, ch
 static bool cf_table_should_filter(PolicyQueryState *qs, const char *name);
 static bool cf_table_scanned(PolicyQueryState *qs, const char *name);
 static bool cf_rel_is_policy_target(PlannerInfo *root, Oid relid);
+static bool cf_runtime_strict_mode_enabled(void);
+static bool cf_plan_inner_only_safe(Plan *plan, const char **reason_out);
+static bool cf_query_has_empty_allow_set(const PolicyQueryState *qs, const char **table_out);
+static void cf_update_scan_mode(struct CfExec *st, CustomScanState *node, TableFilterState *tf);
+static bool cf_tid_iter_next(struct CfExec *st, TableFilterState *tf, ItemPointerData *out_tid);
+static TupleTableSlot *cf_exec_seqscan_tid_mode(CustomScanState *node, struct CfExec *st, TableFilterState *tf);
+static void cf_collect_seqscan_qual_atoms(EState *estate,
+                                          const PolicyEvalResultC *eval_res,
+                                          MemoryContext mcxt,
+                                          PolicyScanQualAtomC **out_atoms,
+                                          int *out_count);
 static void cf_clear_plan_eval_cache(void);
 static const PolicyEvalResultC *cf_get_plan_eval(Query *parse);
 
@@ -663,6 +798,26 @@ _PG_init(void)
                              0,
                              NULL, NULL, NULL);
 
+    DefineCustomBoolVariable("custom_filter.tidscan_seqscan",
+                             "Enable adaptive CTID-driven fetch mode for selective SeqScan targets.",
+                             NULL,
+                             &cf_tidscan_seqscan,
+                             true,
+                             PGC_SUSET,
+                             0,
+                             NULL, NULL, NULL);
+
+    DefineCustomRealVariable("custom_filter.tidscan_density_threshold",
+                             "Switch SeqScan to CTID-driven mode when allowed-block density is below this threshold.",
+                             NULL,
+                             &cf_tidscan_density_threshold,
+                             0.20,
+                             0.0,
+                             1.0,
+                             PGC_SUSET,
+                             0,
+                             NULL, NULL, NULL);
+
     prev_planner_hook = planner_hook;
     planner_hook = cf_planner_hook;
 
@@ -671,6 +826,8 @@ _PG_init(void)
 
     prev_ExecutorStart_hook = ExecutorStart_hook;
     ExecutorStart_hook = cf_executor_start;
+    prev_ExecutorRun_hook = ExecutorRun_hook;
+    ExecutorRun_hook = cf_executor_run;
 
     RegisterCustomScanMethods(&CFPlanMethods);
 }
@@ -681,6 +838,7 @@ _PG_fini(void)
     planner_hook = prev_planner_hook;
     set_rel_pathlist_hook = prev_set_rel_pathlist_hook;
     ExecutorStart_hook = prev_ExecutorStart_hook;
+    ExecutorRun_hook = prev_ExecutorRun_hook;
     cf_clear_plan_eval_cache();
 }
 
@@ -1111,6 +1269,27 @@ typedef struct CfExec
     uint64 rescan_calls;
     bool exec_logged;
     bool debug_exec_logged;
+    bool blk_cache_valid;
+    BlockNumber blk_cache_blkno;
+    bool blk_cache_present;
+    const uint64 *blk_cache_words;
+    uint64 blocks_seen;
+    uint64 blocks_skipped;
+    CfScanMode scan_mode;
+    bool scan_mode_set;
+    double scan_mode_density;
+    bool scan_mode_logged;
+    bool tid_iter_initialized;
+    uint32 tid_iter_block_ord;
+    uint32 tid_iter_word_idx;
+    uint32 tid_iter_bit_min;
+    uint64 tid_blocks_visited;
+    uint64 tid_tuples_fetched;
+    double tid_fetch_ms;
+    double tid_qual_ms;
+    bool empty_short_circuit_recorded;
+    uint64 empty_short_circuit_calls;
+    double empty_short_circuit_ms;
 } CfExec;
 
 typedef struct TableFilterState
@@ -1119,8 +1298,13 @@ typedef struct TableFilterState
     char relname[NAMEDATALEN];
     uint32 n_rows;
     uint64 *block_words;
+    uint32 *block_ids;
     uint32 blocks;
+    uint32 total_blocks;
     size_t block_words_nbytes;
+    size_t block_ids_nbytes;
+    uint64 allowed_rows;
+    bool allow_is_empty;
     uint64 seen;
     uint64 passed;
     uint64 misses;
@@ -1171,6 +1355,58 @@ typedef struct PolicyQueryState
     uint64 prop_join_scans_total;
     int unique_join_struct_sigs_max;
     char *prop_table_scans;
+    uint64 signature_cache_hits;
+    uint64 signature_cache_misses;
+    uint64 term_code_scans;
+    uint64 target_full_row_scans;
+    size_t target_rid_bitmap_bytes;
+    size_t signature_cache_bytes;
+    uint64 active_sig_dense_count;
+    uint64 active_sig_sparse_count;
+    double active_sig_density_sum;
+    uint64 domain_set_dense_count;
+    uint64 domain_set_sparse_count;
+    double domain_set_density_sum;
+    uint64 block_words_blocks_allocated;
+    uint64 block_words_total_blocks;
+    size_t block_words_dense_bytes;
+    uint64 block_words_nblocks;
+    uint64 block_words_nwords_per_block;
+    uint64 proj_sig_count;
+    uint64 proj_sig_total;
+    uint64 proj_sig_new;
+    uint64 proj_sig_skipped;
+    uint64 proj_mask_or_ops;
+    uint64 proj_rid_iters;
+    uint64 proj_rid_iters_scan_enforcement;
+    uint64 proj_rid_iters_dependency;
+    uint64 canon_term_map_cache_hits;
+    uint64 canon_term_map_cache_misses;
+    double canon_term_map_build_ms;
+    size_t canon_term_map_bytes;
+    double restrict_key_index_build_ms;
+    uint64 restrict_key_index_entries;
+    size_t restrict_key_index_bytes;
+    double restrict_key_prune_ms;
+    uint64 sigmask_cache_hits;
+    uint64 sigmask_cache_misses;
+    double sigmask_build_ms;
+    size_t sigmask_bytes;
+    size_t bytes_sig_ctid_masks;
+    size_t bytes_block_words;
+    size_t bytes_artifact_buffers_retained;
+    size_t bytes_decoded_buffers_retained;
+    uint64 qual_atoms_total;
+    uint64 qual_atoms_applied;
+    uint64 qual_pruned_sigs;
+    double qual_prune_ms;
+    uint64 restrict_sig_tables;
+    uint64 restrict_sig_schema_cols_total;
+    size_t restrict_sig_bytes_total;
+    double restrict_sig_apply_ms;
+    double restrict_term_apply_ms;
+    uint64 restrict_term_sigs_kept;
+    uint64 restrict_term_sigs_dropped;
     double stamp_ms;
     double bin_ms;
     double local_sat_ms;
@@ -1189,6 +1425,22 @@ typedef struct PolicyQueryState
     uint64 rows_seen;
     uint64 rows_passed;
     uint64 ctid_misses;
+    uint64 blocks_seen;
+    uint64 blocks_skipped;
+    uint64 scan_mode_tid_tables;
+    uint64 scan_mode_filter_tables;
+    uint64 scan_mode_empty_tables;
+    uint64 tid_blocks_visited;
+    uint64 tid_tuples_fetched;
+    double tid_fetch_ms;
+    double tid_qual_ms;
+    uint64 empty_short_circuit_tables;
+    double empty_short_circuit_ms;
+    bool query_short_circuit_empty;
+    bool query_short_circuit_decided;
+    char query_short_circuit_reason[64];
+    double query_short_circuit_ms;
+    uint64 query_short_circuit_hits;
     long rss_kb_before_eval;
     long rss_kb_after_eval;
     long rss_kb_after_load;
@@ -1247,8 +1499,13 @@ cf_filters_guard_compute_hash(const PolicyQueryState *qs)
             h = cf_fnv1a64_update(h, tf->relname, rn);
         h = cf_fnv1a64_update(h, &tf->n_rows, sizeof(tf->n_rows));
         h = cf_fnv1a64_update(h, &tf->block_words, sizeof(tf->block_words));
+        h = cf_fnv1a64_update(h, &tf->block_ids, sizeof(tf->block_ids));
         h = cf_fnv1a64_update(h, &tf->blocks, sizeof(tf->blocks));
+        h = cf_fnv1a64_update(h, &tf->total_blocks, sizeof(tf->total_blocks));
         h = cf_fnv1a64_update(h, &tf->block_words_nbytes, sizeof(tf->block_words_nbytes));
+        h = cf_fnv1a64_update(h, &tf->block_ids_nbytes, sizeof(tf->block_ids_nbytes));
+        h = cf_fnv1a64_update(h, &tf->allowed_rows, sizeof(tf->allowed_rows));
+        h = cf_fnv1a64_update(h, &tf->allow_is_empty, sizeof(tf->allow_is_empty));
     }
 
     return h;
@@ -1563,9 +1820,82 @@ cf_executor_start(QueryDesc *queryDesc, int eflags)
     if (!pstmt || pstmt->commandType != CMD_SELECT)
         return;
 
-    (void) cf_ensure_query_state(queryDesc->estate,
-                                 queryDesc->sourceText ? queryDesc->sourceText : debug_query_string,
-                                 pstmt);
+    PolicyQueryState *qs = cf_ensure_query_state(queryDesc->estate,
+                                                 queryDesc->sourceText ? queryDesc->sourceText : debug_query_string,
+                                                 pstmt);
+    cf_log_wrapper_audit(pstmt);
+    if (qs)
+    {
+        const char *reason = "none";
+        const char *empty_rel = NULL;
+        bool any_empty = cf_query_has_empty_allow_set(qs, &empty_rel);
+        bool safe_plan = false;
+
+        qs->query_short_circuit_empty = false;
+        qs->query_short_circuit_decided = true;
+        qs->query_short_circuit_reason[0] = '\0';
+
+        if (!cf_runtime_strict_mode_enabled())
+            reason = "strict_mode_off";
+        else if (!any_empty)
+            reason = "no_empty_allow";
+        else
+        {
+            safe_plan = cf_plan_inner_only_safe(pstmt->planTree, &reason);
+            if (safe_plan)
+            {
+                qs->query_short_circuit_empty = true;
+                reason = "inner_only_empty";
+            }
+        }
+
+        strlcpy(qs->query_short_circuit_reason, reason, sizeof(qs->query_short_circuit_reason));
+        if (cf_profile_query && cf_profile_query[0])
+        {
+            elog(NOTICE,
+                 "query_short_circuit_decision: enabled=%d reason=%s empty_rel=%s",
+                 qs->query_short_circuit_empty ? 1 : 0,
+                 qs->query_short_circuit_reason[0] ? qs->query_short_circuit_reason : "none",
+                 empty_rel ? empty_rel : "none");
+        }
+    }
+}
+
+static void
+cf_executor_run(QueryDesc *queryDesc, ScanDirection direction, uint64 count, bool execute_once)
+{
+    bool do_short_circuit = false;
+
+    if (cf_enabled &&
+        !cf_in_internal_query &&
+        queryDesc &&
+        queryDesc->estate &&
+        queryDesc->plannedstmt &&
+        queryDesc->plannedstmt->commandType == CMD_SELECT &&
+        cf_runtime_strict_mode_enabled() &&
+        cf_query_state &&
+        cf_query_state->ready &&
+        cf_query_state->query_short_circuit_decided &&
+        cf_query_state->query_short_circuit_empty)
+    {
+        do_short_circuit = true;
+    }
+
+    if (do_short_circuit)
+    {
+        instr_time t0, t1;
+        INSTR_TIME_SET_CURRENT(t0);
+        queryDesc->estate->es_processed = 0;
+        cf_query_state->query_short_circuit_hits++;
+        INSTR_TIME_SET_CURRENT(t1);
+        cf_query_state->query_short_circuit_ms += INSTR_TIME_GET_MILLISEC(t1) - INSTR_TIME_GET_MILLISEC(t0);
+        return;
+    }
+
+    if (prev_ExecutorRun_hook)
+        prev_ExecutorRun_hook(queryDesc, direction, count, execute_once);
+    else
+        standard_ExecutorRun(queryDesc, direction, count, execute_once);
 }
 
 static void
@@ -1576,10 +1906,24 @@ cf_log_query_metrics(PolicyQueryState *qs)
     elog(NOTICE,
          "policy_profile: eval_ms=%.3f artifact_load_ms=%.3f artifact_parse_ms=%.3f atoms_ms=%.3f propagate_ms=%.3f project_ms=%.3f "
          "project_mask_ms=%.3f project_row_ms=%.3f project_mask_bytes=%zu project_n_join_evals_max=%d project_clause_words_max=%d clause_plan_count_max=%d "
-         "prop_join_scans_total=%llu unique_join_struct_sigs_max=%d prop_table_scans=%s "
+         "prop_join_scans_total=%llu unique_join_struct_sigs_max=%d prop_table_scans=%s signature_cache_hits=%llu signature_cache_misses=%llu term_code_scans=%llu target_full_row_scans=%llu "
+         "target_rid_bitmap_bytes=%zu signature_cache_bytes=%zu active_sig_dense_count=%llu active_sig_sparse_count=%llu active_sig_density_sum=%.6f "
+         "domain_set_dense_count=%llu domain_set_sparse_count=%llu domain_set_density_sum=%.6f block_words_blocks_allocated=%llu block_words_total_blocks=%llu block_words_dense_bytes=%zu block_words_nblocks=%llu block_words_nwords_per_block=%llu "
+         "proj_sig_count=%llu proj_sig_total=%llu proj_sig_new=%llu proj_sig_skipped=%llu proj_mask_or_ops=%llu proj_rid_iters=%llu proj_rid_iters_scan_enforcement=%llu proj_rid_iters_dependency=%llu "
+         "canon_term_map_cache_hits=%llu canon_term_map_cache_misses=%llu canon_term_map_build_ms=%.3f canon_term_map_bytes=%zu "
+         "restrict_key_index_build_ms=%.3f restrict_key_index_entries=%llu restrict_key_index_bytes=%zu restrict_key_prune_ms=%.3f "
+         "sigmask_cache_hits=%llu sigmask_cache_misses=%llu sigmask_build_ms=%.3f sigmask_bytes=%zu "
+         "bytes_sig_ctid_masks=%zu bytes_block_words=%zu bytes_artifact_buffers_retained=%zu bytes_decoded_buffers_retained=%zu "
+         "qual_atoms_total=%llu qual_atoms_applied=%llu qual_pruned_sigs=%llu qual_prune_ms=%.3f "
+         "restrict_sig_tables=%llu restrict_sig_schema_cols_total=%llu restrict_sig_bytes_total=%zu restrict_sig_apply_ms=%.3f restrict_term_apply_ms=%.3f restrict_term_sigs_kept=%llu restrict_term_sigs_dropped=%llu "
          "stamp_ms=%.3f bin_ms=%.3f local_sat_ms=%.3f fill_ms=%.3f prop_ms=%.3f prop_iters=%d "
          "decode_ms=%.3f policy_total_ms=%.3f ctid_map_ms=%.3f filter_ms=%.3f "
          "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f "
+         "blocks_seen=%llu blocks_skipped=%llu block_skip_hit_rate=%.6f "
+         "scan_mode_tid_tables=%llu scan_mode_filter_tables=%llu scan_mode_empty_tables=%llu "
+         "empty_short_circuit_tables=%llu empty_short_circuit_ms=%.3f "
+         "query_short_circuit_empty=%d query_short_circuit_reason=%s query_short_circuit_ms=%.3f query_short_circuit_hits=%llu "
+         "tid_blocks_visited=%llu tid_tuples_fetched=%llu tid_fetch_ms=%.3f tid_qual_ms=%.3f "
          "n_scanned_tables=%d n_policy_targets=%d n_filters=%d "
          "bytes_artifacts_loaded=%zu bytes_allow=%zu bytes_ctid=%zu bytes_blk_index=%zu "
          "rows_seen=%llu rows_passed=%llu ctid_misses=%llu "
@@ -1600,6 +1944,58 @@ cf_log_query_metrics(PolicyQueryState *qs)
          (unsigned long long) qs->prop_join_scans_total,
          qs->unique_join_struct_sigs_max,
          (qs->prop_table_scans && qs->prop_table_scans[0]) ? qs->prop_table_scans : "none",
+         (unsigned long long) qs->signature_cache_hits,
+         (unsigned long long) qs->signature_cache_misses,
+         (unsigned long long) qs->term_code_scans,
+         (unsigned long long) qs->target_full_row_scans,
+         qs->target_rid_bitmap_bytes,
+         qs->signature_cache_bytes,
+         (unsigned long long) qs->active_sig_dense_count,
+         (unsigned long long) qs->active_sig_sparse_count,
+         qs->active_sig_density_sum,
+         (unsigned long long) qs->domain_set_dense_count,
+         (unsigned long long) qs->domain_set_sparse_count,
+         qs->domain_set_density_sum,
+         (unsigned long long) qs->block_words_blocks_allocated,
+         (unsigned long long) qs->block_words_total_blocks,
+         qs->block_words_dense_bytes,
+         (unsigned long long) qs->block_words_nblocks,
+         (unsigned long long) qs->block_words_nwords_per_block,
+         (unsigned long long) qs->proj_sig_count,
+         (unsigned long long) qs->proj_sig_total,
+         (unsigned long long) qs->proj_sig_new,
+         (unsigned long long) qs->proj_sig_skipped,
+         (unsigned long long) qs->proj_mask_or_ops,
+         (unsigned long long) qs->proj_rid_iters,
+         (unsigned long long) qs->proj_rid_iters_scan_enforcement,
+         (unsigned long long) qs->proj_rid_iters_dependency,
+         (unsigned long long) qs->canon_term_map_cache_hits,
+         (unsigned long long) qs->canon_term_map_cache_misses,
+         qs->canon_term_map_build_ms,
+         qs->canon_term_map_bytes,
+         qs->restrict_key_index_build_ms,
+         (unsigned long long) qs->restrict_key_index_entries,
+         qs->restrict_key_index_bytes,
+         qs->restrict_key_prune_ms,
+         (unsigned long long) qs->sigmask_cache_hits,
+         (unsigned long long) qs->sigmask_cache_misses,
+         qs->sigmask_build_ms,
+         qs->sigmask_bytes,
+         qs->bytes_sig_ctid_masks,
+         qs->bytes_block_words,
+         qs->bytes_artifact_buffers_retained,
+         qs->bytes_decoded_buffers_retained,
+         (unsigned long long) qs->qual_atoms_total,
+         (unsigned long long) qs->qual_atoms_applied,
+         (unsigned long long) qs->qual_pruned_sigs,
+         qs->qual_prune_ms,
+         (unsigned long long) qs->restrict_sig_tables,
+         (unsigned long long) qs->restrict_sig_schema_cols_total,
+         qs->restrict_sig_bytes_total,
+         qs->restrict_sig_apply_ms,
+         qs->restrict_term_apply_ms,
+         (unsigned long long) qs->restrict_term_sigs_kept,
+         (unsigned long long) qs->restrict_term_sigs_dropped,
          qs->stamp_ms,
          qs->bin_ms,
          qs->local_sat_ms,
@@ -1615,6 +2011,22 @@ cf_log_query_metrics(PolicyQueryState *qs)
          qs->ctid_to_rid_ms,
          qs->allow_check_ms,
          qs->projection_ms,
+         (unsigned long long) qs->blocks_seen,
+         (unsigned long long) qs->blocks_skipped,
+         (qs->blocks_seen > 0 ? ((double) qs->blocks_skipped / (double) qs->blocks_seen) : 0.0),
+         (unsigned long long) qs->scan_mode_tid_tables,
+         (unsigned long long) qs->scan_mode_filter_tables,
+         (unsigned long long) qs->scan_mode_empty_tables,
+         (unsigned long long) qs->empty_short_circuit_tables,
+         qs->empty_short_circuit_ms,
+         qs->query_short_circuit_empty ? 1 : 0,
+         (qs->query_short_circuit_reason[0] ? qs->query_short_circuit_reason : "none"),
+         qs->query_short_circuit_ms,
+         (unsigned long long) qs->query_short_circuit_hits,
+         (unsigned long long) qs->tid_blocks_visited,
+         (unsigned long long) qs->tid_tuples_fetched,
+         qs->tid_fetch_ms,
+         qs->tid_qual_ms,
          qs->n_scanned_tables,
          qs->n_policy_targets,
          qs->n_filters,
@@ -1668,6 +2080,24 @@ cf_has_suffix(const char *name, const char *suffix)
     return strcmp(name + (nlen - slen), suffix) == 0;
 }
 
+static char *
+cf_files_table_sql_ident(void)
+{
+    const char *cfg = GetConfigOption("custom_filter.files_table", true, false);
+    const char *raw = (cfg && cfg[0]) ? cfg : "public.files";
+    const char *dot = strchr(raw, '.');
+    if (dot && strchr(dot + 1, '.') == NULL)
+    {
+        char *schema = pnstrdup(raw, dot - raw);
+        char *table = pstrdup(dot + 1);
+        char *q = quote_qualified_identifier(schema, table);
+        pfree(schema);
+        pfree(table);
+        return q;
+    }
+    return pstrdup(quote_identifier(raw));
+}
+
 static bool
 cf_load_artifacts_batch(char **needed_files, int needed_count,
                         MemoryContext mcxt, LoadedArtifact *arts,
@@ -1706,10 +2136,13 @@ cf_load_artifacts_batch(char **needed_files, int needed_count,
                                           false,
                                           TYPALIGN_INT);
 
-    const char *sql =
+    char *files_table_sql = cf_files_table_sql_ident();
+    char *sql = psprintf(
         "SELECT name, file "
-        "FROM public.files "
-        "WHERE name = ANY($1::text[])";
+        "FROM %s "
+        "WHERE COALESCE(run_id,'') = COALESCE(current_setting('custom_filter.run_id', true), '') "
+        "AND name = ANY($1::text[])",
+        files_table_sql);
     Oid argtypes[1];
     Datum values[1];
     char nulls[1] = { ' ' };
@@ -1719,6 +2152,8 @@ cf_load_artifacts_batch(char **needed_files, int needed_count,
 
     values[0] = PointerGetDatum(name_arr);
     int spi_rc = SPI_execute_with_args(sql, 1, argtypes, values, nulls, true, 0);
+    pfree(sql);
+    pfree(files_table_sql);
     if (spi_rc != SPI_OK_SELECT)
         ereport(ERROR,
                 (errmsg("custom_filter: batch artifact load failed (spi_rc=%d)", spi_rc)));
@@ -2257,6 +2692,9 @@ cf_build_query_state(EState *estate, const char *query_str)
     const PolicyAllowListC *allow_list = NULL;
     if (policy_art_count > 0 && eval_res->target_count > 0)
     {
+        PolicyScanQualAtomC *scan_qual_atoms = NULL;
+        int scan_qual_atom_count = 0;
+        cf_collect_seqscan_qual_atoms(estate, eval_res, qctx, &scan_qual_atoms, &scan_qual_atom_count);
         PolicyEngineInputC in;
         in.target_count = eval_res->target_count;
         in.target_tables = eval_res->target_tables;
@@ -2267,6 +2705,8 @@ cf_build_query_state(EState *estate, const char *query_str)
         in.atoms = eval_res->atoms;
         in.bundle_count = eval_res->bundle_count;
         in.bundles = eval_res->bundles;
+        in.scan_qual_atom_count = scan_qual_atom_count;
+        in.scan_qual_atoms = scan_qual_atoms;
         CF_TRACE_LOG( "custom_filter: calling policy_run once target_count=%d atom_count=%d",
              in.target_count, in.atom_count);
         MemoryContext old_policy_ctx = MemoryContextSwitchTo(qctx);
@@ -2295,6 +2735,59 @@ cf_build_query_state(EState *estate, const char *query_str)
             qs->prop_join_scans_total += pp->prop_join_scans_total;
             if (pp->unique_join_struct_sigs_max > qs->unique_join_struct_sigs_max)
                 qs->unique_join_struct_sigs_max = pp->unique_join_struct_sigs_max;
+            qs->signature_cache_hits += pp->signature_cache_hits;
+            qs->signature_cache_misses += pp->signature_cache_misses;
+            qs->term_code_scans += pp->term_code_scans;
+            qs->target_full_row_scans += pp->target_full_row_scans;
+            qs->target_rid_bitmap_bytes += pp->target_rid_bitmap_bytes;
+            qs->signature_cache_bytes += pp->signature_cache_bytes;
+            qs->active_sig_dense_count += pp->active_sig_dense_count;
+            qs->active_sig_sparse_count += pp->active_sig_sparse_count;
+            qs->active_sig_density_sum += pp->active_sig_density_sum;
+            qs->domain_set_dense_count += pp->domain_set_dense_count;
+            qs->domain_set_sparse_count += pp->domain_set_sparse_count;
+            qs->domain_set_density_sum += pp->domain_set_density_sum;
+            qs->block_words_blocks_allocated += pp->block_words_blocks_allocated;
+            qs->block_words_total_blocks += pp->block_words_total_blocks;
+            qs->block_words_dense_bytes += pp->block_words_dense_bytes;
+            qs->block_words_nblocks += pp->block_words_nblocks;
+            if (pp->block_words_nwords_per_block > qs->block_words_nwords_per_block)
+                qs->block_words_nwords_per_block = pp->block_words_nwords_per_block;
+            qs->proj_sig_count += pp->proj_sig_count;
+            qs->proj_sig_total += pp->proj_sig_total;
+            qs->proj_sig_new += pp->proj_sig_new;
+            qs->proj_sig_skipped += pp->proj_sig_skipped;
+            qs->proj_mask_or_ops += pp->proj_mask_or_ops;
+            qs->proj_rid_iters += pp->proj_rid_iters;
+            qs->proj_rid_iters_scan_enforcement += pp->proj_rid_iters_scan_enforcement;
+            qs->proj_rid_iters_dependency += pp->proj_rid_iters_dependency;
+            qs->canon_term_map_cache_hits += pp->canon_term_map_cache_hits;
+            qs->canon_term_map_cache_misses += pp->canon_term_map_cache_misses;
+            qs->canon_term_map_build_ms += pp->canon_term_map_build_ms;
+            qs->canon_term_map_bytes += pp->canon_term_map_bytes;
+            qs->restrict_key_index_build_ms += pp->restrict_key_index_build_ms;
+            qs->restrict_key_index_entries += pp->restrict_key_index_entries;
+            qs->restrict_key_index_bytes += pp->restrict_key_index_bytes;
+            qs->restrict_key_prune_ms += pp->restrict_key_prune_ms;
+            qs->sigmask_cache_hits += pp->sigmask_cache_hits;
+            qs->sigmask_cache_misses += pp->sigmask_cache_misses;
+            qs->sigmask_build_ms += pp->sigmask_build_ms;
+            qs->sigmask_bytes += pp->sigmask_bytes;
+            qs->bytes_sig_ctid_masks += pp->bytes_sig_ctid_masks;
+            qs->bytes_block_words += pp->bytes_block_words;
+            qs->bytes_artifact_buffers_retained += pp->bytes_artifact_buffers_retained;
+            qs->bytes_decoded_buffers_retained += pp->bytes_decoded_buffers_retained;
+            qs->qual_atoms_total += pp->qual_atoms_total;
+            qs->qual_atoms_applied += pp->qual_atoms_applied;
+            qs->qual_pruned_sigs += pp->qual_pruned_sigs;
+            qs->qual_prune_ms += pp->qual_prune_ms;
+            qs->restrict_sig_tables += pp->restrict_sig_tables;
+            qs->restrict_sig_schema_cols_total += pp->restrict_sig_schema_cols_total;
+            qs->restrict_sig_bytes_total += pp->restrict_sig_bytes_total;
+            qs->restrict_sig_apply_ms += pp->restrict_sig_apply_ms;
+            qs->restrict_term_apply_ms += pp->restrict_term_apply_ms;
+            qs->restrict_term_sigs_kept += pp->restrict_term_sigs_kept;
+            qs->restrict_term_sigs_dropped += pp->restrict_term_sigs_dropped;
             if (pp->prop_table_scans && pp->prop_table_scans[0]) {
                 if (!qs->prop_table_scans) {
                     qs->prop_table_scans = MemoryContextStrdup(qctx, pp->prop_table_scans);
@@ -2395,7 +2888,7 @@ cf_build_query_state(EState *estate, const char *query_str)
                 continue;
             if (!cf_table_should_filter(qs, tname))
                 continue;
-            if (!it->block_words || it->blocks == 0)
+            if (!it->block_words && it->blocks > 0)
                 ereport(ERROR,
                         (errmsg("custom_filter[engine_error]: missing block_words for %s", tname)));
 
@@ -2411,18 +2904,28 @@ cf_build_query_state(EState *estate, const char *query_str)
 
             tf->n_rows = it->n_rows;
             tf->blocks = it->blocks;
+            tf->total_blocks = it->total_blocks;
             tf->block_words_nbytes = (size_t)tf->blocks * (size_t)CF_WORDS_PER_BLOCK * sizeof(uint64);
+            tf->block_ids_nbytes = (size_t)tf->blocks * sizeof(uint32);
 
             /* Defensive copy into query context to avoid aliasing. */
             MemoryContext old_allow_ctx = MemoryContextSwitchTo(qctx);
-            uint64 *copy_words = (uint64 *) palloc0(tf->block_words_nbytes);
+            uint64 *copy_words = tf->block_words_nbytes > 0 ? (uint64 *) palloc0(tf->block_words_nbytes) : NULL;
+            uint32 *copy_ids = tf->block_ids_nbytes > 0 ? (uint32 *) palloc0(tf->block_ids_nbytes) : NULL;
             MemoryContextSwitchTo(old_allow_ctx);
-            memcpy(copy_words, it->block_words, tf->block_words_nbytes);
+            if (tf->block_words_nbytes > 0)
+                memcpy(copy_words, it->block_words, tf->block_words_nbytes);
+            if (tf->block_ids_nbytes > 0 && it->block_ids)
+                memcpy(copy_ids, it->block_ids, tf->block_ids_nbytes);
             tf->block_words = copy_words;
+            tf->block_ids = copy_ids;
+            tf->allowed_rows = (tf->block_words && tf->blocks > 0) ? cf_popcount_block_words(tf->block_words, tf->blocks) : 0;
+            tf->allow_is_empty = (tf->allowed_rows == 0);
 
-            qs->bytes_allow += tf->block_words_nbytes;
+            qs->bytes_allow += tf->block_words_nbytes + tf->block_ids_nbytes;
 
-            CF_TRACE_LOG("custom_filter: allow_%s blocks=%u bytes=%zu", tname, tf->blocks, tf->block_words_nbytes);
+            CF_TRACE_LOG("custom_filter: allow_%s blocks_alloc=%u total_blocks=%u words_bytes=%zu ids_bytes=%zu",
+                         tname, tf->blocks, tf->total_blocks, tf->block_words_nbytes, tf->block_ids_nbytes);
         }
     }
 
@@ -2454,12 +2957,11 @@ cf_build_query_state(EState *estate, const char *query_str)
             TableFilterState *tf = &qs->filters[i];
             if (tf->block_words)
             {
-                uint64 cnt = cf_popcount_block_words(tf->block_words, tf->blocks);
                 MemoryContext mctx = GetMemoryChunkContext(tf->block_words);
                 CF_TRACE_LOG(
                      "custom_filter: block_words pre_exec rel=%s count=%llu rows=%u ptr=%p blocks=%u bytes=%zu mctx=%p qctx=%p qs=%p",
                      tf->relname,
-                     (unsigned long long) cnt,
+                     (unsigned long long) tf->allowed_rows,
                      tf->n_rows,
                      (void *) tf->block_words,
                      (unsigned int) tf->blocks,
@@ -2666,6 +3168,406 @@ cf_scan_slot(PlanState *child, TupleTableSlot *fallback)
     return fallback;
 }
 
+static bool
+cf_runtime_strict_mode_enabled(void)
+{
+    const char *g = GetConfigOption("custom_filter.strict_mode", true, false);
+    if (!g)
+        return false;
+    if (pg_strcasecmp(g, "on") == 0 || strcmp(g, "1") == 0 || pg_strcasecmp(g, "true") == 0)
+        return true;
+    return false;
+}
+
+static bool
+cf_query_has_empty_allow_set(const PolicyQueryState *qs, const char **table_out)
+{
+    if (table_out)
+        *table_out = NULL;
+    if (!qs || !qs->filters || qs->n_filters <= 0)
+        return false;
+    for (int i = 0; i < qs->n_filters; i++)
+    {
+        const TableFilterState *tf = &qs->filters[i];
+        if (tf->allow_is_empty || tf->allowed_rows == 0 || tf->blocks == 0 || !tf->block_words)
+        {
+            if (table_out)
+                *table_out = tf->relname[0] ? tf->relname : NULL;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool
+cf_plan_inner_only_safe(Plan *plan, const char **reason_out)
+{
+    const char *reason = "ok";
+    if (!plan)
+    {
+        if (reason_out)
+            *reason_out = reason;
+        return true;
+    }
+
+    switch (nodeTag(plan))
+    {
+        case T_NestLoop:
+            if (((NestLoop *) plan)->join.jointype != JOIN_INNER)
+            {
+                reason = "not_safe_join";
+                goto not_safe;
+            }
+            break;
+        case T_MergeJoin:
+            if (((MergeJoin *) plan)->join.jointype != JOIN_INNER)
+            {
+                reason = "not_safe_join";
+                goto not_safe;
+            }
+            break;
+        case T_HashJoin:
+            if (((HashJoin *) plan)->join.jointype != JOIN_INNER)
+            {
+                reason = "not_safe_join";
+                goto not_safe;
+            }
+            break;
+        case T_Append:
+            reason = "not_safe_append";
+            goto not_safe;
+        case T_MergeAppend:
+            reason = "not_safe_append";
+            goto not_safe;
+        case T_RecursiveUnion:
+            reason = "not_safe_setop";
+            goto not_safe;
+        case T_SetOp:
+            reason = "not_safe_setop";
+            goto not_safe;
+        case T_SubqueryScan:
+            reason = "not_safe_subquery";
+            goto not_safe;
+        case T_FunctionScan:
+        case T_TableFuncScan:
+        case T_WorkTableScan:
+        case T_CteScan:
+            reason = "not_safe_scan_type";
+            goto not_safe;
+        default:
+            break;
+    }
+
+    if (!cf_plan_inner_only_safe(outerPlan(plan), reason_out))
+        return false;
+    if (!cf_plan_inner_only_safe(innerPlan(plan), reason_out))
+        return false;
+
+    switch (nodeTag(plan))
+    {
+        case T_Append:
+            {
+                Append *ap = (Append *) plan;
+                ListCell *lc;
+                foreach (lc, ap->appendplans)
+                {
+                    if (!cf_plan_inner_only_safe((Plan *) lfirst(lc), reason_out))
+                        return false;
+                }
+            }
+            break;
+        case T_MergeAppend:
+            {
+                MergeAppend *ap = (MergeAppend *) plan;
+                ListCell *lc;
+                foreach (lc, ap->mergeplans)
+                {
+                    if (!cf_plan_inner_only_safe((Plan *) lfirst(lc), reason_out))
+                        return false;
+                }
+            }
+            break;
+        case T_BitmapAnd:
+            {
+                BitmapAnd *ba = (BitmapAnd *) plan;
+                ListCell *lc;
+                foreach (lc, ba->bitmapplans)
+                {
+                    if (!cf_plan_inner_only_safe((Plan *) lfirst(lc), reason_out))
+                        return false;
+                }
+            }
+            break;
+        case T_BitmapOr:
+            {
+                BitmapOr *bo = (BitmapOr *) plan;
+                ListCell *lc;
+                foreach (lc, bo->bitmapplans)
+                {
+                    if (!cf_plan_inner_only_safe((Plan *) lfirst(lc), reason_out))
+                        return false;
+                }
+            }
+            break;
+        case T_CustomScan:
+            {
+                CustomScan *cs = (CustomScan *) plan;
+                ListCell *lc;
+                foreach (lc, cs->custom_plans)
+                {
+                    if (!cf_plan_inner_only_safe((Plan *) lfirst(lc), reason_out))
+                        return false;
+                }
+            }
+            break;
+        default:
+            break;
+    }
+
+    if (reason_out)
+        *reason_out = reason;
+    return true;
+
+not_safe:
+    if (reason_out)
+        *reason_out = reason;
+    return false;
+}
+
+static const char *
+cf_scan_mode_name(CfScanMode m)
+{
+    switch (m)
+    {
+        case CF_SCAN_MODE_EMPTY:
+            return "EMPTY";
+        case CF_SCAN_MODE_TID:
+            return "TID";
+        case CF_SCAN_MODE_FILTER:
+        default:
+            return "FILTER";
+    }
+}
+
+static void
+cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
+{
+    CfScanMode new_mode = CF_SCAN_MODE_FILTER;
+    double density = 0.0;
+    const char *reason = "no_filter";
+    PlanState *child = st ? st->child_plan : NULL;
+
+    if (tf)
+    {
+        if (tf->total_blocks > 0)
+            density = (double) tf->blocks / (double) tf->total_blocks;
+        else
+            density = 0.0;
+
+        if (tf->allow_is_empty || tf->allowed_rows == 0 || tf->blocks == 0 || !tf->block_words || tf->block_words_nbytes == 0)
+        {
+            new_mode = CF_SCAN_MODE_EMPTY;
+            density = 0.0;
+            reason = "empty_allow_set";
+        }
+        else if (!cf_tidscan_seqscan)
+        {
+            reason = "tidscan_disabled";
+        }
+        else if (!cf_runtime_strict_mode_enabled())
+        {
+            reason = "strict_mode_off";
+        }
+        else if (!child)
+        {
+            reason = "no_child_plan";
+        }
+        else if (nodeTag(child) != T_SeqScanState)
+        {
+            reason = "child_not_seqscan";
+        }
+        else if (child->plan && child->plan->parallel_aware)
+        {
+            reason = "parallel_aware";
+        }
+        else if (tf->total_blocks == 0)
+        {
+            reason = "missing_total_blocks";
+        }
+        else if (density < cf_tidscan_density_threshold)
+        {
+            new_mode = CF_SCAN_MODE_TID;
+            reason = "sparse_tid";
+        }
+        else
+        {
+            reason = "density_high";
+        }
+    }
+
+    if (!st)
+        return;
+
+    if (!st->scan_mode_set || st->scan_mode != new_mode)
+    {
+        st->scan_mode = new_mode;
+        st->scan_mode_set = true;
+        st->tid_iter_initialized = false;
+        st->tid_iter_block_ord = 0;
+        st->tid_iter_word_idx = 0;
+        st->tid_iter_bit_min = 0;
+    }
+    st->scan_mode_density = density;
+
+    if (!st->scan_mode_logged && tf && cf_profile_query && cf_profile_query[0])
+    {
+        elog(NOTICE,
+             "scan_mode_decision: rel=%s mode=%s allow_rows=%llu allow_blocks=%u relpages=%u density=%.6f reason=%s scan=%s",
+             st->relname[0] ? st->relname : "<unknown>",
+             cf_scan_mode_name(st->scan_mode),
+             (unsigned long long) tf->allowed_rows,
+             (unsigned int) tf->blocks,
+             (unsigned int) tf->total_blocks,
+             st->scan_mode_density,
+             reason,
+             st->scan_type ? st->scan_type : "<unknown>");
+        st->scan_mode_logged = true;
+    }
+    (void) node;
+}
+
+static bool
+cf_tid_iter_next(CfExec *st, TableFilterState *tf, ItemPointerData *out_tid)
+{
+    if (!st || !tf || !tf->block_words || !out_tid)
+        return false;
+    if (!st->tid_iter_initialized)
+    {
+        st->tid_iter_initialized = true;
+        st->tid_iter_block_ord = 0;
+        st->tid_iter_word_idx = 0;
+        st->tid_iter_bit_min = 0;
+    }
+
+    while (st->tid_iter_block_ord < tf->blocks)
+    {
+        const uint64 *bw = tf->block_words + (size_t) st->tid_iter_block_ord * (size_t) CF_WORDS_PER_BLOCK;
+        BlockNumber blk = (BlockNumber) (tf->block_ids ? tf->block_ids[st->tid_iter_block_ord] : st->tid_iter_block_ord);
+
+        if (st->tid_iter_word_idx == 0 && st->tid_iter_bit_min == 0)
+            st->tid_blocks_visited++;
+
+        while (st->tid_iter_word_idx < CF_WORDS_PER_BLOCK)
+        {
+            uint64 w = bw[st->tid_iter_word_idx];
+            if (st->tid_iter_bit_min > 0 && st->tid_iter_bit_min < 64)
+                w &= ~((1ULL << st->tid_iter_bit_min) - 1ULL);
+            else if (st->tid_iter_bit_min >= 64)
+                w = 0;
+
+            if (w != 0)
+            {
+                uint32 bit = (uint32) __builtin_ctzll(w);
+                uint32 off0 = st->tid_iter_word_idx * 64u + bit;
+                OffsetNumber off = (OffsetNumber) (off0 + 1u);
+                ItemPointerSet(out_tid, blk, off);
+                st->tid_iter_bit_min = bit + 1u;
+                if (st->tid_iter_bit_min >= 64u)
+                {
+                    st->tid_iter_word_idx++;
+                    st->tid_iter_bit_min = 0;
+                }
+                return true;
+            }
+            st->tid_iter_word_idx++;
+            st->tid_iter_bit_min = 0;
+        }
+
+        st->tid_iter_block_ord++;
+        st->tid_iter_word_idx = 0;
+        st->tid_iter_bit_min = 0;
+    }
+    return false;
+}
+
+static TupleTableSlot *
+cf_exec_seqscan_tid_mode(CustomScanState *node, CfExec *st, TableFilterState *tf)
+{
+    PlanState *child = st->child_plan;
+    ScanState *ss = (ScanState *) child;
+    TupleTableSlot *scan_slot = ss->ss_ScanTupleSlot;
+    EState *estate = node->ss.ps.state;
+    Snapshot snap = estate ? estate->es_snapshot : InvalidSnapshot;
+
+    if (!ss->ss_currentRelation || !scan_slot || !snap)
+        ereport(ERROR,
+                (errmsg("custom_filter: SeqScan TID mode missing relation/slot/snapshot (rel=%s)",
+                        st->relname[0] ? st->relname : "<unknown>")));
+
+    for (;;)
+    {
+        ItemPointerData tid;
+        instr_time fetch_start, fetch_end;
+        instr_time qual_start, qual_end;
+        TupleTableSlot *slot;
+        ExprContext *econtext;
+        bool qual_ok = true;
+
+        if (!cf_tid_iter_next(st, tf, &tid))
+            return ExecClearTuple(node->ss.ss_ScanTupleSlot);
+
+        INSTR_TIME_SET_CURRENT(fetch_start);
+        ExecClearTuple(scan_slot);
+        if (!table_tuple_fetch_row_version(ss->ss_currentRelation, &tid, snap, scan_slot))
+        {
+            INSTR_TIME_SET_CURRENT(fetch_end);
+            st->tid_fetch_ms += INSTR_TIME_GET_MILLISEC(fetch_end) - INSTR_TIME_GET_MILLISEC(fetch_start);
+            continue;
+        }
+        INSTR_TIME_SET_CURRENT(fetch_end);
+        st->tid_fetch_ms += INSTR_TIME_GET_MILLISEC(fetch_end) - INSTR_TIME_GET_MILLISEC(fetch_start);
+        st->tid_tuples_fetched++;
+        st->tuples_seen++;
+        if (tf)
+            tf->seen++;
+
+        INSTR_TIME_SET_CURRENT(qual_start);
+        econtext = child->ps_ExprContext;
+        if (econtext)
+            ResetExprContext(econtext);
+        if (child->qual)
+        {
+            if (!econtext)
+                econtext = CreateExprContext(child->state);
+            econtext->ecxt_scantuple = scan_slot;
+            qual_ok = ExecQual(child->qual, econtext);
+        }
+        if (!qual_ok)
+        {
+            INSTR_TIME_SET_CURRENT(qual_end);
+            st->tid_qual_ms += INSTR_TIME_GET_MILLISEC(qual_end) - INSTR_TIME_GET_MILLISEC(qual_start);
+            continue;
+        }
+        slot = scan_slot;
+        if (child->ps_ProjInfo)
+        {
+            if (!econtext)
+                econtext = child->ps_ExprContext;
+            if (!econtext)
+                econtext = CreateExprContext(child->state);
+            econtext->ecxt_scantuple = scan_slot;
+            slot = ExecProject(child->ps_ProjInfo);
+        }
+        INSTR_TIME_SET_CURRENT(qual_end);
+        st->tid_qual_ms += INSTR_TIME_GET_MILLISEC(qual_end) - INSTR_TIME_GET_MILLISEC(qual_start);
+
+        st->tuples_passed++;
+        if (tf)
+            tf->passed++;
+        return slot;
+    }
+}
+
 static const char *
 cf_tid_source_name(CfTidSource src)
 {
@@ -2685,6 +3587,175 @@ typedef struct ScannedCtx
     List *relids;
     List *wrapped_relids;
 } ScannedCtx;
+
+typedef struct WrapperAuditCtx
+{
+    PlannedStmt *pstmt;
+    int total_wrappers;
+    int main_wrappers;
+    int subplan_wrappers;
+    int detail_count;
+    StringInfo details;
+} WrapperAuditCtx;
+
+static void
+cf_wrapper_audit_append(WrapperAuditCtx *ctx, CustomScan *cs, bool in_subplan, int subplan_idx)
+{
+    if (!ctx || !cs || !ctx->pstmt)
+        return;
+
+    int scanrelid = (int) cs->scan.scanrelid;
+    Oid relid = InvalidOid;
+    const char *relname = "<none>";
+    const char *alias = "<none>";
+
+    if (scanrelid > 0)
+    {
+        RangeTblEntry *rte = rt_fetch((Index) scanrelid, ctx->pstmt->rtable);
+        if (rte)
+        {
+            relid = rte->relid;
+            if (relid != InvalidOid)
+            {
+                const char *rn = get_rel_name(relid);
+                if (rn)
+                    relname = rn;
+            }
+            if (rte->eref && rte->eref->aliasname)
+                alias = rte->eref->aliasname;
+        }
+    }
+
+    ctx->total_wrappers++;
+    if (in_subplan)
+        ctx->subplan_wrappers++;
+    else
+        ctx->main_wrappers++;
+
+    if (ctx->detail_count < 128)
+    {
+        appendStringInfo(ctx->details,
+                         "%s{scanrelid=%d relid=%u rel=%s alias=%s subplan=%d subplan_idx=%d}",
+                         (ctx->detail_count == 0 ? "" : ";"),
+                         scanrelid,
+                         relid,
+                         relname,
+                         alias,
+                         in_subplan ? 1 : 0,
+                         subplan_idx);
+        ctx->detail_count++;
+    }
+}
+
+static void
+cf_wrapper_audit_walk(Plan *plan, WrapperAuditCtx *ctx, bool in_subplan, int subplan_idx)
+{
+    if (!plan || !ctx)
+        return;
+
+    if (IsA(plan, CustomScan))
+    {
+        CustomScan *cs = (CustomScan *) plan;
+        if (cs->methods && cs->methods->CustomName &&
+            strcmp(cs->methods->CustomName, "CustomFilterScan") == 0)
+        {
+            cf_wrapper_audit_append(ctx, cs, in_subplan, subplan_idx);
+        }
+        if (cs->custom_plans)
+        {
+            ListCell *lc;
+            foreach (lc, cs->custom_plans)
+                cf_wrapper_audit_walk((Plan *) lfirst(lc), ctx, in_subplan, subplan_idx);
+        }
+    }
+
+    if (plan->lefttree)
+        cf_wrapper_audit_walk(plan->lefttree, ctx, in_subplan, subplan_idx);
+    if (plan->righttree)
+        cf_wrapper_audit_walk(plan->righttree, ctx, in_subplan, subplan_idx);
+
+    switch (nodeTag(plan))
+    {
+        case T_Append:
+            {
+                Append *a = (Append *) plan;
+                ListCell *lc;
+                foreach (lc, a->appendplans)
+                    cf_wrapper_audit_walk((Plan *) lfirst(lc), ctx, in_subplan, subplan_idx);
+            }
+            break;
+        case T_MergeAppend:
+            {
+                MergeAppend *ma = (MergeAppend *) plan;
+                ListCell *lc;
+                foreach (lc, ma->mergeplans)
+                    cf_wrapper_audit_walk((Plan *) lfirst(lc), ctx, in_subplan, subplan_idx);
+            }
+            break;
+        case T_BitmapAnd:
+            {
+                BitmapAnd *ba = (BitmapAnd *) plan;
+                ListCell *lc;
+                foreach (lc, ba->bitmapplans)
+                    cf_wrapper_audit_walk((Plan *) lfirst(lc), ctx, in_subplan, subplan_idx);
+            }
+            break;
+        case T_BitmapOr:
+            {
+                BitmapOr *bo = (BitmapOr *) plan;
+                ListCell *lc;
+                foreach (lc, bo->bitmapplans)
+                    cf_wrapper_audit_walk((Plan *) lfirst(lc), ctx, in_subplan, subplan_idx);
+            }
+            break;
+        case T_SubqueryScan:
+            {
+                SubqueryScan *sq = (SubqueryScan *) plan;
+                cf_wrapper_audit_walk(sq->subplan, ctx, in_subplan, subplan_idx);
+            }
+            break;
+        case T_ModifyTable:
+            break;
+        default:
+            break;
+    }
+}
+
+static void
+cf_log_wrapper_audit(PlannedStmt *pstmt)
+{
+    if (!cf_debug_ids || !pstmt || !pstmt->planTree)
+        return;
+
+    StringInfoData details;
+    initStringInfo(&details);
+    WrapperAuditCtx ctx;
+    ctx.pstmt = pstmt;
+    ctx.total_wrappers = 0;
+    ctx.main_wrappers = 0;
+    ctx.subplan_wrappers = 0;
+    ctx.detail_count = 0;
+    ctx.details = &details;
+
+    cf_wrapper_audit_walk(pstmt->planTree, &ctx, false, -1);
+    if (pstmt->subplans)
+    {
+        int spidx = 0;
+        ListCell *lc;
+        foreach (lc, pstmt->subplans)
+        {
+            cf_wrapper_audit_walk((Plan *) lfirst(lc), &ctx, true, spidx);
+            spidx++;
+        }
+    }
+
+    CF_DEBUG_SUBPLAN_LOG("wrapper_audit custom_scans=%d main=%d subplan=%d details=%s",
+                         ctx.total_wrappers,
+                         ctx.main_wrappers,
+                         ctx.subplan_wrappers,
+                         details.len > 0 ? details.data : "<none>");
+    pfree(details.data);
+}
 
 static bool
 cf_plan_scan_relid(Plan *plan, Index *out_relid)
@@ -2923,6 +3994,445 @@ cf_collect_scanned_tables(EState *estate, MemoryContext mcxt,
             *out_wrapped_count = 0;
         }
     }
+}
+
+typedef struct CfScanQualTmpAtom
+{
+    Oid relid;
+    char *target_table;
+    int kind;                /* PolicyScanQualKindC */
+    char *lhs_schema_key;
+    int op;                  /* PolicyConstOpC */
+    char *rhs_schema_key;    /* same-table col-col only */
+    char *const_value;       /* col-const only */
+} CfScanQualTmpAtom;
+
+typedef struct CfSeqQualEntry
+{
+    Oid relid;
+    char *relname;
+    int seqscan_count;
+    List *atoms; /* CfScanQualTmpAtom* */
+} CfSeqQualEntry;
+
+typedef struct CfSeqQualCtx
+{
+    PlannedStmt *pstmt;
+    MemoryContext mcxt;
+    List *entries; /* CfSeqQualEntry* */
+} CfSeqQualCtx;
+
+static Node *
+cf_strip_relabel_node(Node *n)
+{
+    for (;;)
+    {
+        if (n == NULL)
+            return NULL;
+        if (IsA(n, RelabelType))
+        {
+            n = (Node *) ((RelabelType *) n)->arg;
+            continue;
+        }
+        return n;
+    }
+}
+
+static int
+cf_map_policy_op_from_name(const char *opname)
+{
+    if (!opname)
+        return 0;
+    if (strcmp(opname, "=") == 0)
+        return POLICY_OP_EQ;
+    if (strcmp(opname, "<>") == 0 || strcmp(opname, "!=") == 0)
+        return POLICY_OP_NE;
+    if (strcmp(opname, "<") == 0)
+        return POLICY_OP_LT;
+    if (strcmp(opname, "<=") == 0)
+        return POLICY_OP_LE;
+    if (strcmp(opname, ">") == 0)
+        return POLICY_OP_GT;
+    if (strcmp(opname, ">=") == 0)
+        return POLICY_OP_GE;
+    return 0;
+}
+
+static int
+cf_flip_policy_op(int op)
+{
+    switch (op)
+    {
+        case POLICY_OP_LT: return POLICY_OP_GT;
+        case POLICY_OP_LE: return POLICY_OP_GE;
+        case POLICY_OP_GT: return POLICY_OP_LT;
+        case POLICY_OP_GE: return POLICY_OP_LE;
+        default: return op;
+    }
+}
+
+static char *
+cf_const_text_value(Const *c, MemoryContext mcxt)
+{
+    if (!c || c->constisnull)
+        return NULL;
+    Oid typoutput = InvalidOid;
+    bool typisvarlena = false;
+    getTypeOutputInfo(c->consttype, &typoutput, &typisvarlena);
+    char *out = OidOutputFunctionCall(typoutput, c->constvalue);
+    if (!out)
+        return NULL;
+    MemoryContext oldctx = MemoryContextSwitchTo(mcxt);
+    char *copy = pstrdup(out);
+    MemoryContextSwitchTo(oldctx);
+    return copy;
+}
+
+static bool
+cf_var_schema_key(Var *v,
+                  Index expected_scanrelid,
+                  Oid expected_relid,
+                  PlannedStmt *pstmt,
+                  MemoryContext mcxt,
+                  char **out_schema_key,
+                  char **out_relname)
+{
+    Index vscan = 0;
+    AttrNumber vatt = InvalidAttrNumber;
+    if (!v || !pstmt || !out_schema_key)
+        return false;
+    if (v->varlevelsup != 0)
+        return false;
+    vscan = (Index) v->varno;
+    if (vscan != expected_scanrelid)
+    {
+        if (v->varnosyn > 0 && (Index) v->varnosyn == expected_scanrelid)
+            vscan = (Index) v->varnosyn;
+        else
+            return false;
+    }
+    vatt = v->varattno;
+    if (vatt <= 0 && v->varattnosyn > 0)
+        vatt = v->varattnosyn;
+    if (vatt <= 0)
+        return false;
+    Oid relid = InvalidOid;
+    if (!cf_relid_is_relation(pstmt, vscan, &relid))
+        return false;
+    if (expected_relid != InvalidOid && relid != expected_relid)
+        return false;
+    const char *rn = get_rel_name(relid);
+    const char *att = get_attname(relid, vatt, false);
+    if (!rn || !att)
+        return false;
+    MemoryContext oldctx = MemoryContextSwitchTo(mcxt);
+    *out_schema_key = psprintf("%s.%s", rn, att);
+    if (out_relname)
+        *out_relname = pstrdup(rn);
+    MemoryContextSwitchTo(oldctx);
+    return true;
+}
+
+static CfSeqQualEntry *
+cf_seqqual_entry_get(CfSeqQualCtx *ctx, Oid relid, const char *relname)
+{
+    ListCell *lc;
+    foreach (lc, ctx->entries)
+    {
+        CfSeqQualEntry *e = (CfSeqQualEntry *) lfirst(lc);
+        if (e && e->relid == relid)
+            return e;
+    }
+    MemoryContext oldctx = MemoryContextSwitchTo(ctx->mcxt);
+    CfSeqQualEntry *e = (CfSeqQualEntry *) palloc0(sizeof(CfSeqQualEntry));
+    e->relid = relid;
+    e->relname = relname ? pstrdup(relname) : NULL;
+    e->seqscan_count = 0;
+    e->atoms = NIL;
+    ctx->entries = lappend(ctx->entries, e);
+    MemoryContextSwitchTo(oldctx);
+    return e;
+}
+
+static void
+cf_seqqual_append_atom(CfSeqQualEntry *entry, CfScanQualTmpAtom *atom)
+{
+    if (!entry || !atom)
+        return;
+    entry->atoms = lappend(entry->atoms, atom);
+}
+
+static void
+cf_collect_seqscan_qual_expr(Node *expr,
+                             CfSeqQualEntry *entry,
+                             Index scanrelid,
+                             Oid relid,
+                             PlannedStmt *pstmt,
+                             MemoryContext mcxt)
+{
+    if (!expr || !entry || !pstmt)
+        return;
+
+    expr = cf_strip_relabel_node(expr);
+    if (!expr)
+        return;
+
+    if (IsA(expr, BoolExpr))
+    {
+        BoolExpr *b = (BoolExpr *) expr;
+        if (b->boolop == AND_EXPR)
+        {
+            ListCell *lc;
+            foreach (lc, b->args)
+                cf_collect_seqscan_qual_expr((Node *) lfirst(lc), entry, scanrelid, relid, pstmt, mcxt);
+        }
+        return;
+    }
+
+    if (!IsA(expr, OpExpr))
+        return;
+
+    OpExpr *op = (OpExpr *) expr;
+    if (list_length(op->args) != 2)
+        return;
+    const char *opname = get_opname(op->opno);
+    int pop = cf_map_policy_op_from_name(opname);
+    if (pop == 0)
+        return;
+
+    Node *a0 = cf_strip_relabel_node((Node *) linitial(op->args));
+    Node *a1 = cf_strip_relabel_node((Node *) lsecond(op->args));
+    if (!a0 || !a1)
+        return;
+
+    Var *v_lhs = NULL;
+    Var *v_rhs = NULL;
+    Const *c_lhs = NULL;
+    Const *c_rhs = NULL;
+    if (IsA(a0, Var)) v_lhs = (Var *) a0;
+    if (IsA(a1, Var)) v_rhs = (Var *) a1;
+    if (IsA(a0, Const)) c_lhs = (Const *) a0;
+    if (IsA(a1, Const)) c_rhs = (Const *) a1;
+
+    if (v_lhs && c_rhs)
+    {
+        char *lhs_key = NULL;
+        if (!cf_var_schema_key(v_lhs, scanrelid, relid, pstmt, mcxt, &lhs_key, NULL))
+            return;
+        char *cval = cf_const_text_value(c_rhs, mcxt);
+        if (!cval)
+            return;
+        MemoryContext oldctx = MemoryContextSwitchTo(mcxt);
+        CfScanQualTmpAtom *a = (CfScanQualTmpAtom *) palloc0(sizeof(CfScanQualTmpAtom));
+        a->relid = relid;
+        a->target_table = pstrdup(entry->relname);
+        a->kind = POLICY_SCAN_QUAL_COL_CONST;
+        a->lhs_schema_key = lhs_key;
+        a->op = pop;
+        a->const_value = cval;
+        MemoryContextSwitchTo(oldctx);
+        cf_seqqual_append_atom(entry, a);
+        return;
+    }
+    if (c_lhs && v_rhs)
+    {
+        char *lhs_key = NULL;
+        if (!cf_var_schema_key(v_rhs, scanrelid, relid, pstmt, mcxt, &lhs_key, NULL))
+            return;
+        char *cval = cf_const_text_value(c_lhs, mcxt);
+        if (!cval)
+            return;
+        MemoryContext oldctx = MemoryContextSwitchTo(mcxt);
+        CfScanQualTmpAtom *a = (CfScanQualTmpAtom *) palloc0(sizeof(CfScanQualTmpAtom));
+        a->relid = relid;
+        a->target_table = pstrdup(entry->relname);
+        a->kind = POLICY_SCAN_QUAL_COL_CONST;
+        a->lhs_schema_key = lhs_key;
+        a->op = cf_flip_policy_op(pop);
+        a->const_value = cval;
+        MemoryContextSwitchTo(oldctx);
+        cf_seqqual_append_atom(entry, a);
+        return;
+    }
+    if (v_lhs && v_rhs)
+    {
+        char *lhs_key = NULL;
+        char *rhs_key = NULL;
+        if (!cf_var_schema_key(v_lhs, scanrelid, relid, pstmt, mcxt, &lhs_key, NULL))
+            return;
+        if (!cf_var_schema_key(v_rhs, scanrelid, relid, pstmt, mcxt, &rhs_key, NULL))
+            return;
+        MemoryContext oldctx = MemoryContextSwitchTo(mcxt);
+        CfScanQualTmpAtom *a = (CfScanQualTmpAtom *) palloc0(sizeof(CfScanQualTmpAtom));
+        a->relid = relid;
+        a->target_table = pstrdup(entry->relname);
+        a->kind = POLICY_SCAN_QUAL_COL_COL;
+        a->lhs_schema_key = lhs_key;
+        a->op = pop;
+        a->rhs_schema_key = rhs_key;
+        MemoryContextSwitchTo(oldctx);
+        cf_seqqual_append_atom(entry, a);
+        return;
+    }
+}
+
+static void
+cf_plan_collect_seqscan_quals(Plan *plan, CfSeqQualCtx *ctx)
+{
+    if (!plan || !ctx)
+        return;
+
+    if (IsA(plan, CustomScan))
+    {
+        CustomScan *cs = (CustomScan *) plan;
+        if (cs->custom_plans)
+        {
+            ListCell *lc;
+            foreach (lc, cs->custom_plans)
+                cf_plan_collect_seqscan_quals((Plan *) lfirst(lc), ctx);
+        }
+    }
+
+    if (nodeTag(plan) == T_SeqScan)
+    {
+        Index scanrelid = ((Scan *) plan)->scanrelid;
+        Oid relid = InvalidOid;
+        if (cf_relid_is_relation(ctx->pstmt, scanrelid, &relid))
+        {
+            const char *rn = get_rel_name(relid);
+            CfSeqQualEntry *entry = cf_seqqual_entry_get(ctx, relid, rn);
+            entry->seqscan_count++;
+            if (plan->qual)
+            {
+                ListCell *lc;
+                foreach (lc, plan->qual)
+                    cf_collect_seqscan_qual_expr((Node *) lfirst(lc),
+                                                entry,
+                                                scanrelid,
+                                                relid,
+                                                ctx->pstmt,
+                                                ctx->mcxt);
+            }
+        }
+    }
+
+    if (plan->lefttree)
+        cf_plan_collect_seqscan_quals(plan->lefttree, ctx);
+    if (plan->righttree)
+        cf_plan_collect_seqscan_quals(plan->righttree, ctx);
+
+    switch (nodeTag(plan))
+    {
+        case T_Append:
+            {
+                Append *a = (Append *) plan;
+                ListCell *lc;
+                foreach (lc, a->appendplans)
+                    cf_plan_collect_seqscan_quals((Plan *) lfirst(lc), ctx);
+            }
+            break;
+        case T_MergeAppend:
+            {
+                MergeAppend *ma = (MergeAppend *) plan;
+                ListCell *lc;
+                foreach (lc, ma->mergeplans)
+                    cf_plan_collect_seqscan_quals((Plan *) lfirst(lc), ctx);
+            }
+            break;
+        case T_BitmapAnd:
+            {
+                BitmapAnd *ba = (BitmapAnd *) plan;
+                ListCell *lc;
+                foreach (lc, ba->bitmapplans)
+                    cf_plan_collect_seqscan_quals((Plan *) lfirst(lc), ctx);
+            }
+            break;
+        case T_BitmapOr:
+            {
+                BitmapOr *bo = (BitmapOr *) plan;
+                ListCell *lc;
+                foreach (lc, bo->bitmapplans)
+                    cf_plan_collect_seqscan_quals((Plan *) lfirst(lc), ctx);
+            }
+            break;
+        case T_SubqueryScan:
+            {
+                SubqueryScan *sq = (SubqueryScan *) plan;
+                cf_plan_collect_seqscan_quals(sq->subplan, ctx);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+static void
+cf_collect_seqscan_qual_atoms(EState *estate,
+                              const PolicyEvalResultC *eval_res,
+                              MemoryContext mcxt,
+                              PolicyScanQualAtomC **out_atoms,
+                              int *out_count)
+{
+    if (out_atoms) *out_atoms = NULL;
+    if (out_count) *out_count = 0;
+    if (!estate || !estate->es_plannedstmt || !eval_res || eval_res->target_count <= 0 || !out_atoms || !out_count)
+        return;
+
+    CfSeqQualCtx ctx;
+    ctx.pstmt = estate->es_plannedstmt;
+    ctx.mcxt = mcxt;
+    ctx.entries = NIL;
+    cf_plan_collect_seqscan_quals(estate->es_plannedstmt->planTree, &ctx);
+    if (estate->es_plannedstmt->subplans)
+    {
+        ListCell *lc;
+        foreach (lc, estate->es_plannedstmt->subplans)
+            cf_plan_collect_seqscan_quals((Plan *) lfirst(lc), &ctx);
+    }
+
+    int total = 0;
+    ListCell *lc;
+    foreach (lc, ctx.entries)
+    {
+        CfSeqQualEntry *e = (CfSeqQualEntry *) lfirst(lc);
+        if (!e || !e->relname || e->seqscan_count != 1)
+            continue;
+        if (!cf_table_in_list(e->relname, eval_res->target_tables, eval_res->target_count))
+            continue;
+        total += list_length(e->atoms);
+    }
+    if (total <= 0)
+        return;
+
+    MemoryContext oldctx = MemoryContextSwitchTo(mcxt);
+    PolicyScanQualAtomC *atoms = (PolicyScanQualAtomC *) palloc0(sizeof(PolicyScanQualAtomC) * total);
+    MemoryContextSwitchTo(oldctx);
+
+    int idx = 0;
+    foreach (lc, ctx.entries)
+    {
+        CfSeqQualEntry *e = (CfSeqQualEntry *) lfirst(lc);
+        if (!e || !e->relname || e->seqscan_count != 1)
+            continue;
+        if (!cf_table_in_list(e->relname, eval_res->target_tables, eval_res->target_count))
+            continue;
+        ListCell *la;
+        foreach (la, e->atoms)
+        {
+            CfScanQualTmpAtom *a = (CfScanQualTmpAtom *) lfirst(la);
+            if (!a || !a->target_table || !a->lhs_schema_key || a->op == 0)
+                continue;
+            atoms[idx].target_table = a->target_table;
+            atoms[idx].kind = a->kind;
+            atoms[idx].lhs_schema_key = a->lhs_schema_key;
+            atoms[idx].op = a->op;
+            atoms[idx].rhs_schema_key = a->rhs_schema_key;
+            atoms[idx].const_value = a->const_value;
+            idx++;
+        }
+    }
+    *out_atoms = atoms;
+    *out_count = idx;
 }
 
 static bool
@@ -3207,6 +4717,34 @@ cf_create_state(CustomScan *cscan)
     st->rescan_calls = 0;
     st->exec_logged = false;
     st->debug_exec_logged = false;
+    st->blk_cache_valid = false;
+    st->blk_cache_blkno = InvalidBlockNumber;
+    st->blk_cache_present = false;
+    st->blk_cache_words = NULL;
+    st->scan_mode_set = false;
+    st->scan_mode_density = 1.0;
+    st->scan_mode_logged = false;
+    st->tid_iter_initialized = false;
+    st->tid_iter_block_ord = 0;
+    st->tid_iter_word_idx = 0;
+    st->tid_iter_bit_min = 0;
+    st->blocks_seen = 0;
+    st->blocks_skipped = 0;
+    st->scan_mode = CF_SCAN_MODE_FILTER;
+    st->scan_mode_set = false;
+    st->scan_mode_density = 1.0;
+    st->scan_mode_logged = false;
+    st->tid_iter_initialized = false;
+    st->tid_iter_block_ord = 0;
+    st->tid_iter_word_idx = 0;
+    st->tid_iter_bit_min = 0;
+    st->tid_blocks_visited = 0;
+    st->tid_tuples_fetched = 0;
+    st->tid_fetch_ms = 0.0;
+    st->tid_qual_ms = 0.0;
+    st->empty_short_circuit_recorded = false;
+    st->empty_short_circuit_calls = 0;
+    st->empty_short_circuit_ms = 0.0;
 
     return (Node *) st;
 }
@@ -3362,6 +4900,17 @@ cf_exec(CustomScanState *node)
 
             st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
             st->need_filter_rebind = false;
+            st->blk_cache_valid = false;
+            st->blk_cache_blkno = InvalidBlockNumber;
+            st->blk_cache_present = false;
+            st->blk_cache_words = NULL;
+            st->scan_mode_set = false;
+            st->scan_mode_density = 1.0;
+            st->scan_mode_logged = false;
+            st->tid_iter_initialized = false;
+            st->tid_iter_block_ord = 0;
+            st->tid_iter_word_idx = 0;
+            st->tid_iter_bit_min = 0;
 
             cf_debug_log_scan_ids("BindFilter", st, node);
             if (!st->debug_exec_logged)
@@ -3388,6 +4937,43 @@ cf_exec(CustomScanState *node)
     }
 
     TableFilterState *tf = st->filter;
+    if (tf)
+        cf_update_scan_mode(st, node, tf);
+    if (tf && st->scan_mode == CF_SCAN_MODE_EMPTY)
+    {
+        /*
+         * Exact short-circuit: policy allow-set is empty for this relation.
+         * No heap access is needed; this scan always returns no rows.
+         */
+        instr_time e0, e1;
+        INSTR_TIME_SET_CURRENT(e0);
+        st->empty_short_circuit_recorded = true;
+        st->empty_short_circuit_calls++;
+        INSTR_TIME_SET_CURRENT(e1);
+        st->empty_short_circuit_ms += INSTR_TIME_GET_MILLISEC(e1) - INSTR_TIME_GET_MILLISEC(e0);
+        cf_accum_validation_time(st, &validation_start);
+        return ExecClearTuple(node->ss.ss_ScanTupleSlot);
+    }
+
+    if (tf && st->scan_mode == CF_SCAN_MODE_TID)
+    {
+        for (;;)
+        {
+            instr_time proj_start, proj_end;
+            TupleTableSlot *slot = cf_exec_seqscan_tid_mode(node, st, tf);
+            if (TupIsNull(slot))
+            {
+                cf_accum_validation_time(st, &validation_start);
+                return ExecClearTuple(node->ss.ss_ScanTupleSlot);
+            }
+            INSTR_TIME_SET_CURRENT(proj_start);
+            TupleTableSlot *ret = cf_store_slot(node, slot);
+            INSTR_TIME_SET_CURRENT(proj_end);
+            st->projection_ms += INSTR_TIME_GET_MILLISEC(proj_end) - INSTR_TIME_GET_MILLISEC(proj_start);
+            cf_accum_validation_time(st, &validation_start);
+            return ret;
+        }
+    }
 
     for (;;)
     {
@@ -3416,7 +5002,13 @@ cf_exec(CustomScanState *node)
             bool has_tid = false;
             instr_time ctid_extract_start, ctid_extract_end;
             INSTR_TIME_SET_CURRENT(ctid_extract_start);
-            if (nodeTag(child) == T_BitmapHeapScanState)
+            if (ItemPointerIsValid(&slot->tts_tid))
+            {
+                tid_buf = slot->tts_tid;
+                tid_src = CF_TID_TTS;
+                has_tid = true;
+            }
+            else if (nodeTag(child) == T_BitmapHeapScanState)
             {
                 if (ItemPointerIsValid(&ctid_slot->tts_tid))
                 {
@@ -3432,14 +5024,11 @@ cf_exec(CustomScanState *node)
             if (!has_tid)
             {
                 ctid_slot = cf_scan_slot(child, slot);
-                if (nodeTag(child) == T_BitmapHeapScanState)
+                if (ctid_slot && ItemPointerIsValid(&ctid_slot->tts_tid))
                 {
-                    if (ItemPointerIsValid(&ctid_slot->tts_tid))
-                    {
-                        tid_buf = ctid_slot->tts_tid;
-                        tid_src = CF_TID_TTS;
-                        has_tid = true;
-                    }
+                    tid_buf = ctid_slot->tts_tid;
+                    tid_src = CF_TID_TTS;
+                    has_tid = true;
                 }
                 else
                 {
@@ -3470,12 +5059,40 @@ cf_exec(CustomScanState *node)
             off = ItemPointerGetOffsetNumber(&tid_buf);
             instr_time allow_start, allow_end;
             INSTR_TIME_SET_CURRENT(allow_start);
-            allow = cf_allowed_ctid_words(tf->block_words, tf->blocks, blk, off);
+            if (!st->blk_cache_valid || st->blk_cache_blkno != blk)
+            {
+                st->blk_cache_valid = true;
+                st->blk_cache_blkno = blk;
+                st->blk_cache_words = cf_lookup_block_words(tf->block_words,
+                                                            tf->block_ids,
+                                                            tf->blocks,
+                                                            tf->total_blocks,
+                                                            blk);
+                st->blk_cache_present = (st->blk_cache_words != NULL);
+                st->blocks_seen++;
+                if (!st->blk_cache_present)
+                    st->blocks_skipped++;
+            }
+            if (!st->blk_cache_present)
+            {
+                allow = false;
+            }
+            else if (off < 1 || off > CF_MAX_OFF)
+            {
+                allow = false;
+            }
+            else
+            {
+                uint32 off0 = (uint32) off - 1u;
+                size_t word_idx = (size_t) (off0 >> 6);
+                uint64 mask = 1ULL << (off0 & 63u);
+                allow = (st->blk_cache_words[word_idx] & mask) != 0;
+            }
             INSTR_TIME_SET_CURRENT(allow_end);
             st->allow_check_ms += INSTR_TIME_GET_MILLISEC(allow_end) -
                                   INSTR_TIME_GET_MILLISEC(allow_start);
         }
-        else if (tf && !tf->block_words)
+        else if (tf && !tf->block_words && tf->blocks > 0)
         {
             /*
              * Robustness: if a scan state captured a stale filter pointer (e.g. due
@@ -3488,6 +5105,7 @@ cf_exec(CustomScanState *node)
                 st->filter = reb;
                 st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
                 tf = reb;
+                st->blk_cache_valid = false;
                 goto allow_check;
             }
 
@@ -3504,6 +5122,7 @@ cf_exec(CustomScanState *node)
                     st->filter = reb;
                     st->bound_build_seq = cf_query_state ? cf_query_state->build_seq : 0;
                     tf = reb;
+                    st->blk_cache_valid = false;
                     goto allow_check;
                 }
             }
@@ -3659,6 +5278,24 @@ cf_end(CustomScanState *node)
         cf_query_state->rows_seen += st->tuples_seen;
         cf_query_state->rows_passed += st->tuples_passed;
         cf_query_state->ctid_misses += st->misses;
+        cf_query_state->blocks_seen += st->blocks_seen;
+        cf_query_state->blocks_skipped += st->blocks_skipped;
+        if (st->filter)
+        {
+            if (st->scan_mode == CF_SCAN_MODE_EMPTY)
+                cf_query_state->scan_mode_empty_tables++;
+            else if (st->scan_mode == CF_SCAN_MODE_TID)
+                cf_query_state->scan_mode_tid_tables++;
+            else
+                cf_query_state->scan_mode_filter_tables++;
+        }
+        cf_query_state->tid_blocks_visited += st->tid_blocks_visited;
+        cf_query_state->tid_tuples_fetched += st->tid_tuples_fetched;
+        cf_query_state->tid_fetch_ms += st->tid_fetch_ms;
+        cf_query_state->tid_qual_ms += st->tid_qual_ms;
+        if (st->empty_short_circuit_recorded)
+            cf_query_state->empty_short_circuit_tables++;
+        cf_query_state->empty_short_circuit_ms += st->empty_short_circuit_ms;
     }
 }
 
@@ -3671,12 +5308,53 @@ cf_rescan(CustomScanState *node)
         cf_filters_guard_check(cf_query_state, "ReScanCustomScan");
 
     if (st->child_plan)
-        ExecReScan(st->child_plan);
+    {
+        /*
+         * If policy allow-set is empty for this table, this scan always returns
+         * NULL. Avoid rescanning the child plan on every upstream rescan.
+         */
+        if (!(st->filter && st->filter->allow_is_empty))
+            ExecReScan(st->child_plan);
+    }
 
     st->seq_rid = 0;
-    st->need_filter_rebind = true;
-    st->validated_filter = NULL;
-    st->validated_build_seq = 0;
+    /*
+     * EMPTY-mode scans are invariant under rescans while query-state build_seq
+     * is unchanged. Keep bindings/mode stable to avoid per-rescan rebinding cost.
+     */
+    if (st->filter && st->filter->allow_is_empty &&
+        cf_query_state && st->bound_build_seq == cf_query_state->build_seq)
+    {
+        st->scan_mode = CF_SCAN_MODE_EMPTY;
+        st->scan_mode_set = true;
+        st->scan_mode_density = 0.0;
+        st->tid_iter_initialized = false;
+        st->tid_iter_block_ord = 0;
+        st->tid_iter_word_idx = 0;
+        st->tid_iter_bit_min = 0;
+        st->blk_cache_valid = false;
+        st->blk_cache_blkno = InvalidBlockNumber;
+        st->blk_cache_present = false;
+        st->blk_cache_words = NULL;
+        st->need_filter_rebind = false;
+    }
+    else
+    {
+        st->blk_cache_valid = false;
+        st->blk_cache_blkno = InvalidBlockNumber;
+        st->blk_cache_present = false;
+        st->blk_cache_words = NULL;
+        st->scan_mode_set = false;
+        st->scan_mode_density = 1.0;
+        st->scan_mode_logged = false;
+        st->tid_iter_initialized = false;
+        st->tid_iter_block_ord = 0;
+        st->tid_iter_word_idx = 0;
+        st->tid_iter_bit_min = 0;
+        st->need_filter_rebind = true;
+        st->validated_filter = NULL;
+        st->validated_build_seq = 0;
+    }
     st->rescan_calls++;
     if (cf_profile_rescan && st->relid != InvalidOid)
     {

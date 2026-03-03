@@ -1,0 +1,41 @@
+# Class Engine Key Arity Report
+
+- db: `tpch1`
+- policy_range: `1..30`
+- queries: `1,2,3,5,6,9,11,13,14,22`
+- rows: 30
+- error_rows: 1
+- policies_with_key_arity_2: 29
+- policies_with_key_arity_gt2: -
+
+## Per Policy
+- policy=1 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=q1:single_hub:2 reason=-
+- policy=2 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=3 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=q1:single_hub:2 reason=-
+- policy=4 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=5 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=q1:single_hub:3 reason=-
+- policy=6 target=customer: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=7 target=customer: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=q13:single_hub:2 reason=-
+- policy=8 target=customer: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=9 target=customer: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=q13:single_hub:2 reason=-
+- policy=10 target=customer: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=11 target=orders: status=ok cmp_key_arity_max=0 hub_key_arity_max=1 td_width_max=0 route=q3:single_hub:2 reason=-
+- policy=12 target=orders: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=13 target=orders: status=ok cmp_key_arity_max=0 hub_key_arity_max=1 td_width_max=0 route=q3:two_hop:4 reason=-
+- policy=14 target=orders: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=15 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=1 td_width_max=0 route=q1:tree:18 reason=-
+- policy=16 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=17 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=1 td_width_max=0 route=q1:tree:6 reason=-
+- policy=18 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=19 target=lineitem: status=ERROR cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=q1:reject:1 reason=ERROR:  policy: class_engine unsupported term shape on target=lineitem HINT:  strict experimental mode allows only class_engine supported shapes
+- policy=20 target=partsupp: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=21 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=q1:single_hub:1 reason=-
+- policy=22 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=23 target=lineitem: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=q1:single_hub:1 reason=-
+- policy=24 target=partsupp: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=25 target=supplier: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=q5:single_hub:1 reason=-
+- policy=26 target=orders: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=27 target=lineitem: status=ok cmp_key_arity_max=1 hub_key_arity_max=1 td_width_max=0 route=q1:tree:1 reason=-
+- policy=28 target=partsupp: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-
+- policy=29 target=lineitem: status=ok cmp_key_arity_max=2 hub_key_arity_max=1 td_width_max=0 route=q1:cycle_rect:1 reason=-
+- policy=30 target=supplier: status=ok cmp_key_arity_max=0 hub_key_arity_max=0 td_width_max=0 route=- reason=-

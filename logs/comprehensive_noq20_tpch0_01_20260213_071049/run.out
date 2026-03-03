@@ -1,2 +1,0 @@
-[db] start db=tpch0_01
-[policy_set] db=tpch0_01 K=1 enabled_ids=[1]

@@ -10,7 +10,8 @@ extern "C" {
 
 typedef enum {
     ATOM_JOIN_EQ = 1,
-    ATOM_COL_CONST = 2
+    ATOM_COL_CONST = 2,
+    ATOM_COL_COL = 3
 } PolicyAtomType;
 
 typedef struct {

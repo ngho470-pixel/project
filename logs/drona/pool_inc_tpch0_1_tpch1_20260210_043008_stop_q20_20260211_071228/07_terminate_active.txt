@@ -1,5 +1,0 @@
- 
-bash: -c: option requires an argument
-FATAL:  terminating connection due to administrator command
-SSL connection has been closed unexpectedly
-connection to server was lost

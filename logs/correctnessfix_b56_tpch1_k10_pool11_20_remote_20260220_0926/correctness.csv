@@ -1,6 +1,0 @@
-db,K,query_id,correctness,ours_count,rls_count,reason
-tpch1,10,1,1,4,4,
-tpch1,10,3,1,0,0,
-tpch1,10,6,1,2013,2013,
-tpch1,10,13,1,27,27,
-tpch1,10,22,1,7,7,

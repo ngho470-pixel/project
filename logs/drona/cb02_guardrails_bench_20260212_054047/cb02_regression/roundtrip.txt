@@ -1,3 +1,0 @@
-table=customer
-rows=1500
-status=cb02_roundtrip_ok

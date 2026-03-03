@@ -1,1 +1,0 @@
-db_error: SSL SYSCALL error: EOF detected

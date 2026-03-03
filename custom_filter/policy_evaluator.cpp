@@ -44,7 +44,7 @@ struct Policy {
     std::set<std::pair<std::string, std::string>> const_cols;
     std::set<std::string> atom_keys;
     struct AtomDef {
-        enum Kind { JOIN_EQ, COL_CONST } kind = COL_CONST;
+        enum Kind { JOIN_EQ, COL_CONST, COL_COL } kind = COL_CONST;
         std::string key;
         std::string left_table;
         std::string left_col;
@@ -277,8 +277,6 @@ static std::vector<Token> tokenize_expr(const std::string &expr) {
                 tokens.push_back({Token::AND, lower});
             } else if (lower == "or") {
                 tokens.push_back({Token::OR, lower});
-            } else if (lower == "in" || lower == "like") {
-                tokens.push_back({Token::OP, lower});
             } else {
                 tokens.push_back({Token::IDENT, lower});
             }
@@ -288,16 +286,6 @@ static std::vector<Token> tokenize_expr(const std::string &expr) {
         i++;
     }
     return tokens;
-}
-
-static bool is_like_prefix_pattern(const std::string &pat, std::string *prefix_out) {
-    if (pat.size() < 2) return false;
-    if (pat.back() != '%') return false;
-    for (size_t i = 0; i + 1 < pat.size(); i++) {
-        if (pat[i] == '%' || pat[i] == '_') return false;
-    }
-    if (prefix_out) *prefix_out = pat.substr(0, pat.size() - 1);
-    return true;
 }
 
 static AstNode *make_var_node(const std::string &key) {
@@ -402,30 +390,67 @@ static std::string canonicalize_atom(const std::vector<Token> &tokens,
     if (left_ident.empty() || op.empty())
         return "";
     if (op == "<>") op = "!=";
-
     auto left = split_table_col(left_ident, target_table);
     std::string left_full = left.first + "." + left.second;
     policy.referenced_tables.insert(left.first);
 
-    if (!right_ident.empty() && op == "=") {
+    if (!right_ident.empty()) {
         auto right = split_table_col(right_ident, target_table);
         std::string right_full = right.first + "." + right.second;
         policy.referenced_tables.insert(right.first);
-        out_def->kind = Policy::AtomDef::JOIN_EQ;
-        out_def->left_table = left.first;
-        out_def->left_col = left.second;
-        out_def->right_table = right.first;
-        out_def->right_col = right.second;
-        if (left_full <= right_full) {
-            out_def->key = "join:" + left_full + "=" + right_full;
-        } else {
-            std::swap(out_def->left_table, out_def->right_table);
-            std::swap(out_def->left_col, out_def->right_col);
-            out_def->key = "join:" + right_full + "=" + left_full;
+
+        if (op == "=") {
+            out_def->kind = Policy::AtomDef::JOIN_EQ;
+            out_def->left_table = left.first;
+            out_def->left_col = left.second;
+            out_def->right_table = right.first;
+            out_def->right_col = right.second;
+            if (left_full <= right_full) {
+                out_def->key = "join:" + left_full + "=" + right_full;
+            } else {
+                std::swap(out_def->left_table, out_def->right_table);
+                std::swap(out_def->left_col, out_def->right_col);
+                out_def->key = "join:" + right_full + "=" + left_full;
+            }
+            out_def->op = "=";
+            return out_def->key;
         }
-        return out_def->key;
-    }
-    if (!right_ident.empty()) {
+
+        if (op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=") {
+            out_def->kind = Policy::AtomDef::COL_COL;
+            out_def->left_table = left.first;
+            out_def->left_col = left.second;
+            out_def->right_table = right.first;
+            out_def->right_col = right.second;
+
+            auto flip_dir = [](const std::string &o) -> std::string {
+                if (o == "<") return ">";
+                if (o == "<=") return ">=";
+                if (o == ">") return "<";
+                if (o == ">=") return "<=";
+                return o;
+            };
+
+            std::string cop = op;
+            // Canonicalize symmetric/antisymmetric forms for stable keys.
+            if (cop == "!=") {
+                if (right_full < left_full) {
+                    std::swap(out_def->left_table, out_def->right_table);
+                    std::swap(out_def->left_col, out_def->right_col);
+                    std::swap(left_full, right_full);
+                }
+            } else if (right_full < left_full) {
+                std::swap(out_def->left_table, out_def->right_table);
+                std::swap(out_def->left_col, out_def->right_col);
+                std::swap(left_full, right_full);
+                cop = flip_dir(cop);
+            }
+
+            out_def->op = cop;
+            out_def->key = "colcmp:" + left_full + cop + right_full;
+            return out_def->key;
+        }
+
         ereport(ERROR, (errmsg("unsupported column comparison: %s %s %s",
                                left_ident.c_str(), op.c_str(), right_ident.c_str())));
     }
@@ -436,43 +461,26 @@ static std::string canonicalize_atom(const std::vector<Token> &tokens,
     out_def->op = op;
     policy.const_cols.insert({left.first, left.second});
 
+    bool supported_const_op =
+        (op == "=" || op == "!=" ||
+         op == "<" || op == "<=" ||
+         op == ">" || op == ">=");
+    if (!supported_const_op) {
+        ereport(ERROR, (errmsg("unsupported col-const operator: %s", op.c_str())));
+    }
+
     std::vector<std::string> values;
-    if (op == "in") {
-        for (size_t i = 0; i < tokens.size(); i++) {
-            if (tokens[i].type == Token::STRING || tokens[i].type == Token::NUMBER) {
-                values.push_back(normalize_literal(tokens[i]));
-            }
-        }
-        std::sort(values.begin(), values.end());
-        values.erase(std::unique(values.begin(), values.end()), values.end());
-    } else {
-        for (size_t i = 0; i < tokens.size(); i++) {
-            if (tokens[i].type == Token::STRING || tokens[i].type == Token::NUMBER) {
-                values.push_back(normalize_literal(tokens[i]));
-                break;
-            }
+    for (size_t i = 0; i < tokens.size(); i++) {
+        if (tokens[i].type == Token::STRING || tokens[i].type == Token::NUMBER) {
+            values.push_back(normalize_literal(tokens[i]));
+            break;
         }
     }
     out_def->values = values;
 
-    if (op == "like") {
-        if (values.empty()) {
-            ereport(ERROR, (errmsg("LIKE pattern missing for %s", left_full.c_str())));
-        }
-        /* Accept general LIKE patterns; evaluation handles % and _ wildcards. */
-    }
-
     std::string key = "const:" + left_full + "|" + op;
     if (!values.empty()) {
-        if (op == "in") {
-            key += "|";
-            for (size_t i = 0; i < values.size(); i++) {
-                if (i > 0) key += ",";
-                key += values[i];
-            }
-        } else {
-            key += "|" + values[0];
-        }
+        key += "|" + values[0];
     } else {
         key += "|" + join_tokens(tokens);
     }
@@ -783,23 +791,25 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
     for (const auto &kv : target_ast)
         collect_ast_keys(kv.second, used_atom_keys);
 
-    std::map<std::string, int> join_col_index;
-    std::vector<std::string> join_cols;
+    std::map<std::string, int> domain_col_index;
+    std::vector<std::string> domain_cols;
+    auto add_domain_col = [&](const std::string &key) {
+        if (domain_col_index.emplace(key, (int)domain_cols.size()).second)
+            domain_cols.push_back(key);
+    };
     for (const auto &pol : policies) {
         for (const auto &atom : pol.atoms) {
-            if (atom.kind != Policy::AtomDef::JOIN_EQ)
-                continue;
             std::string lkey = atom.left_table + "." + atom.left_col;
-            std::string rkey = atom.right_table + "." + atom.right_col;
-            if (join_col_index.emplace(lkey, (int)join_cols.size()).second)
-                join_cols.push_back(lkey);
-            if (join_col_index.emplace(rkey, (int)join_cols.size()).second)
-                join_cols.push_back(rkey);
+            add_domain_col(lkey);
+            if (atom.kind == Policy::AtomDef::JOIN_EQ || atom.kind == Policy::AtomDef::COL_COL) {
+                std::string rkey = atom.right_table + "." + atom.right_col;
+                add_domain_col(rkey);
+            }
         }
     }
 
-    std::vector<int> parent(join_cols.size(), 0);
-    for (size_t i = 0; i < join_cols.size(); i++) parent[i] = (int)i;
+    std::vector<int> parent(domain_cols.size(), 0);
+    for (size_t i = 0; i < domain_cols.size(); i++) parent[i] = (int)i;
     auto uf_find = [&](int x) {
         while (parent[x] != x) {
             parent[x] = parent[parent[x]];
@@ -815,18 +825,18 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
 
     for (const auto &pol : policies) {
         for (const auto &atom : pol.atoms) {
-            if (atom.kind != Policy::AtomDef::JOIN_EQ)
+            if (atom.kind != Policy::AtomDef::JOIN_EQ && atom.kind != Policy::AtomDef::COL_COL)
                 continue;
-            int ia = join_col_index[atom.left_table + "." + atom.left_col];
-            int ib = join_col_index[atom.right_table + "." + atom.right_col];
+            int ia = domain_col_index[atom.left_table + "." + atom.left_col];
+            int ib = domain_col_index[atom.right_table + "." + atom.right_col];
             uf_union(ia, ib);
         }
     }
 
     std::map<int, std::vector<std::string>> class_members;
-    for (size_t i = 0; i < join_cols.size(); i++) {
+    for (size_t i = 0; i < domain_cols.size(); i++) {
         int root = uf_find((int)i);
-        class_members[root].push_back(join_cols[i]);
+        class_members[root].push_back(domain_cols[i]);
     }
     struct ClassKey {
         int root;
@@ -853,9 +863,9 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         root_to_class[classes[i].root] = (int)i;
 
     std::map<std::string, int> join_class_by_col;
-    for (size_t i = 0; i < join_cols.size(); i++) {
+    for (size_t i = 0; i < domain_cols.size(); i++) {
         int cid = root_to_class[uf_find((int)i)];
-        join_class_by_col[join_cols[i]] = cid;
+        join_class_by_col[domain_cols[i]] = cid;
     }
 
     for (auto &pol : policies) {
@@ -863,15 +873,40 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
             if (atom.kind == Policy::AtomDef::JOIN_EQ) {
                 std::string lkey = atom.left_table + "." + atom.left_col;
                 std::string rkey = atom.right_table + "." + atom.right_col;
-                atom.join_class_id = join_class_by_col[lkey];
-                if (atom.join_class_id != join_class_by_col[rkey]) {
-                    atom.join_class_id = join_class_by_col[lkey];
+                auto itl = join_class_by_col.find(lkey);
+                auto itr = join_class_by_col.find(rkey);
+                if (itl == join_class_by_col.end() || itr == join_class_by_col.end()) {
+                    ereport(ERROR,
+                            (errmsg("missing domain mapping for join atom: %s = %s",
+                                    lkey.c_str(), rkey.c_str())));
                 }
-            } else {
+                if (itl->second != itr->second) {
+                    ereport(ERROR,
+                            (errmsg("join atom resolved to different domains: %s class=%d, %s class=%d",
+                                    lkey.c_str(), itl->second, rkey.c_str(), itr->second)));
+                }
+                atom.join_class_id = itl->second;
+            } else if (atom.kind == Policy::AtomDef::COL_CONST) {
                 std::string lkey = atom.left_table + "." + atom.left_col;
                 auto it = join_class_by_col.find(lkey);
                 if (it != join_class_by_col.end())
                     atom.join_class_id = it->second;
+            } else if (atom.kind == Policy::AtomDef::COL_COL) {
+                std::string lkey = atom.left_table + "." + atom.left_col;
+                std::string rkey = atom.right_table + "." + atom.right_col;
+                auto itl = join_class_by_col.find(lkey);
+                auto itr = join_class_by_col.find(rkey);
+                if (itl == join_class_by_col.end() || itr == join_class_by_col.end()) {
+                    ereport(ERROR,
+                            (errmsg("unsupported col-col atom (missing comparable domain): %s %s %s",
+                                    lkey.c_str(), atom.op.c_str(), rkey.c_str())));
+                }
+                if (itl->second != itr->second) {
+                    ereport(ERROR,
+                            (errmsg("unsupported col-col atom (cross-domain): %s class=%d %s %s class=%d",
+                                    lkey.c_str(), itl->second, atom.op.c_str(), rkey.c_str(), itr->second)));
+                }
+                atom.join_class_id = itl->second;
             }
         }
     }
@@ -953,7 +988,8 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
                 if (it == atom_defs.end())
                     continue;
                 const auto &atom = it->second;
-                if (atom.kind == Policy::AtomDef::JOIN_EQ && atom.join_class_id >= 0)
+                if ((atom.kind == Policy::AtomDef::JOIN_EQ || atom.kind == Policy::AtomDef::COL_COL) &&
+                    atom.join_class_id >= 0)
                     jc.insert(atom.join_class_id);
             }
         }
@@ -987,19 +1023,31 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
     }
 
     bool has_join_eq = false;
-    std::set<std::pair<std::string, std::string>> needed_consts;
+    std::set<int> needed_order_rank_domains;
+    std::set<std::pair<std::string, std::string>> needed_col_consts;
+    std::set<int> needed_domain_dicts;
     for (const auto &kv : atom_defs) {
         const auto &atom = kv.second;
         if (atom.kind == Policy::AtomDef::JOIN_EQ) {
             has_join_eq = true;
         } else {
-            needed_consts.insert({atom.left_table, atom.left_col});
+            if (atom.join_class_id >= 0)
+                needed_domain_dicts.insert(atom.join_class_id);
+            else
+                needed_col_consts.insert({atom.left_table, atom.left_col});
+            if (atom.kind == Policy::AtomDef::COL_COL &&
+                (atom.op == "<" || atom.op == "<=" || atom.op == ">" || atom.op == ">=") &&
+                atom.join_class_id >= 0) {
+                needed_order_rank_domains.insert(atom.join_class_id);
+            }
         }
     }
 
     std::vector<std::string> needed_files;
-    if (has_join_eq)
+    if (has_join_eq || !needed_domain_dicts.empty()) {
         needed_files.push_back("meta/join_classes");
+        needed_files.push_back("meta/col_domain");
+    }
     for (const auto &tbl : closure_tables) {
         if (known_tables.find(tbl) == known_tables.end())
             continue;
@@ -1007,7 +1055,18 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         needed_files.push_back(tbl + "_code_base");
         needed_files.push_back("meta/cols/" + tbl);
     }
-    for (const auto &col : needed_consts) {
+    for (int cid : needed_domain_dicts) {
+        std::string sid = std::to_string(cid);
+        needed_files.push_back("dict/domain/" + sid);
+        needed_files.push_back("meta/dict_type/domain/" + sid);
+        needed_files.push_back("meta/dict_sorted/domain/" + sid);
+    }
+    for (int cid : needed_order_rank_domains) {
+        std::string sid = std::to_string(cid);
+        needed_files.push_back("rank/domain/" + sid);
+        needed_files.push_back("meta/dict_rank/domain/" + sid);
+    }
+    for (const auto &col : needed_col_consts) {
         needed_files.push_back("dict/" + col.first + "/" + col.second);
         needed_files.push_back("meta/dict_type/" + col.first + "/" + col.second);
         needed_files.push_back("meta/dict_sorted/" + col.first + "/" + col.second);
@@ -1017,13 +1076,12 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
 
     auto map_const_op = [](const std::string &op) {
         if (op == "=") return POLICY_OP_EQ;
-        if (op == "in") return POLICY_OP_IN;
-        if (op == "like") return POLICY_OP_LIKE;
         if (op == "<") return POLICY_OP_LT;
         if (op == "<=") return POLICY_OP_LE;
         if (op == ">") return POLICY_OP_GT;
         if (op == ">=") return POLICY_OP_GE;
         if (op == "!=") return POLICY_OP_NE;
+        ereport(ERROR, (errmsg("unsupported policy operator: %s", op.c_str())));
         return POLICY_OP_EQ;
     };
 
@@ -1098,7 +1156,12 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         const auto &atom = it->second;
         PolicyAtomC *out = &res->atoms[i];
         out->atom_id = atom_map[key];
-        out->kind = (atom.kind == Policy::AtomDef::JOIN_EQ) ? POLICY_ATOM_JOIN_EQ : POLICY_ATOM_COL_CONST;
+        if (atom.kind == Policy::AtomDef::JOIN_EQ)
+            out->kind = POLICY_ATOM_JOIN_EQ;
+        else if (atom.kind == Policy::AtomDef::COL_COL)
+            out->kind = POLICY_ATOM_COL_COL;
+        else
+            out->kind = POLICY_ATOM_COL_CONST;
         out->join_class_id = atom.join_class_id;
         out->canon_key = pstrdup(atom.key.c_str());
         if (atom.kind == Policy::AtomDef::JOIN_EQ) {
@@ -1111,7 +1174,7 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
             out->op = 0;
             out->const_count = 0;
             out->const_values = nullptr;
-        } else {
+        } else if (atom.kind == Policy::AtomDef::COL_CONST) {
             std::string skey = "const:" + atom.left_table + "." + atom.left_col;
             out->lhs_schema_key = pstrdup(skey.c_str());
             out->rhs_schema_key = nullptr;
@@ -1121,6 +1184,16 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
             for (int v = 0; v < out->const_count; v++) {
                 out->const_values[v] = pstrdup(atom.values[v].c_str());
             }
+        } else {
+            std::string lkey = "join:" + atom.left_table + "." + atom.left_col +
+                               " class=" + std::to_string(atom.join_class_id);
+            std::string rkey = "join:" + atom.right_table + "." + atom.right_col +
+                               " class=" + std::to_string(atom.join_class_id);
+            out->lhs_schema_key = pstrdup(lkey.c_str());
+            out->rhs_schema_key = pstrdup(rkey.c_str());
+            out->op = map_const_op(atom.op);
+            out->const_count = 0;
+            out->const_values = nullptr;
         }
     }
 
@@ -1139,7 +1212,12 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
             const Policy::AtomDef &atom = b.atoms[j];
             PolicyAtomC *out = &outb->atoms[j];
             out->atom_id = j + 1;
-            out->kind = (atom.kind == Policy::AtomDef::JOIN_EQ) ? POLICY_ATOM_JOIN_EQ : POLICY_ATOM_COL_CONST;
+            if (atom.kind == Policy::AtomDef::JOIN_EQ)
+                out->kind = POLICY_ATOM_JOIN_EQ;
+            else if (atom.kind == Policy::AtomDef::COL_COL)
+                out->kind = POLICY_ATOM_COL_COL;
+            else
+                out->kind = POLICY_ATOM_COL_CONST;
             out->join_class_id = atom.join_class_id;
             out->canon_key = pstrdup(atom.key.c_str());
             if (atom.kind == Policy::AtomDef::JOIN_EQ) {
@@ -1152,7 +1230,7 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
                 out->op = 0;
                 out->const_count = 0;
                 out->const_values = nullptr;
-            } else {
+            } else if (atom.kind == Policy::AtomDef::COL_CONST) {
                 std::string skey = "const:" + atom.left_table + "." + atom.left_col;
                 out->lhs_schema_key = pstrdup(skey.c_str());
                 out->rhs_schema_key = nullptr;
@@ -1162,6 +1240,16 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
                 for (int v = 0; v < out->const_count; v++) {
                     out->const_values[v] = pstrdup(atom.values[v].c_str());
                 }
+            } else {
+                std::string lkey = "join:" + atom.left_table + "." + atom.left_col +
+                                   " class=" + std::to_string(atom.join_class_id);
+                std::string rkey = "join:" + atom.right_table + "." + atom.right_col +
+                                   " class=" + std::to_string(atom.join_class_id);
+                out->lhs_schema_key = pstrdup(lkey.c_str());
+                out->rhs_schema_key = pstrdup(rkey.c_str());
+                out->op = map_const_op(atom.op);
+                out->const_count = 0;
+                out->const_values = nullptr;
             }
         }
     }

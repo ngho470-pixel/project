@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import hashlib
 import json
 import os
 import random
 import re
+import select
 import statistics
+import subprocess
+import sys
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +20,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import psycopg2
 from psycopg2 import sql
+from psycopg2 import extensions as pgext
 
 # Use the script directory as repo root so the harness is portable across machines.
 ROOT = Path(__file__).resolve().parent
@@ -167,11 +173,104 @@ PROFILE_COLUMNS = [
     "filter_ms",
     "bytes_artifacts_loaded",
     "bytes_allow",
+    "target_rid_bitmap_bytes",
+    "signature_cache_bytes",
+    "active_sig_dense_count",
+    "active_sig_sparse_count",
+    "active_sig_density_sum",
+    "domain_set_dense_count",
+    "domain_set_sparse_count",
+    "domain_set_density_sum",
+    "block_words_blocks_allocated",
+    "block_words_total_blocks",
+    "block_words_dense_bytes",
+    "block_words_nblocks",
+    "block_words_nwords_per_block",
+    "proj_sig_count",
+    "proj_sig_total",
+    "proj_sig_new",
+    "proj_sig_skipped",
+    "proj_mask_or_ops",
+    "proj_rid_iters",
+    "proj_rid_iters_scan_enforcement",
+    "proj_rid_iters_dependency",
+    "canon_term_map_cache_hits",
+    "canon_term_map_cache_misses",
+    "canon_term_map_build_ms",
+    "canon_term_map_bytes",
+    "restrict_key_index_build_ms",
+    "restrict_key_index_entries",
+    "restrict_key_index_bytes",
+    "restrict_key_prune_ms",
+    "sigmask_cache_hits",
+    "sigmask_cache_misses",
+    "sigmask_build_ms",
+    "sigmask_bytes",
+    "bytes_sig_ctid_masks",
+    "bytes_block_words",
+    "bytes_artifact_buffers_retained",
+    "bytes_decoded_buffers_retained",
+    "qual_atoms_total",
+    "qual_atoms_applied",
+    "qual_pruned_sigs",
+    "qual_prune_ms",
+    "restrict_sig_tables",
+    "restrict_sig_schema_cols_total",
+    "restrict_sig_bytes_total",
+    "restrict_sig_apply_ms",
+    "restrict_term_apply_ms",
+    "restrict_term_sigs_kept",
+    "restrict_term_sigs_dropped",
+    "pf2_enabled_targets",
+    "pf2_terms_total",
+    "pf2_terms_supported",
+    "pf2_terms_single_hub",
+    "pf2_terms_two_hop",
+    "pf2_terms_tree",
+    "pf2_terms_failed_shape",
+    "pf2_hub_domain_id",
+    "pf2_hub_key_arity",
+    "pf2_ntokens",
+    "pf2_stamp_rows_scanned_total",
+    "pf2_stamp_rows_scanned_A",
+    "pf2_stamp_rows_scanned_B",
+    "pf2_stamp_ms",
+    "pf2_stamp_ms_A",
+    "pf2_stamp_ms_B",
+    "pf2_tok_and_or_ms",
+    "pf2_tok_compose_ms",
+    "pf2_project_bin_rids_total",
+    "pf2_project_ms",
+    "pf2_tree_domains",
+    "pf2_tree_tables",
+    "pf2_tree_edges",
+    "pf2_tree_passes",
+    "pf2_tree_table_updates",
+    "pf2_tree_rows_scanned_total",
+    "pf2_tree_update_ms",
+    "pf2_tree_project_ms",
+    "pf2_cmp_total",
+    "pf2_cmp_supported",
+    "pf2_cmp_key_arity_max",
+    "pf2_cmp_summary_build_ms",
+    "pf2_cmp_summary_keys_total",
+    "pf2_cmp_checks_total",
+    "pf2_cmp_rejects_total",
+    "pf2_cmp_key2_entries",
+    "pf2_cmp_key2_dense_bytes",
+    "pf2_cmp_key2_build_ms",
+    "pf2_cmp_key2_rows_scanned",
+    "pf2_cmp_key2_updates",
+    "pf2_cmp_key2_lookups",
+    "pf2_total_ms",
     "bytes_ctid",
     "bytes_blk_index",
     "rows_seen",
     "rows_passed",
     "ctid_misses",
+    "blocks_seen",
+    "blocks_skipped",
+    "block_skip_hit_rate",
     "peak_rss_kb_end",
     "policy_profile_lines",
     "has_new_layer_fields",
@@ -234,13 +333,113 @@ LAYER_PROBE_COLUMNS = [
     "project_mask_bytes",
     "project_n_join_evals_max",
     "project_clause_words_max",
+    "clause_plan_count_max",
+    "prop_join_scans_total",
+    "unique_join_struct_sigs_max",
+    "prop_table_scans",
+    "target_rid_bitmap_bytes",
+    "signature_cache_bytes",
+    "active_sig_dense_count",
+    "active_sig_sparse_count",
+    "active_sig_density_sum",
+    "domain_set_dense_count",
+    "domain_set_sparse_count",
+    "domain_set_density_sum",
+    "block_words_blocks_allocated",
+    "block_words_total_blocks",
+    "block_words_dense_bytes",
+    "block_words_nblocks",
+    "block_words_nwords_per_block",
+    "proj_sig_count",
+    "proj_sig_total",
+    "proj_sig_new",
+    "proj_sig_skipped",
+    "proj_mask_or_ops",
+    "proj_rid_iters",
+    "proj_rid_iters_scan_enforcement",
+    "proj_rid_iters_dependency",
+    "canon_term_map_cache_hits",
+    "canon_term_map_cache_misses",
+    "canon_term_map_build_ms",
+    "canon_term_map_bytes",
+    "restrict_key_index_build_ms",
+    "restrict_key_index_entries",
+    "restrict_key_index_bytes",
+    "restrict_key_prune_ms",
+    "sigmask_cache_hits",
+    "sigmask_cache_misses",
+    "sigmask_build_ms",
+    "sigmask_bytes",
+    "bytes_sig_ctid_masks",
+    "bytes_block_words",
+    "bytes_artifact_buffers_retained",
+    "bytes_decoded_buffers_retained",
+    "qual_atoms_total",
+    "qual_atoms_applied",
+    "qual_pruned_sigs",
+    "qual_prune_ms",
+    "restrict_sig_tables",
+    "restrict_sig_schema_cols_total",
+    "restrict_sig_bytes_total",
+    "restrict_sig_apply_ms",
+    "restrict_term_apply_ms",
+    "restrict_term_sigs_kept",
+    "restrict_term_sigs_dropped",
+    "pf2_enabled_targets",
+    "pf2_terms_total",
+    "pf2_terms_supported",
+    "pf2_terms_single_hub",
+    "pf2_terms_two_hop",
+    "pf2_terms_tree",
+    "pf2_terms_failed_shape",
+    "pf2_hub_domain_id",
+    "pf2_hub_key_arity",
+    "pf2_ntokens",
+    "pf2_stamp_rows_scanned_total",
+    "pf2_stamp_rows_scanned_A",
+    "pf2_stamp_rows_scanned_B",
+    "pf2_stamp_ms",
+    "pf2_stamp_ms_A",
+    "pf2_stamp_ms_B",
+    "pf2_tok_and_or_ms",
+    "pf2_tok_compose_ms",
+    "pf2_project_bin_rids_total",
+    "pf2_project_ms",
+    "pf2_tree_domains",
+    "pf2_tree_tables",
+    "pf2_tree_edges",
+    "pf2_tree_passes",
+    "pf2_tree_table_updates",
+    "pf2_tree_rows_scanned_total",
+    "pf2_tree_update_ms",
+    "pf2_tree_project_ms",
+    "pf2_cmp_total",
+    "pf2_cmp_supported",
+    "pf2_cmp_key_arity_max",
+    "pf2_cmp_summary_build_ms",
+    "pf2_cmp_summary_keys_total",
+    "pf2_cmp_checks_total",
+    "pf2_cmp_rejects_total",
+    "pf2_cmp_key2_entries",
+    "pf2_cmp_key2_dense_bytes",
+    "pf2_cmp_key2_build_ms",
+    "pf2_cmp_key2_rows_scanned",
+    "pf2_cmp_key2_updates",
+    "pf2_cmp_key2_lookups",
+    "pf2_total_ms",
     "ctid_map_ms",
     "filter_ms",
     "child_exec_ms",
     "ctid_extract_ms",
     "ctid_to_rid_ms",
     "allow_check_ms",
+    "blocks_seen",
+    "blocks_skipped",
+    "block_skip_hit_rate",
     "projection_ms",
+    "query_wall_ms",
+    "query_execution_ms",
+    "query_planning_ms",
     "rss_mb",
     "rows_filtered",
     "rows_returned",
@@ -264,6 +463,10 @@ LAYER_PROBE_COLUMNS = [
 
 
 class HarnessError(Exception):
+    pass
+
+
+class CaptureTimeoutError(HarnessError):
     pass
 
 
@@ -311,6 +514,191 @@ class RunMetrics:
 class ExplainMetrics:
     planning_ms: float
     execution_ms: float
+
+
+def _capture_watchdog_enabled() -> bool:
+    return os.getenv("CF_CAPTURE_WATCHDOG", "1").strip() not in {"0", "off", "false", "False"}
+
+
+def _capture_watchdog_timeout_s() -> float:
+    raw = os.getenv("CF_CAPTURE_WATCHDOG_SECONDS", "60").strip()
+    try:
+        val = float(raw)
+    except Exception:
+        val = 60.0
+    return max(1.0, val)
+
+
+def _capture_trace_enabled() -> bool:
+    return os.getenv("CF_CAPTURE_TRACE", "0").strip() in {"1", "on", "true", "True"}
+
+
+class CaptureTrace:
+    def __init__(self, db: str, query_id: str, sql_text: str, timeout_s: float, trace: bool = False) -> None:
+        self.db = db
+        self.query_id = query_id or ""
+        self.sql_text = sql_text
+        self.timeout_s = timeout_s
+        self.trace = trace
+        self.pid = os.getpid()
+        self.child_pid: Optional[int] = None
+        self.socket_fileno: Optional[int] = None
+        self._milestones: List[Tuple[str, float, Dict[str, str]]] = []
+
+    def set_socket_fileno(self, fd: Optional[int]) -> None:
+        try:
+            self.socket_fileno = None if fd is None else int(fd)
+        except Exception:
+            self.socket_fileno = None
+
+    def mark(self, tag: str, **meta) -> None:
+        ts = time.time()
+        clean_meta: Dict[str, str] = {}
+        for k, v in meta.items():
+            if v is None:
+                continue
+            s = str(v).replace("\n", "\\n")
+            clean_meta[str(k)] = s
+        self._milestones.append((tag, ts, clean_meta))
+        if self.trace:
+            payload = " ".join(f"{k}={v}" for k, v in clean_meta.items())
+            print(
+                f"[capture_trace] ts={datetime.fromtimestamp(ts).isoformat()} "
+                f"pid={self.pid} child_pid={self.child_pid} sock={self.socket_fileno} "
+                f"db={self.db} q={self.query_id or 'unknown'} milestone={tag}"
+                + (f" {payload}" if payload else ""),
+                file=sys.stderr,
+                flush=True,
+            )
+
+    def dump(self, reason: str) -> None:
+        print(
+            f"[capture_watchdog] reason={reason} pid={self.pid} child_pid={self.child_pid} "
+            f"sock={self.socket_fileno} db={self.db} q={self.query_id or 'unknown'} "
+            f"timeout_s={self.timeout_s}",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(
+            f"[capture_watchdog] sql={self.sql_text.strip()}",
+            file=sys.stderr,
+            flush=True,
+        )
+        for tag, ts, meta in self._milestones:
+            payload = " ".join(f"{k}={v}" for k, v in meta.items())
+            print(
+                f"[capture_watchdog] milestone ts={datetime.fromtimestamp(ts).isoformat()} "
+                f"name={tag}" + (f" {payload}" if payload else ""),
+                file=sys.stderr,
+                flush=True,
+            )
+
+
+def dump_capture_timeout_diagnostics(db: str, trace: CaptureTrace) -> None:
+    def _run_shell(cmd: str) -> None:
+        try:
+            out = subprocess.run(
+                ["bash", "-lc", cmd],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            txt = (out.stdout or "") + (out.stderr or "")
+            print(f"[capture_watchdog] shell cmd={cmd!r} rc={out.returncode}", file=sys.stderr, flush=True)
+            if txt.strip():
+                print(txt.strip(), file=sys.stderr, flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[capture_watchdog] shell cmd failed: {cmd!r} err={exc}", file=sys.stderr, flush=True)
+
+    _run_shell(
+        "ps -ef | egrep 'postgres|fast_sweep_profile_60s|python3 .*scripts/' | egrep -v 'egrep'"
+    )
+    try:
+        conn = connect(db, "postgres")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[capture_watchdog] diag connect failed db={db}: {exc}", file=sys.stderr, flush=True)
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT pid, state, wait_event_type, wait_event, regexp_replace(query, '\\s+', ' ', 'g')
+                FROM pg_stat_activity
+                WHERE datname = %s AND state <> 'idle'
+                ORDER BY pid
+                """,
+                [db],
+            )
+            rows = cur.fetchall()
+            print(
+                f"[capture_watchdog] pg_stat_activity_nonidle_count={len(rows)} db={db}",
+                file=sys.stderr,
+                flush=True,
+            )
+            for row in rows[:50]:
+                print(f"[capture_watchdog] pg_stat_activity row={row}", file=sys.stderr, flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[capture_watchdog] diag pg_stat_activity failed: {exc}", file=sys.stderr, flush=True)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+@contextmanager
+def psycopg_wait_timeout(
+    timeout_s: float,
+    db: str,
+    trace: CaptureTrace,
+):
+    if not _capture_watchdog_enabled():
+        yield
+        return
+    if timeout_s <= 0:
+        yield
+        return
+    prev_cb = None
+    try:
+        try:
+            prev_cb = pgext.get_wait_callback()
+        except Exception:
+            prev_cb = None
+
+        def _wait_cb(conn) -> None:
+            while True:
+                state = conn.poll()
+                if state == pgext.POLL_OK:
+                    return
+                try:
+                    fd = int(conn.fileno())
+                except Exception:
+                    fd = -1
+                if fd >= 0:
+                    trace.set_socket_fileno(fd)
+                if state == pgext.POLL_READ:
+                    rlist, wlist = [fd], []
+                elif state == pgext.POLL_WRITE:
+                    rlist, wlist = [], [fd]
+                else:
+                    raise CaptureTimeoutError(f"unexpected libpq poll state: {state}")
+                ready = select.select(rlist, wlist, [], timeout_s)
+                if not ready[0] and not ready[1]:
+                    trace.dump("psycopg socket wait timeout")
+                    dump_capture_timeout_diagnostics(db, trace)
+                    raise CaptureTimeoutError(
+                        f"capture wait timeout after {timeout_s:.1f}s "
+                        f"(db={db}, q={trace.query_id or 'unknown'}, fd={trace.socket_fileno})"
+                    )
+
+        pgext.set_wait_callback(_wait_cb)
+        yield
+    finally:
+        try:
+            pgext.set_wait_callback(prev_cb)
+        except Exception:
+            pass
     total_ms: float
     wall_ms: float
     peak_rss_kb: int
@@ -502,11 +890,19 @@ def read_rss_kb(pid: int) -> int:
     return 0
 
 
-def execute_with_rss(cur, sql_text: str) -> RunMetrics:
+def execute_with_rss(cur, sql_text: str, capture_trace: Optional[CaptureTrace] = None) -> RunMetrics:
     t0 = time.perf_counter()
     try:
+        if capture_trace is not None:
+            capture_trace.mark("CONNECT_OK")
         cur.execute("SELECT pg_backend_pid()")
         pid = int(cur.fetchone()[0])
+        if capture_trace is not None:
+            try:
+                capture_trace.set_socket_fileno(int(cur.connection.fileno()))
+            except Exception:
+                pass
+            capture_trace.mark("QUERY_SUBMIT_START", sql_preview=sql_text.strip()[:240])
     except Exception as exc:  # noqa: BLE001
         msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
         etype, emsg = classify_error(exc, msg)
@@ -530,9 +926,19 @@ def execute_with_rss(cur, sql_text: str) -> RunMetrics:
     error_type = ""
     error_msg = ""
     try:
-        cur.execute(sql_text)
+        timeout_s = _capture_watchdog_timeout_s() if capture_trace is not None else 0.0
+        with psycopg_wait_timeout(timeout_s, getattr(capture_trace, "db", ""), capture_trace or CaptureTrace("", "", "", 0.0)):
+            cur.execute(sql_text)
+            if capture_trace is not None:
+                capture_trace.mark("QUERY_SUBMIT_OK")
+            if cur.description is not None:
+                if capture_trace is not None:
+                    capture_trace.mark("WAIT_RESULT_START")
+                cur.fetchall()
+                if capture_trace is not None:
+                    capture_trace.mark("WAIT_RESULT_RETURNED")
         if cur.description is not None:
-            cur.fetchall()
+            pass
     except Exception as exc:  # noqa: BLE001
         status = "error"
         msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
@@ -607,6 +1013,21 @@ def execute_with_rss_and_notices(cur, sql_text: str) -> Tuple[RunMetrics, List[s
     del conn.notices[:]
     metrics = execute_with_rss(cur, sql_text)
     notices = [n.replace("\n", " ").strip() for n in conn.notices]
+    del conn.notices[:]
+    return metrics, notices
+
+
+def execute_with_rss_and_notices_capture(
+    cur,
+    sql_text: str,
+    capture_trace: CaptureTrace,
+) -> Tuple[RunMetrics, List[str]]:
+    conn = cur.connection
+    del conn.notices[:]
+    metrics = execute_with_rss(cur, sql_text, capture_trace=capture_trace)
+    capture_trace.mark("READ_PROFILE_START")
+    notices = [n.replace("\n", " ").strip() for n in conn.notices]
+    capture_trace.mark("READ_PROFILE_OK", notice_count=len(notices))
     del conn.notices[:]
     return metrics, notices
 
@@ -812,10 +1233,14 @@ def server_enabled_policy_path(server_policy_dir: str, run_id: str, local_enable
     if not server_policy_dir:
         return ""
     base = Path(server_policy_dir)
+    if not base.is_absolute():
+        base = (Path.cwd() / base).resolve()
     return str(base / f"{run_id}_{local_enabled_path.name}")
 
 
 def enabled_policy_path_for_k(base_path: Path, db: str, k: int) -> Path:
+    if not base_path.is_absolute():
+        base_path = (Path.cwd() / base_path).resolve()
     suffix = base_path.suffix if base_path.suffix else ".txt"
     stem = base_path.stem if base_path.suffix else base_path.name
     safe_db = re.sub(r"[^A-Za-z0-9_]+", "_", db)
@@ -1037,8 +1462,80 @@ def clear_artifacts(db: str) -> None:
     conn = connect(db, "postgres")
     try:
         with conn.cursor() as cur:
-            cur.execute("CREATE TABLE IF NOT EXISTS public.files (name varchar, file bytea);")
-            cur.execute("TRUNCATE public.files;")
+            cur.execute("CREATE TABLE IF NOT EXISTS public.files (run_id text, name varchar, file bytea);")
+            cur.execute("ALTER TABLE public.files ADD COLUMN IF NOT EXISTS run_id text;")
+            cur.execute("UPDATE public.files SET run_id='' WHERE run_id IS NULL;")
+            cur.execute("DELETE FROM public.files;")
+    finally:
+        conn.close()
+
+
+def artifact_run_id_for_enabled(enabled_path: Path) -> str:
+    p = Path(enabled_path).resolve()
+    hsh = hashlib.sha1()
+    hsh.update(str(p).encode("utf-8"))
+    hsh.update(b"\x00")
+    try:
+        hsh.update(p.read_bytes())
+    except Exception:
+        pass
+    return "cf_" + hsh.hexdigest()[:20]
+
+
+def artifact_table_for_run_id(run_id: str) -> str:
+    rid = re.sub(r"[^a-zA-Z0-9_]", "_", str(run_id or ""))
+    if not rid:
+        rid = "default"
+    return f"public.cf_files_{rid[:40]}"
+
+
+def _split_qualified_ident(name: str) -> Tuple[str, str]:
+    s = str(name)
+    if "." in s:
+        schema, table = s.split(".", 1)
+        return schema, table
+    return "public", s
+
+
+def ensure_artifact_table(db: str, table_name: str) -> None:
+    schema, table = _split_qualified_ident(table_name)
+    idx_name = f"{table[:45]}_rid_name_idx"
+    conn = connect(db, "postgres")
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {};").format(sql.Identifier(schema)))
+            cur.execute(
+                sql.SQL(
+                    "CREATE TABLE IF NOT EXISTS {}.{} ("
+                    "run_id text, name varchar, file bytea)"
+                ).format(sql.Identifier(schema), sql.Identifier(table))
+            )
+            cur.execute(
+                sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {}.{} (run_id, name);").format(
+                    sql.Identifier(idx_name), sql.Identifier(schema), sql.Identifier(table)
+                )
+            )
+    finally:
+        conn.close()
+
+
+def clear_artifacts_run_id(db: str, run_id: str) -> None:
+    table_name = artifact_table_for_run_id(run_id)
+    schema, table = _split_qualified_ident(table_name)
+    conn = connect(db, "postgres")
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql.SQL("CREATE TABLE IF NOT EXISTS {}.{} (run_id text, name varchar, file bytea);").format(
+                    sql.Identifier(schema), sql.Identifier(table)
+                )
+            )
+            cur.execute(
+                sql.SQL("DELETE FROM {}.{} WHERE COALESCE(run_id,'') = %s;").format(
+                    sql.Identifier(schema), sql.Identifier(table)
+                ),
+                [str(run_id or "")],
+            )
     finally:
         conn.close()
 
@@ -1142,6 +1639,9 @@ def ensure_build_base_function(cur) -> None:
 
 
 def setup_ours_for_k(db: str, k: int, enabled_path: Path, statement_timeout_ms: int) -> Tuple[float, int]:
+    run_id = artifact_run_id_for_enabled(enabled_path)
+    files_table = artifact_table_for_run_id(run_id)
+    ensure_artifact_table(db, files_table)
     conn = connect(db, "postgres")
     try:
         with conn.cursor() as cur:
@@ -1151,16 +1651,30 @@ def setup_ours_for_k(db: str, k: int, enabled_path: Path, statement_timeout_ms: 
                 cur.execute(f"LOAD '{CUSTOM_FILTER_SO}';")
                 cur.execute("SET custom_filter.debug_mode = trace;")
                 cur.execute("SET client_min_messages = notice;")
-            cur.execute("CREATE TABLE IF NOT EXISTS public.files (name varchar, file bytea);")
+            # Ensure builder/runtime see only artifacts for this harness run.
+            cur.execute("SET custom_filter.run_id = %s;", [run_id])
+            cur.execute("SET custom_filter.files_table = %s;", [files_table])
             ensure_build_base_function(cur)
-            cur.execute("TRUNCATE public.files;")
+            schema, table = _split_qualified_ident(files_table)
+            cur.execute(
+                sql.SQL("DELETE FROM {}.{} WHERE COALESCE(run_id,'') = %s;").format(
+                    sql.Identifier(schema), sql.Identifier(table)
+                ),
+                [run_id],
+            )
             t0 = time.perf_counter()
             cur.execute("SELECT public.build_base(%s);", [str(enabled_path)])
             if dump_ast:
                 maybe_dump_policy_ast_notices(conn, f"setup_ours db={db} k={k}")
             setup_ms = (time.perf_counter() - t0) * 1000.0
-            # Artifact payload bytes for current build (table is truncated right before build).
-            cur.execute("SELECT COALESCE(SUM(octet_length(file)), 0) FROM public.files;")
+            # Artifact payload bytes for current build (run_id-scoped).
+            cur.execute(
+                sql.SQL(
+                    "SELECT COALESCE(SUM(octet_length(file)), 0) FROM {}.{} "
+                    "WHERE COALESCE(run_id,'') = %s;"
+                ).format(sql.Identifier(schema), sql.Identifier(table)),
+                [run_id],
+            )
             disk_bytes = int(cur.fetchone()[0] or 0)
     finally:
         conn.close()
@@ -1178,6 +1692,9 @@ def set_session_for_baseline(
     apply_timing_session_settings(cur, statement_timeout_ms)
     if baseline in ("ours", "ours_with_index"):
         cur.execute(f"LOAD '{CUSTOM_FILTER_SO}';")
+        run_id = artifact_run_id_for_enabled(enabled_path)
+        cur.execute("SET custom_filter.run_id = %s;", [run_id])
+        cur.execute("SET custom_filter.files_table = %s;", [artifact_table_for_run_id(run_id)])
         cur.execute("SET custom_filter.enabled = on;")
         cur.execute("SET custom_filter.contract_mode = off;")
         effective_debug_mode = ours_debug_mode
@@ -1373,8 +1890,18 @@ def run_ours_profile_capture(
     profile_query: str = "",
 ) -> Tuple[RunMetrics, str, Dict[str, str], int, List[str]]:
     conn = None
+    cap_trace = CaptureTrace(
+        db=db,
+        query_id=str(query_id or profile_query or ""),
+        sql_text=query_sql,
+        timeout_s=_capture_watchdog_timeout_s(),
+        trace=_capture_trace_enabled(),
+    )
     try:
+        cap_trace.mark("CAPTURE_START")
+        cap_trace.mark("CONNECT_START")
         conn = connect(db, "postgres")
+        cap_trace.mark("CONNECT_OK")
         with conn.cursor() as cur:
             set_session_for_baseline(cur, "ours", enabled_path, statement_timeout_ms, ours_debug_mode=ours_debug_mode)
             if ours_profile_rescan:
@@ -1384,7 +1911,11 @@ def run_ours_profile_capture(
             if profile_query:
                 cur.execute("SET custom_filter.profile_query = %s;", [str(profile_query)])
             cur.execute("SET client_min_messages = notice;")
-            metrics, notices = execute_with_rss_and_notices(cur, query_sql)
+            try:
+                cap_trace.set_socket_fileno(int(conn.fileno()))
+            except Exception:
+                pass
+            metrics, notices = execute_with_rss_and_notices_capture(cur, query_sql, cap_trace)
             if os.getenv("CF_DUMP_POLICY_AST", "0") == "1":
                 ast_lines = [n.replace("\n", " ").strip() for n in notices if "CF_POLICY_AST" in n]
                 if ast_lines:
@@ -1395,10 +1926,15 @@ def run_ours_profile_capture(
                     for line in ast_lines:
                         print(line)
             payload, kv, cnt = extract_policy_profile(notices)
+            cap_trace.mark("CAPTURE_END", status=metrics.status, notices=len(notices), profile_lines=cnt)
             return metrics, payload, kv, cnt, notices
+    except CaptureTimeoutError:
+        cap_trace.mark("CAPTURE_END", status="timeout")
+        raise
     except Exception as exc:  # noqa: BLE001
         msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:240]
         etype, emsg = classify_error(exc, msg)
+        cap_trace.mark("CAPTURE_END", status="error", error_type=etype)
         return make_error_metrics(etype, emsg), "", {}, 0, []
     finally:
         if conn is not None:
@@ -1510,11 +2046,104 @@ def build_profile_row(
         "filter_ms": "0",
         "bytes_artifacts_loaded": "0",
         "bytes_allow": "0",
+        "target_rid_bitmap_bytes": "0",
+        "signature_cache_bytes": "0",
+        "active_sig_dense_count": "0",
+        "active_sig_sparse_count": "0",
+        "active_sig_density_sum": "0",
+        "domain_set_dense_count": "0",
+        "domain_set_sparse_count": "0",
+        "domain_set_density_sum": "0",
+        "block_words_blocks_allocated": "0",
+        "block_words_total_blocks": "0",
+        "block_words_dense_bytes": "0",
+        "block_words_nblocks": "0",
+        "block_words_nwords_per_block": "0",
+        "proj_sig_count": "0",
+        "proj_sig_total": "0",
+        "proj_sig_new": "0",
+        "proj_sig_skipped": "0",
+        "proj_mask_or_ops": "0",
+        "proj_rid_iters": "0",
+        "proj_rid_iters_scan_enforcement": "0",
+        "proj_rid_iters_dependency": "0",
+        "canon_term_map_cache_hits": "0",
+        "canon_term_map_cache_misses": "0",
+        "canon_term_map_build_ms": "0",
+        "canon_term_map_bytes": "0",
+        "restrict_key_index_build_ms": "0",
+        "restrict_key_index_entries": "0",
+        "restrict_key_index_bytes": "0",
+        "restrict_key_prune_ms": "0",
+        "sigmask_cache_hits": "0",
+        "sigmask_cache_misses": "0",
+        "sigmask_build_ms": "0",
+        "sigmask_bytes": "0",
+        "bytes_sig_ctid_masks": "0",
+        "bytes_block_words": "0",
+        "bytes_artifact_buffers_retained": "0",
+        "bytes_decoded_buffers_retained": "0",
+        "qual_atoms_total": "0",
+        "qual_atoms_applied": "0",
+        "qual_pruned_sigs": "0",
+        "qual_prune_ms": "0",
+        "restrict_sig_tables": "0",
+        "restrict_sig_schema_cols_total": "0",
+        "restrict_sig_bytes_total": "0",
+        "restrict_sig_apply_ms": "0",
+        "restrict_term_apply_ms": "0",
+        "restrict_term_sigs_kept": "0",
+        "restrict_term_sigs_dropped": "0",
+        "pf2_enabled_targets": "0",
+        "pf2_terms_total": "0",
+        "pf2_terms_supported": "0",
+        "pf2_terms_single_hub": "0",
+        "pf2_terms_two_hop": "0",
+        "pf2_terms_tree": "0",
+        "pf2_terms_failed_shape": "0",
+        "pf2_hub_domain_id": "-1",
+        "pf2_hub_key_arity": "0",
+        "pf2_ntokens": "0",
+        "pf2_stamp_rows_scanned_total": "0",
+        "pf2_stamp_rows_scanned_A": "0",
+        "pf2_stamp_rows_scanned_B": "0",
+        "pf2_stamp_ms": "0",
+        "pf2_stamp_ms_A": "0",
+        "pf2_stamp_ms_B": "0",
+        "pf2_tok_and_or_ms": "0",
+        "pf2_tok_compose_ms": "0",
+        "pf2_project_bin_rids_total": "0",
+        "pf2_project_ms": "0",
+        "pf2_tree_domains": "0",
+        "pf2_tree_tables": "0",
+        "pf2_tree_edges": "0",
+        "pf2_tree_passes": "0",
+        "pf2_tree_table_updates": "0",
+        "pf2_tree_rows_scanned_total": "0",
+        "pf2_tree_update_ms": "0",
+        "pf2_tree_project_ms": "0",
+        "pf2_cmp_total": "0",
+        "pf2_cmp_supported": "0",
+        "pf2_cmp_key_arity_max": "0",
+        "pf2_cmp_summary_build_ms": "0",
+        "pf2_cmp_summary_keys_total": "0",
+        "pf2_cmp_checks_total": "0",
+        "pf2_cmp_rejects_total": "0",
+        "pf2_cmp_key2_entries": "0",
+        "pf2_cmp_key2_dense_bytes": "0",
+        "pf2_cmp_key2_build_ms": "0",
+        "pf2_cmp_key2_rows_scanned": "0",
+        "pf2_cmp_key2_updates": "0",
+        "pf2_cmp_key2_lookups": "0",
+        "pf2_total_ms": "0",
         "bytes_ctid": "0",
         "bytes_blk_index": "0",
         "rows_seen": "0",
         "rows_passed": "0",
         "ctid_misses": "0",
+        "blocks_seen": "0",
+        "blocks_skipped": "0",
+        "block_skip_hit_rate": "0",
         "peak_rss_kb_end": "0",
         "policy_profile_lines": str(profile_line_count),
         "has_new_layer_fields": "0",
@@ -1528,11 +2157,104 @@ def build_profile_row(
         "filter_ms": "filter_ms",
         "bytes_artifacts_loaded": "bytes_artifacts_loaded",
         "bytes_allow": "bytes_allow",
+        "target_rid_bitmap_bytes": "target_rid_bitmap_bytes",
+        "signature_cache_bytes": "signature_cache_bytes",
+        "active_sig_dense_count": "active_sig_dense_count",
+        "active_sig_sparse_count": "active_sig_sparse_count",
+        "active_sig_density_sum": "active_sig_density_sum",
+        "domain_set_dense_count": "domain_set_dense_count",
+        "domain_set_sparse_count": "domain_set_sparse_count",
+        "domain_set_density_sum": "domain_set_density_sum",
+        "block_words_blocks_allocated": "block_words_blocks_allocated",
+        "block_words_total_blocks": "block_words_total_blocks",
+        "block_words_dense_bytes": "block_words_dense_bytes",
+        "block_words_nblocks": "block_words_nblocks",
+        "block_words_nwords_per_block": "block_words_nwords_per_block",
+        "proj_sig_count": "proj_sig_count",
+        "proj_sig_total": "proj_sig_total",
+        "proj_sig_new": "proj_sig_new",
+        "proj_sig_skipped": "proj_sig_skipped",
+        "proj_mask_or_ops": "proj_mask_or_ops",
+        "proj_rid_iters": "proj_rid_iters",
+        "proj_rid_iters_scan_enforcement": "proj_rid_iters_scan_enforcement",
+        "proj_rid_iters_dependency": "proj_rid_iters_dependency",
+        "canon_term_map_cache_hits": "canon_term_map_cache_hits",
+        "canon_term_map_cache_misses": "canon_term_map_cache_misses",
+        "canon_term_map_build_ms": "canon_term_map_build_ms",
+        "canon_term_map_bytes": "canon_term_map_bytes",
+        "restrict_key_index_build_ms": "restrict_key_index_build_ms",
+        "restrict_key_index_entries": "restrict_key_index_entries",
+        "restrict_key_index_bytes": "restrict_key_index_bytes",
+        "restrict_key_prune_ms": "restrict_key_prune_ms",
+        "sigmask_cache_hits": "sigmask_cache_hits",
+        "sigmask_cache_misses": "sigmask_cache_misses",
+        "sigmask_build_ms": "sigmask_build_ms",
+        "sigmask_bytes": "sigmask_bytes",
+        "bytes_sig_ctid_masks": "bytes_sig_ctid_masks",
+        "bytes_block_words": "bytes_block_words",
+        "bytes_artifact_buffers_retained": "bytes_artifact_buffers_retained",
+        "bytes_decoded_buffers_retained": "bytes_decoded_buffers_retained",
+        "qual_atoms_total": "qual_atoms_total",
+        "qual_atoms_applied": "qual_atoms_applied",
+        "qual_pruned_sigs": "qual_pruned_sigs",
+        "qual_prune_ms": "qual_prune_ms",
+        "restrict_sig_tables": "restrict_sig_tables",
+        "restrict_sig_schema_cols_total": "restrict_sig_schema_cols_total",
+        "restrict_sig_bytes_total": "restrict_sig_bytes_total",
+        "restrict_sig_apply_ms": "restrict_sig_apply_ms",
+        "restrict_term_apply_ms": "restrict_term_apply_ms",
+        "restrict_term_sigs_kept": "restrict_term_sigs_kept",
+        "restrict_term_sigs_dropped": "restrict_term_sigs_dropped",
+        "pf2_enabled_targets": "pf2_enabled_targets",
+        "pf2_terms_total": "pf2_terms_total",
+        "pf2_terms_supported": "pf2_terms_supported",
+        "pf2_terms_single_hub": "pf2_terms_single_hub",
+        "pf2_terms_two_hop": "pf2_terms_two_hop",
+        "pf2_terms_tree": "pf2_terms_tree",
+        "pf2_terms_failed_shape": "pf2_terms_failed_shape",
+        "pf2_hub_domain_id": "pf2_hub_domain_id",
+        "pf2_hub_key_arity": "pf2_hub_key_arity",
+        "pf2_ntokens": "pf2_ntokens",
+        "pf2_stamp_rows_scanned_total": "pf2_stamp_rows_scanned_total",
+        "pf2_stamp_rows_scanned_A": "pf2_stamp_rows_scanned_A",
+        "pf2_stamp_rows_scanned_B": "pf2_stamp_rows_scanned_B",
+        "pf2_stamp_ms": "pf2_stamp_ms",
+        "pf2_stamp_ms_A": "pf2_stamp_ms_A",
+        "pf2_stamp_ms_B": "pf2_stamp_ms_B",
+        "pf2_tok_and_or_ms": "pf2_tok_and_or_ms",
+        "pf2_tok_compose_ms": "pf2_tok_compose_ms",
+        "pf2_project_bin_rids_total": "pf2_project_bin_rids_total",
+        "pf2_project_ms": "pf2_project_ms",
+        "pf2_tree_domains": "pf2_tree_domains",
+        "pf2_tree_tables": "pf2_tree_tables",
+        "pf2_tree_edges": "pf2_tree_edges",
+        "pf2_tree_passes": "pf2_tree_passes",
+        "pf2_tree_table_updates": "pf2_tree_table_updates",
+        "pf2_tree_rows_scanned_total": "pf2_tree_rows_scanned_total",
+        "pf2_tree_update_ms": "pf2_tree_update_ms",
+        "pf2_tree_project_ms": "pf2_tree_project_ms",
+        "pf2_cmp_total": "pf2_cmp_total",
+        "pf2_cmp_supported": "pf2_cmp_supported",
+        "pf2_cmp_key_arity_max": "pf2_cmp_key_arity_max",
+        "pf2_cmp_summary_build_ms": "pf2_cmp_summary_build_ms",
+        "pf2_cmp_summary_keys_total": "pf2_cmp_summary_keys_total",
+        "pf2_cmp_checks_total": "pf2_cmp_checks_total",
+        "pf2_cmp_rejects_total": "pf2_cmp_rejects_total",
+        "pf2_cmp_key2_entries": "pf2_cmp_key2_entries",
+        "pf2_cmp_key2_dense_bytes": "pf2_cmp_key2_dense_bytes",
+        "pf2_cmp_key2_build_ms": "pf2_cmp_key2_build_ms",
+        "pf2_cmp_key2_rows_scanned": "pf2_cmp_key2_rows_scanned",
+        "pf2_cmp_key2_updates": "pf2_cmp_key2_updates",
+        "pf2_cmp_key2_lookups": "pf2_cmp_key2_lookups",
+        "pf2_total_ms": "pf2_total_ms",
         "bytes_ctid": "bytes_ctid",
         "bytes_blk_index": "bytes_blk_index",
         "rows_seen": "rows_seen",
         "rows_passed": "rows_passed",
         "ctid_misses": "ctid_misses",
+        "blocks_seen": "blocks_seen",
+        "blocks_skipped": "blocks_skipped",
+        "block_skip_hit_rate": "block_skip_hit_rate",
         "peak_rss_kb_end": "peak_rss_kb_end",
     }
     for out_key, in_key in key_map.items():
@@ -2554,13 +3276,113 @@ def run_layer_probe(args: argparse.Namespace) -> None:
                     "project_mask_bytes": g("project_mask_bytes"),
                     "project_n_join_evals_max": g("project_n_join_evals_max"),
                     "project_clause_words_max": g("project_clause_words_max"),
+                    "clause_plan_count_max": g("clause_plan_count_max"),
+                    "prop_join_scans_total": g("prop_join_scans_total"),
+                    "unique_join_struct_sigs_max": g("unique_join_struct_sigs_max"),
+                    "prop_table_scans": g("prop_table_scans"),
+                    "target_rid_bitmap_bytes": g("target_rid_bitmap_bytes"),
+                    "signature_cache_bytes": g("signature_cache_bytes"),
+                    "active_sig_dense_count": g("active_sig_dense_count"),
+                    "active_sig_sparse_count": g("active_sig_sparse_count"),
+                    "active_sig_density_sum": g("active_sig_density_sum"),
+                    "domain_set_dense_count": g("domain_set_dense_count"),
+                    "domain_set_sparse_count": g("domain_set_sparse_count"),
+                    "domain_set_density_sum": g("domain_set_density_sum"),
+                    "block_words_blocks_allocated": g("block_words_blocks_allocated"),
+                    "block_words_total_blocks": g("block_words_total_blocks"),
+                    "block_words_dense_bytes": g("block_words_dense_bytes"),
+                    "block_words_nblocks": g("block_words_nblocks"),
+                    "block_words_nwords_per_block": g("block_words_nwords_per_block"),
+                    "proj_sig_count": g("proj_sig_count"),
+                    "proj_sig_total": g("proj_sig_total"),
+                    "proj_sig_new": g("proj_sig_new"),
+                    "proj_sig_skipped": g("proj_sig_skipped"),
+                    "proj_mask_or_ops": g("proj_mask_or_ops"),
+                    "proj_rid_iters": g("proj_rid_iters"),
+                    "proj_rid_iters_scan_enforcement": g("proj_rid_iters_scan_enforcement"),
+                    "proj_rid_iters_dependency": g("proj_rid_iters_dependency"),
+                    "canon_term_map_cache_hits": g("canon_term_map_cache_hits"),
+                    "canon_term_map_cache_misses": g("canon_term_map_cache_misses"),
+                    "canon_term_map_build_ms": g("canon_term_map_build_ms"),
+                    "canon_term_map_bytes": g("canon_term_map_bytes"),
+                    "restrict_key_index_build_ms": g("restrict_key_index_build_ms"),
+                    "restrict_key_index_entries": g("restrict_key_index_entries"),
+                    "restrict_key_index_bytes": g("restrict_key_index_bytes"),
+                    "restrict_key_prune_ms": g("restrict_key_prune_ms"),
+                    "sigmask_cache_hits": g("sigmask_cache_hits"),
+                    "sigmask_cache_misses": g("sigmask_cache_misses"),
+                    "sigmask_build_ms": g("sigmask_build_ms"),
+                    "sigmask_bytes": g("sigmask_bytes"),
+                    "bytes_sig_ctid_masks": g("bytes_sig_ctid_masks"),
+                    "bytes_block_words": g("bytes_block_words"),
+                    "bytes_artifact_buffers_retained": g("bytes_artifact_buffers_retained"),
+                    "bytes_decoded_buffers_retained": g("bytes_decoded_buffers_retained"),
+                    "qual_atoms_total": g("qual_atoms_total"),
+                    "qual_atoms_applied": g("qual_atoms_applied"),
+                    "qual_pruned_sigs": g("qual_pruned_sigs"),
+                    "qual_prune_ms": g("qual_prune_ms"),
+                    "restrict_sig_tables": g("restrict_sig_tables"),
+                    "restrict_sig_schema_cols_total": g("restrict_sig_schema_cols_total"),
+                    "restrict_sig_bytes_total": g("restrict_sig_bytes_total"),
+                    "restrict_sig_apply_ms": g("restrict_sig_apply_ms"),
+                    "restrict_term_apply_ms": g("restrict_term_apply_ms"),
+                    "restrict_term_sigs_kept": g("restrict_term_sigs_kept"),
+                    "restrict_term_sigs_dropped": g("restrict_term_sigs_dropped"),
+                    "pf2_enabled_targets": g("pf2_enabled_targets"),
+                    "pf2_terms_total": g("pf2_terms_total"),
+                    "pf2_terms_supported": g("pf2_terms_supported"),
+                    "pf2_terms_single_hub": g("pf2_terms_single_hub"),
+                    "pf2_terms_two_hop": g("pf2_terms_two_hop"),
+                    "pf2_terms_tree": g("pf2_terms_tree"),
+                    "pf2_terms_failed_shape": g("pf2_terms_failed_shape"),
+                    "pf2_hub_domain_id": g("pf2_hub_domain_id"),
+                    "pf2_hub_key_arity": g("pf2_hub_key_arity"),
+                    "pf2_ntokens": g("pf2_ntokens"),
+                    "pf2_stamp_rows_scanned_total": g("pf2_stamp_rows_scanned_total"),
+                    "pf2_stamp_rows_scanned_A": g("pf2_stamp_rows_scanned_A"),
+                    "pf2_stamp_rows_scanned_B": g("pf2_stamp_rows_scanned_B"),
+                    "pf2_stamp_ms": g("pf2_stamp_ms"),
+                    "pf2_stamp_ms_A": g("pf2_stamp_ms_A"),
+                    "pf2_stamp_ms_B": g("pf2_stamp_ms_B"),
+                    "pf2_tok_and_or_ms": g("pf2_tok_and_or_ms"),
+                    "pf2_tok_compose_ms": g("pf2_tok_compose_ms"),
+                    "pf2_project_bin_rids_total": g("pf2_project_bin_rids_total"),
+                    "pf2_project_ms": g("pf2_project_ms"),
+                    "pf2_tree_domains": g("pf2_tree_domains"),
+                    "pf2_tree_tables": g("pf2_tree_tables"),
+                    "pf2_tree_edges": g("pf2_tree_edges"),
+                    "pf2_tree_passes": g("pf2_tree_passes"),
+                    "pf2_tree_table_updates": g("pf2_tree_table_updates"),
+                    "pf2_tree_rows_scanned_total": g("pf2_tree_rows_scanned_total"),
+                    "pf2_tree_update_ms": g("pf2_tree_update_ms"),
+                    "pf2_tree_project_ms": g("pf2_tree_project_ms"),
+                    "pf2_cmp_total": g("pf2_cmp_total"),
+                    "pf2_cmp_supported": g("pf2_cmp_supported"),
+                    "pf2_cmp_key_arity_max": g("pf2_cmp_key_arity_max"),
+                    "pf2_cmp_summary_build_ms": g("pf2_cmp_summary_build_ms"),
+                    "pf2_cmp_summary_keys_total": g("pf2_cmp_summary_keys_total"),
+                    "pf2_cmp_checks_total": g("pf2_cmp_checks_total"),
+                    "pf2_cmp_rejects_total": g("pf2_cmp_rejects_total"),
+                    "pf2_cmp_key2_entries": g("pf2_cmp_key2_entries"),
+                    "pf2_cmp_key2_dense_bytes": g("pf2_cmp_key2_dense_bytes"),
+                    "pf2_cmp_key2_build_ms": g("pf2_cmp_key2_build_ms"),
+                    "pf2_cmp_key2_rows_scanned": g("pf2_cmp_key2_rows_scanned"),
+                    "pf2_cmp_key2_updates": g("pf2_cmp_key2_updates"),
+                    "pf2_cmp_key2_lookups": g("pf2_cmp_key2_lookups"),
+                    "pf2_total_ms": g("pf2_total_ms"),
                     "ctid_map_ms": g("ctid_map_ms"),
                     "filter_ms": g("filter_ms"),
                     "child_exec_ms": g("child_exec_ms"),
                     "ctid_extract_ms": g("ctid_extract_ms"),
                     "ctid_to_rid_ms": g("ctid_to_rid_ms"),
                     "allow_check_ms": g("allow_check_ms"),
+                    "blocks_seen": g("blocks_seen"),
+                    "blocks_skipped": g("blocks_skipped"),
+                    "block_skip_hit_rate": g("block_skip_hit_rate"),
                     "projection_ms": g("projection_ms"),
+                    "query_wall_ms": f"{metrics.elapsed_ms:.3f}" if metrics.status == "ok" else "",
+                    "query_execution_ms": "",
+                    "query_planning_ms": "",
                     "rss_mb": f"{rss_mb:.3f}",
                     "rows_filtered": str(rows_filtered),
                     "rows_returned": str(rows_passed),

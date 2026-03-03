@@ -1,5 +1,0 @@
-QUERY:
-SELECT COUNT(*) FROM orders;
-COUNT: 150000
---- NOTICES ---
-

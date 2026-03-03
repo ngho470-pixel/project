@@ -3,8 +3,8 @@ PG_CONFIG := pg_config
 CC       := gcc
 CXX      := g++
 CFLAGS   := -fPIC -Wall -Wextra -O2 $(shell $(PG_CONFIG) --cflags)
-CXXFLAGS := -fPIC -Wall -Wextra -O2 $(shell $(PG_CONFIG) --cflags)
-INCLUDES := -I$(shell $(PG_CONFIG) --includedir-server)
+CXXFLAGS := -std=c++17 -fPIC -Wall -Wextra -O2 $(shell $(PG_CONFIG) --cflags)
+INCLUDES := -I$(shell $(PG_CONFIG) --includedir-server) -I$(CURDIR)/../cvc5/include -I$(CURDIR)/../cvc5/build/include -I$(CURDIR)/cvc5/include -I$(CURDIR)/cvc5/build/include
 
 # Ensure the packaged runtime can resolve cvc5 dependencies from a sibling `lib/`
 # directory (e.g. /tmp/z3_lab/custom_filter.so + /tmp/z3_lab/lib/libcvc5.so.1).
@@ -12,7 +12,7 @@ INCLUDES := -I$(shell $(PG_CONFIG) --includedir-server)
 # is inherited and applies to libcvc5's transitive deps (e.g. libcln).
 LDFLAGS  := -Wl,--disable-new-dtags -Wl,-rpath,'$$ORIGIN/lib' -Wl,-z,origin
 
-CVC5_LIBS := -lcvc5
+CVC5_LIBS := $(CURDIR)/lib/libcvc5.so.1
 
 TARGET  := custom_filter.so
 OBJS    := custom_filter.o policy.o policy_evaluator.o
