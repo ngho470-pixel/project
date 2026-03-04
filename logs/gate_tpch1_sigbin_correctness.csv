@@ -1,0 +1,3 @@
+db,query_id,baseline,rows,hash,gt_rows,gt_hash,match,error
+tpch1,1,rls_index,2,755fb94a0398adb8a139aba533ddab35,,,,
+tpch1,1,ours,2,755fb94a0398adb8a139aba533ddab35,2,755fb94a0398adb8a139aba533ddab35,True,

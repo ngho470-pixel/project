@@ -1,0 +1,7 @@
+db,query_id,baseline,rows,hash,gt_rows,gt_hash,match,error
+tpch0_1,1,rls_index,2,6b23519e9bb6976fc8207bcb897b2800,,,,
+tpch0_1,3,rls_index,311,5db592aa190655620ba81ec9a3cc3d4c,,,,
+tpch0_1,6,rls_index,1,20c82b47b7d063d653bdf9fbc14c23a2,,,,
+tpch0_1,1,ours,2,6b23519e9bb6976fc8207bcb897b2800,2,6b23519e9bb6976fc8207bcb897b2800,True,
+tpch0_1,3,ours,311,5db592aa190655620ba81ec9a3cc3d4c,311,5db592aa190655620ba81ec9a3cc3d4c,True,
+tpch0_1,6,ours,1,20c82b47b7d063d653bdf9fbc14c23a2,1,20c82b47b7d063d653bdf9fbc14c23a2,True,
