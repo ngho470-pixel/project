@@ -17,9 +17,10 @@ No heap row scan should be used for policy evaluation in this path.
 
 ## Runtime Evidence Counters
 
-`policy_profile_query` / gate CSV fields used to confirm fast path:
+`policy_profile_stage03` / gate CSV fields used to confirm fast path:
 
 - `single_table_bin_fastpath_used`
+- `bin_eval_ms_total`
 - `bin_ops_total`
 - `bins_touched_total`
 - `bin_rids_scanned_total`
@@ -35,4 +36,3 @@ Allow-set cache key must include at least:
 - strict/runtime flags impacting semantics.
 
 This ensures reuse across multiple queries in the same gate run without cross-policy contamination.
-

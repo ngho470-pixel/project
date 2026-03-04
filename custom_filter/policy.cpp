@@ -1618,6 +1618,8 @@ struct BuildProfile {
     uint64 allow_cache_hit = 0;
     uint64 allow_cache_miss = 0;
     double allow_cache_build_ms = 0.0;
+    uint64 single_table_bin_fastpath_used = 0;
+    double bin_eval_ms_total = 0.0;
     uint64 signature_cache_hits = 0;
     uint64 signature_cache_misses = 0;
     uint64 term_code_scans = 0;
@@ -1765,6 +1767,11 @@ struct BuildProfile {
     uint64 class_route_cycle_rect = 0;
     uint64 class_route_td_cycle = 0;
     uint64 class_route_reject = 0;
+    double class_route_single_hub_ms = 0.0;
+    double class_route_two_hop_ms = 0.0;
+    double class_route_tree_ms = 0.0;
+    double class_route_cycle_rect_ms = 0.0;
+    double class_route_td_cycle_ms = 0.0;
 };
 
 struct RestrictSigState {
@@ -9938,6 +9945,33 @@ static void log_policy_profile_query(const BuildProfile &p, int filtered_targets
          (unsigned long long)p.class_route_reject);
 }
 
+static void log_policy_profile_stage03(const BuildProfile &p)
+{
+    elog(NOTICE,
+         "policy_profile_stage03: "
+         "single_hub_ms=%.3f two_hop_ms=%.3f tree_ms=%.3f cycle_rect_ms=%.3f td_cycle_ms=%.3f "
+         "td_dp_ms=%.3f td_reduction_ms=%.3f td_msg_pairs=%llu td_peak_pairs=%llu "
+         "cmp_summary_build_ms=%.3f cmp_checks_total=%llu "
+         "single_table_bin_fastpath_used=%llu bin_eval_ms_total=%.3f "
+         "sat_ms=%.3f sat_models_total=%llu terms_total=%llu",
+         p.class_route_single_hub_ms,
+         p.class_route_two_hop_ms,
+         p.class_route_tree_ms,
+         p.class_route_cycle_rect_ms,
+         p.class_route_td_cycle_ms,
+         p.class_td_dp_ms,
+         p.class_td_reduction_ms,
+         (unsigned long long)p.class_td_msg_pairs_total,
+         (unsigned long long)p.class_td_peak_msg_pairs,
+         p.pf2_cmp_summary_build_ms,
+         (unsigned long long)p.pf2_cmp_checks_total,
+         (unsigned long long)p.single_table_bin_fastpath_used,
+         p.bin_eval_ms_total,
+         p.sat_ms,
+         (unsigned long long)p.sat_models_total,
+         (unsigned long long)p.terms_total);
+}
+
 static bool load_phase(const PolicyArtifactC *arts,
                        int art_count,
                        const PolicyEngineInputC *in,
@@ -10176,6 +10210,7 @@ static bool maybe_eval_single_table_const_term_bin_only(const Loaded &loaded,
                                                         bool *out_term_has_rows,
                                                         bool *out_applied)
 {
+    auto t_bin0 = Clock::now();
     if (out_applied)
         *out_applied = false;
     if (!profile || !out_words)
@@ -10240,6 +10275,8 @@ if (!rid_bit_test(accum.data(), rid))
 
     profile->pf2_terms_supported++;
     profile->pf2_terms_single_hub++;
+    profile->single_table_bin_fastpath_used++;
+    profile->bin_eval_ms_total += Ms(Clock::now() - t_bin0).count();
     if (out_applied)
         *out_applied = true;
     return true;
@@ -10420,9 +10457,13 @@ if (!rid_bit_test(formula_bits.data(), rid))
     }
 
     profile->terms_total++;
-    profile->term_eval_ms_total += Ms(Clock::now() - t_fast0).count();
+    const double fast_ms = Ms(Clock::now() - t_fast0).count();
+    profile->term_eval_ms_total += fast_ms;
     profile->class_terms_ok++;
     profile->class_route_single_hub++;
+    profile->class_route_single_hub_ms += fast_ms;
+    profile->single_table_bin_fastpath_used++;
+    profile->bin_eval_ms_total += fast_ms;
     log_class_route_notice(target, vars, ClassRouteKind::SINGLE_HUB, "single_table_formula_bin_fast");
 
     if (out_applied)
@@ -10665,6 +10706,7 @@ if (target_rbits && !rid_bit_test(target_rbits, rid))
             return false;
         }
         if (applied_bin_only) {
+            profile->class_route_single_hub_ms += Ms(Clock::now() - t_term0).count();
             profile->class_terms_ok++;
             profile->class_route_single_hub++;
             log_class_route_notice(target, term_atoms, ClassRouteKind::SINGLE_HUB, "single_table_bin_only");
@@ -10678,6 +10720,7 @@ if (target_rbits && !rid_bit_test(target_rbits, rid))
 
     if (target_tp->class_groups.empty() ||
         (cl.tables.size() == 1 && cl.tables[0].table == target)) {
+        auto t_route0 = Clock::now();
         std::vector<Pf2LocalComparator> target_local_cmps;
         bool unsupported_cross_cmp = false;
         if (!pf2_map_local_comparators_for_table(cl,
@@ -10710,6 +10753,7 @@ if (profile)
             if (route_rid_bits)
                 rid_bit_set(route_rid_bits->data(), rid);
         }
+        profile->class_route_single_hub_ms += Ms(Clock::now() - t_route0).count();
         profile->class_terms_ok++;
         profile->class_route_single_hub++;
         log_class_route_notice(target, term_atoms, ClassRouteKind::SINGLE_HUB, "target_local_only");
@@ -10748,6 +10792,7 @@ if (profile)
         log_class_route_notice(target, term_atoms, r);
     };
 
+    auto t_route_single = Clock::now();
     if (!eval_term_conjunction_pf2_single_hub(loaded,
                                               target,
                                               cl,
@@ -10760,6 +10805,7 @@ if (profile)
                                               &pf2_has_rows,
                                               &pf2_supported))
         return false;
+    profile->class_route_single_hub_ms += Ms(Clock::now() - t_route_single).count();
     if (pf2_supported) {
         record_ok_route(ClassRouteKind::SINGLE_HUB);
         if (out_term_has_rows)
@@ -10771,6 +10817,7 @@ if (profile)
     }
     mark_route_fail("single_hub", "no_match_or_unsupported");
 
+    auto t_route_two = Clock::now();
     if (!eval_term_conjunction_pf2_two_hop(loaded,
                                            target,
                                            cl,
@@ -10783,6 +10830,7 @@ if (profile)
                                            &pf2_has_rows,
                                            &pf2_supported))
         return false;
+    profile->class_route_two_hop_ms += Ms(Clock::now() - t_route_two).count();
     if (pf2_supported) {
         record_ok_route(ClassRouteKind::TWO_HOP);
         if (out_term_has_rows)
@@ -10794,6 +10842,7 @@ if (profile)
     }
     mark_route_fail("two_hop", "no_match_or_unsupported");
 
+    auto t_route_cycle_rect = Clock::now();
     if (!eval_term_conjunction_pf2_cycle_rect(loaded,
                                               target,
                                               cl,
@@ -10806,6 +10855,7 @@ if (profile)
                                               &pf2_has_rows,
                                               &pf2_supported))
         return false;
+    profile->class_route_cycle_rect_ms += Ms(Clock::now() - t_route_cycle_rect).count();
     if (pf2_supported) {
         record_ok_route(ClassRouteKind::CYCLE_RECT);
         if (out_term_has_rows)
@@ -10817,6 +10867,7 @@ if (profile)
     }
     mark_route_fail("cycle_rect", "no_match_or_unsupported");
 
+    auto t_route_td = Clock::now();
     if (!eval_term_conjunction_pf2_td_cycle(loaded,
                                             target,
                                             cl,
@@ -10829,6 +10880,7 @@ if (profile)
                                             &pf2_has_rows,
                                             &pf2_supported))
         return false;
+    profile->class_route_td_cycle_ms += Ms(Clock::now() - t_route_td).count();
     if (pf2_supported) {
         profile->class_terms_ok++;
         profile->class_route_td_cycle++;
@@ -10847,6 +10899,7 @@ if (profile)
     }
     mark_route_fail("td_cycle", "no_match_or_unsupported");
 
+    auto t_route_tree = Clock::now();
     if (!eval_term_conjunction_pf2_tree(loaded,
                                         target,
                                         cl,
@@ -10859,6 +10912,7 @@ if (profile)
                                         &pf2_has_rows,
                                         &pf2_supported))
         return false;
+    profile->class_route_tree_ms += Ms(Clock::now() - t_route_tree).count();
     if (pf2_supported) {
         record_ok_route(ClassRouteKind::TREE);
         if (out_term_has_rows)
@@ -11743,6 +11797,7 @@ policy_run(const PolicyArtifactC *arts, int art_count, const PolicyEngineInputC 
     fill_run_profile(profile, &h->profile);
 
     log_policy_profile_query(profile, h->allow_list.count);
+    log_policy_profile_stage03(profile);
 
     return h;
 }

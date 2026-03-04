@@ -1,6 +1,6 @@
 # Executor Timing Breakdown
 
-This documents strict-mode custom scan timing counters emitted in `policy_profile` from `custom_filter/custom_filter.c`.
+This documents strict-mode timing counters emitted from `custom_filter/custom_filter.c` and parsed by `scripts/gate_stage03.py`.
 
 ## Counter Sources
 
@@ -21,7 +21,22 @@ This documents strict-mode custom scan timing counters emitted in `policy_profil
 
 Per-node counters are collected in `CfExec` and aggregated in `cf_end(...)` into `PolicyQueryState`.
 
-`policy_profile` logs per-query aggregates. `scripts/gate_stage01.py` copies these fields into CSV.
+Per execution, `cf_reset_query_exec_metrics(...)` clears runtime counters in `ExecutorStart` before the query runs, so metrics are execution-scoped even when query-state is reused.
+
+`policy_profile` and `policy_profile_exec_stage03` carry per-query aggregates; `scripts/gate_stage03.py` reads these into CSV.
+
+## Stage03 Fields
+
+`policy_profile_exec_stage03` includes:
+
+- `policy_eval_ms_total`
+- `artifact_load_ms`, `artifact_bytes_read`
+- `allow_build_ms`, `executor_init_ms_ours`
+- `custom_scan_total_ms`, `custom_scan_overhead_ms`
+- `child_exec_ms`, `ctid_extract_ms`, `ctid_to_rid_ms`, `allow_check_ms`, `projection_ms`
+- `tid_fetch_ms`, `tid_heap_fetch_ms`, `tid_slot_store_ms`, `tid_visibility_ms`
+- aliases: `tid_pages_read_ms`, `tid_tuple_extract_ms`
+- `tid_blocks_touched`, `tid_offsets_total`
 
 ## Consistency Rule
 
@@ -30,4 +45,3 @@ For strict runs, use:
 `custom_scan_total_ms ~= child_exec_ms + ctid_extract_ms + ctid_to_rid_ms + allow_check_ms + projection_ms + tid_fetch_ms + custom_scan_overhead_ms`
 
 A large residual indicates uninstrumented overhead and should be investigated.
-

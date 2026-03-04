@@ -679,6 +679,7 @@ static bool cf_rel_is_policy_target(PlannerInfo *root, Oid relid);
 static bool cf_runtime_strict_mode_enabled(void);
 static bool cf_plan_inner_only_safe(Plan *plan, const char **reason_out);
 static bool cf_query_has_empty_allow_set(const PolicyQueryState *qs, const char **table_out);
+static void cf_reset_query_exec_metrics(PolicyQueryState *qs);
 static void cf_update_scan_mode(struct CfExec *st, CustomScanState *node, TableFilterState *tf);
 static bool cf_tid_iter_next(struct CfExec *st, TableFilterState *tf, ItemPointerData *out_tid);
 static TupleTableSlot *cf_exec_seqscan_tid_mode(CustomScanState *node, struct CfExec *st, TableFilterState *tf);
@@ -1420,6 +1421,8 @@ typedef struct PolicyQueryState
     double decode_ms;
     double policy_total_ms;
     double ctid_map_ms;
+    double allow_build_ms;
+    double executor_init_ms_ours;
     double filter_ms;
     double child_exec_ms;
     double ctid_extract_ms;
@@ -1830,12 +1833,19 @@ cf_executor_start(QueryDesc *queryDesc, int eflags)
     if (!pstmt || pstmt->commandType != CMD_SELECT)
         return;
 
+    if (cf_query_state)
+        cf_reset_query_exec_metrics(cf_query_state);
+
+    instr_time init_start, init_end;
+    INSTR_TIME_SET_CURRENT(init_start);
     PolicyQueryState *qs = cf_ensure_query_state(queryDesc->estate,
                                                  queryDesc->sourceText ? queryDesc->sourceText : debug_query_string,
                                                  pstmt);
+    INSTR_TIME_SET_CURRENT(init_end);
     cf_log_wrapper_audit(pstmt);
     if (qs)
     {
+        qs->executor_init_ms_ours += INSTR_TIME_GET_MILLISEC(init_end) - INSTR_TIME_GET_MILLISEC(init_start);
         const char *reason = "none";
         const char *empty_rel = NULL;
         bool any_empty = cf_query_has_empty_allow_set(qs, &empty_rel);
@@ -1867,6 +1877,54 @@ cf_executor_start(QueryDesc *queryDesc, int eflags)
                  empty_rel ? empty_rel : "none");
         }
     }
+}
+
+static void
+cf_reset_query_exec_metrics(PolicyQueryState *qs)
+{
+    if (!qs)
+        return;
+
+    qs->artifact_load_ms = 0.0;
+    qs->artifact_parse_ms = 0.0;
+    qs->atoms_ms = 0.0;
+    qs->propagate_ms = 0.0;
+    qs->project_ms = 0.0;
+    qs->project_mask_ms = 0.0;
+    qs->project_row_ms = 0.0;
+    qs->project_mask_bytes = 0;
+    qs->project_n_join_evals_max = 0;
+    qs->project_clause_words_max = 0;
+    qs->decode_ms = 0.0;
+    qs->policy_total_ms = 0.0;
+    qs->ctid_map_ms = 0.0;
+    qs->allow_build_ms = 0.0;
+    qs->executor_init_ms_ours = 0.0;
+    qs->filter_ms = 0.0;
+    qs->child_exec_ms = 0.0;
+    qs->ctid_extract_ms = 0.0;
+    qs->ctid_to_rid_ms = 0.0;
+    qs->allow_check_ms = 0.0;
+    qs->projection_ms = 0.0;
+    qs->child_next_calls_total = 0;
+    qs->rows_seen = 0;
+    qs->rows_passed = 0;
+    qs->ctid_misses = 0;
+    qs->scan_mode_tid_tables = 0;
+    qs->scan_mode_filter_tables = 0;
+    qs->scan_mode_empty_tables = 0;
+    qs->tid_blocks_visited = 0;
+    qs->tid_tuples_fetched = 0;
+    qs->tid_fetch_ms = 0.0;
+    qs->tid_qual_ms = 0.0;
+    qs->tid_heap_fetch_ms = 0.0;
+    qs->tid_slot_store_ms = 0.0;
+    qs->tid_visibility_ms = 0.0;
+    qs->custom_scan_total_ms = 0.0;
+    qs->custom_scan_overhead_ms = 0.0;
+    qs->rss_kb_after_ctid = -1;
+    qs->rss_kb_end = -1;
+    qs->peak_rss_kb_end = 0;
 }
 
 static void
@@ -2064,6 +2122,38 @@ cf_log_query_metrics(PolicyQueryState *qs)
          qs->rss_kb_after_ctid,
          qs->rss_kb_end,
          qs->peak_rss_kb_end);
+
+    /*
+     * Stage03 compact aliases for gate parsing without depending on the long
+     * legacy payload schema.
+     */
+    elog(NOTICE,
+         "policy_profile_exec_stage03: policy_eval_ms_total=%.3f artifact_load_ms=%.3f artifact_bytes_read=%zu "
+         "allow_build_ms=%.3f executor_init_ms_ours=%.3f custom_scan_total_ms=%.3f custom_scan_overhead_ms=%.3f "
+         "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f "
+         "tid_fetch_ms=%.3f tid_heap_fetch_ms=%.3f tid_slot_store_ms=%.3f tid_visibility_ms=%.3f "
+         "tid_pages_read_ms=%.3f tid_tuple_extract_ms=%.3f "
+         "tid_blocks_touched=%llu tid_offsets_total=%llu",
+         qs->policy_total_ms,
+         qs->artifact_load_ms,
+         qs->bytes_artifacts_loaded,
+         qs->allow_build_ms,
+         qs->executor_init_ms_ours,
+         qs->custom_scan_total_ms,
+         qs->custom_scan_overhead_ms,
+         qs->child_exec_ms,
+         qs->ctid_extract_ms,
+         qs->ctid_to_rid_ms,
+         qs->allow_check_ms,
+         qs->projection_ms,
+         qs->tid_fetch_ms,
+         qs->tid_heap_fetch_ms,
+         qs->tid_slot_store_ms,
+         qs->tid_visibility_ms,
+         qs->tid_heap_fetch_ms,
+         qs->tid_slot_store_ms,
+         (unsigned long long) qs->tid_blocks_visited,
+         (unsigned long long) qs->tid_tuples_fetched);
 }
 
 static void
@@ -2898,6 +2988,8 @@ cf_build_query_state(EState *estate, const char *query_str)
     }
 
     int fidx = 0;
+    instr_time allow_build_start, allow_build_end;
+    INSTR_TIME_SET_CURRENT(allow_build_start);
     if (allow_list && allow_list->count > 0)
     {
         for (int i = 0; i < allow_list->count; i++)
@@ -2948,6 +3040,8 @@ cf_build_query_state(EState *estate, const char *query_str)
                          tname, tf->blocks, tf->total_blocks, tf->block_words_nbytes, tf->block_ids_nbytes);
         }
     }
+    INSTR_TIME_SET_CURRENT(allow_build_end);
+    qs->allow_build_ms += INSTR_TIME_GET_MILLISEC(allow_build_end) - INSTR_TIME_GET_MILLISEC(allow_build_start);
 
     qs->n_filters = fidx;
     if (profile_trace)
@@ -3373,6 +3467,7 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
 {
     CfScanMode new_mode = CF_SCAN_MODE_FILTER;
     double density = 0.0;
+    double page_density = 0.0;
     const char *reason = "no_filter";
     PlanState *child = st ? st->child_plan : NULL;
     bool have_row_density = false;
@@ -3396,6 +3491,10 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
         {
             density = 0.0;
         }
+        if (tf->total_blocks > 0)
+            page_density = (double) tf->blocks / (double) tf->total_blocks;
+        else
+            page_density = 0.0;
 
         if (tf->allow_is_empty || tf->allowed_rows == 0 || tf->blocks == 0 || !tf->block_words || tf->block_words_nbytes == 0)
         {
@@ -3427,10 +3526,15 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
         {
             reason = "missing_total_blocks";
         }
-        else if (density < cf_tidscan_density_threshold)
+        else if (density < cf_tidscan_density_threshold || page_density < cf_tidscan_density_threshold)
         {
             new_mode = CF_SCAN_MODE_TID;
-            reason = "sparse_tid";
+            if (density < cf_tidscan_density_threshold && page_density < cf_tidscan_density_threshold)
+                reason = "sparse_tid_row_page";
+            else if (density < cf_tidscan_density_threshold)
+                reason = "sparse_tid_row";
+            else
+                reason = "sparse_tid_page";
         }
         else
         {
@@ -3455,13 +3559,14 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
     if (!st->scan_mode_logged && tf)
     {
         elog(NOTICE,
-             "scan_mode_decision: rel=%s mode=%s allow_rows=%llu allow_blocks=%u relpages=%u density=%.6f reason=%s scan=%s",
+             "scan_mode_decision: rel=%s mode=%s allow_rows=%llu allow_blocks=%u relpages=%u density=%.6f page_density=%.6f reason=%s scan=%s",
              st->relname[0] ? st->relname : "<unknown>",
              cf_scan_mode_name(st->scan_mode),
              (unsigned long long) tf->allowed_rows,
              (unsigned int) tf->blocks,
              (unsigned int) tf->total_blocks,
              st->scan_mode_density,
+             page_density,
              reason,
              st->scan_type ? st->scan_type : "<unknown>");
         st->scan_mode_logged = true;
