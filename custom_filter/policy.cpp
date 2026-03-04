@@ -1431,6 +1431,7 @@ struct SignatureCacheEntry {
     std::vector<int32_t> sig_tokens;       // flattened [sid * schema_cols.size() + pos]
     std::vector<uint32_t> row_offsets;     // size nsig + 1, rows for sid in rows_flat[offsets[sid]:offsets[sid+1])
     std::vector<uint32_t> rows_flat;       // concatenated row ids grouped by sid
+    std::vector<int32_t> rid_to_sid;       // size nrows, sid for each rid (or -1)
     std::vector<uint32_t> sig_mask_offsets;   // size nsig + 1, sparse triples per signature
     std::vector<uint32_t> sig_mask_blocks;    // triple: heap block
     std::vector<uint8_t> sig_mask_word_idx;   // triple: word index inside block
@@ -4170,6 +4171,7 @@ static bool build_signature_cache_entry(const std::string &table,
     out_entry->sig_tokens.clear();
     out_entry->row_offsets.clear();
     out_entry->rows_flat.clear();
+    out_entry->rid_to_sid.clear();
     out_entry->sig_mask_offsets.clear();
     out_entry->sig_mask_blocks.clear();
     out_entry->sig_mask_word_idx.clear();
@@ -4178,6 +4180,7 @@ static bool build_signature_cache_entry(const std::string &table,
 
     if (ti.nrows == 0 || schema_cols.empty()) {
         out_entry->row_offsets.assign(1, 0);
+        out_entry->rid_to_sid.assign(ti.nrows, -1);
         out_entry->sig_mask_offsets.assign(1, 0);
         out_entry->mem_bytes =
             out_entry->schema_cols.size() * sizeof(int) +
@@ -4185,6 +4188,7 @@ static bool build_signature_cache_entry(const std::string &table,
             out_entry->sig_tokens.size() * sizeof(int32_t) +
             out_entry->row_offsets.size() * sizeof(uint32_t) +
             out_entry->rows_flat.size() * sizeof(uint32_t) +
+            out_entry->rid_to_sid.size() * sizeof(int32_t) +
             out_entry->sig_mask_offsets.size() * sizeof(uint32_t) +
             out_entry->sig_mask_blocks.size() * sizeof(uint32_t) +
             out_entry->sig_mask_word_idx.size() * sizeof(uint8_t) +
@@ -4245,6 +4249,7 @@ uint32 sid = sid_by_rid[(size_t)rid];
             out_entry->row_offsets[(size_t)sid] + counts[(size_t)sid];
     }
     out_entry->rows_flat.assign(ti.nrows, 0);
+    out_entry->rid_to_sid.assign(ti.nrows, -1);
     std::vector<uint32_t> cursor = out_entry->row_offsets;
     for (uint32 rid = 0; rid < ti.nrows; rid++) {
         PF_CHECK_FOR_INTERRUPTS(rid);
@@ -4253,6 +4258,7 @@ uint32 sid = sid_by_rid[(size_t)rid];
         if (pos >= out_entry->rows_flat.size())
             return false;
         out_entry->rows_flat[(size_t)pos] = rid;
+        out_entry->rid_to_sid[(size_t)rid] = (int32_t)sid;
     }
 
     auto t_sigmask0 = Clock::now();
@@ -4305,6 +4311,7 @@ uint32 sid = sid_by_rid[(size_t)rid];
         out_entry->sig_tokens.size() * sizeof(int32_t) +
         out_entry->row_offsets.size() * sizeof(uint32_t) +
         out_entry->rows_flat.size() * sizeof(uint32_t) +
+        out_entry->rid_to_sid.size() * sizeof(int32_t) +
         out_entry->mask_mem_bytes;
 
     if (profile)
@@ -10371,8 +10378,63 @@ static bool maybe_eval_formula_single_table_bin_fast(const Loaded &loaded,
         return true;
     auto t_fast0 = Clock::now();
 
-    std::unordered_map<int, std::vector<uint8_t>> atom_bits;
-    atom_bits.reserve(vars.size() * 2u + 1u);
+    std::vector<int> canon_schema = table_needed_signature_schema(target_ti);
+    const SignatureCacheEntry *canon_entry = nullptr;
+    if (!get_or_build_signature_cache_entry_with_schema(loaded,
+                                                         target,
+                                                         target_ti,
+                                                         canon_schema,
+                                                         &canon_entry,
+                                                         profile))
+        return false;
+    if (!canon_entry)
+        return false;
+
+    auto project_sig_bits_to_words = [&](const TokenBitset &sig_bits, SparseBlockWords *dst_words) -> bool {
+        if (!dst_words)
+            return false;
+        dst_words->clear();
+        dst_words->total_blocks = target_ti.total_blocks;
+        sig_bits.for_each_set([&](int32_t sid_i32) {
+            if (sid_i32 < 0)
+                return;
+            uint32 sid = (uint32)sid_i32;
+            if (sid >= canon_entry->nsig)
+                return;
+            uint32 begin = canon_entry->sig_mask_offsets[(size_t)sid];
+            uint32 end = canon_entry->sig_mask_offsets[(size_t)sid + 1u];
+            for (uint32 p = begin; p < end; p++) {
+                (void)dst_words->or_word(canon_entry->sig_mask_blocks[(size_t)p],
+                                         canon_entry->sig_mask_word_idx[(size_t)p],
+                                         canon_entry->sig_mask_word_vals[(size_t)p]);
+            }
+        });
+        return true;
+    };
+
+    auto project_sig_bits_to_rids = [&](const TokenBitset &sig_bits, std::vector<uint8_t> *dst_rids) -> bool {
+        if (!dst_rids)
+            return true;
+        dst_rids->assign((target_ti.nrows + 7u) / 8u, 0);
+        sig_bits.for_each_set([&](int32_t sid_i32) {
+            if (sid_i32 < 0)
+                return;
+            uint32 sid = (uint32)sid_i32;
+            if (sid >= canon_entry->nsig)
+                return;
+            uint32 begin = canon_entry->row_offsets[(size_t)sid];
+            uint32 end = canon_entry->row_offsets[(size_t)sid + 1u];
+            for (uint32 p = begin; p < end; p++) {
+                uint32 rid = canon_entry->rows_flat[(size_t)p];
+                if (rid < target_ti.nrows)
+                    rid_bit_set(dst_rids->data(), rid);
+            }
+        });
+        return true;
+    };
+
+    std::unordered_map<int, TokenBitset> atom_sig_bits;
+    atom_sig_bits.reserve(vars.size() * 2u + 1u);
     for (int v : vars) {
         if (v <= 0)
             return true;
@@ -10382,15 +10444,49 @@ static bool maybe_eval_formula_single_table_bin_fast(const Loaded &loaded,
         const Atom &a = ita->second;
         if (a.kind != AtomKind::CONST || a.left.table != target)
             return true;
-        std::vector<uint8_t> bits;
-        if (!build_const_atom_rid_bits_target(loaded, target, target_ti, a, profile, &bits))
+
+        int domain_id = a.join_class_id;
+        if (domain_id < 0) {
+            auto it_dom = loaded.col_domain_by_col.find(a.left.key());
+            if (it_dom != loaded.col_domain_by_col.end())
+                domain_id = it_dom->second;
+        }
+        if (domain_id < 0)
             return true;
-        atom_bits.emplace(v, std::move(bits));
+        auto itd = loaded.domain_dicts.find(domain_id);
+        if (itd == loaded.domain_dicts.end())
+            return true;
+        DictType dtype = DictType::TEXT;
+        auto itdt = loaded.domain_dict_types.find(domain_id);
+        if (itdt != loaded.domain_dict_types.end())
+            dtype = itdt->second;
+        bool sorted = (loaded.domain_dict_sorted.find(domain_id) != loaded.domain_dict_sorted.end());
+        TokenBitset allowed = build_allowed_token_set(a, itd->second, dtype, sorted);
+
+        auto it_col = target_ti.col_idx.find(a.left.key());
+        if (it_col == target_ti.col_idx.end())
+            return true;
+        int col_idx = it_col->second;
+
+        TokenBitset sbits((size_t)canon_entry->nsig);
+        if (allowed.any()) {
+            for (uint32 sid = 0; sid < canon_entry->nsig; sid++) {
+                int32_t tok = -1;
+                if (!signature_get_col_token(*canon_entry, sid, col_idx, &tok))
+                    continue;
+                if (tok < 0) // SQL NULL -> false
+                    continue;
+                if (allowed.test((size_t)(uint32_t)tok))
+                    sbits.set((size_t)sid);
+            }
+        }
+        sbits.adapt_representation();
+        atom_sig_bits.emplace(v, std::move(sbits));
     }
 
-    std::unordered_map<const BoolAst *, std::vector<uint8_t>> memo;
-    std::function<bool(const BoolAst *, std::vector<uint8_t> *)> eval_node =
-        [&](const BoolAst *node, std::vector<uint8_t> *out_bits) -> bool {
+    std::unordered_map<const BoolAst *, TokenBitset> memo;
+    std::function<bool(const BoolAst *, TokenBitset *)> eval_node =
+        [&](const BoolAst *node, TokenBitset *out_bits) -> bool {
             if (!node || !out_bits)
                 return false;
             auto it_m = memo.find(node);
@@ -10398,62 +10494,48 @@ static bool maybe_eval_formula_single_table_bin_fast(const Loaded &loaded,
                 *out_bits = it_m->second;
                 return true;
             }
-            std::vector<uint8_t> bits((target_ti.nrows + 7u) / 8u, 0);
+            TokenBitset bits((size_t)canon_entry->nsig);
             if (node->type == AstType::VAR) {
                 if (node->var_id <= 0) {
-                    // conservative: var<=0 treated as false for fast-path formulas
-                    bits.assign((target_ti.nrows + 7u) / 8u, 0);
+                    bits.clear_all();
                 } else {
-                    auto it = atom_bits.find(node->var_id);
-                    if (it == atom_bits.end())
+                    auto it = atom_sig_bits.find(node->var_id);
+                    if (it == atom_sig_bits.end())
                         return false;
                     bits = it->second;
                 }
             } else if (node->type == AstType::AND || node->type == AstType::OR) {
-                std::vector<uint8_t> lb, rb;
+                TokenBitset lb((size_t)canon_entry->nsig), rb((size_t)canon_entry->nsig);
                 if (!eval_node(node->left, &lb) || !eval_node(node->right, &rb))
                     return false;
                 bits = std::move(lb);
                 if (node->type == AstType::AND)
-                    rid_bits_and_inplace(&bits, rb);
+                    bits.bit_and(rb);
                 else
-                    rid_bits_or_inplace(&bits, rb);
+                    bits.bit_or(rb);
                 if (profile)
                     profile->bin_ops_total++;
             } else {
                 return false;
             }
+            bits.adapt_representation();
             memo.emplace(node, bits);
             *out_bits = std::move(bits);
             return true;
         };
 
-    std::vector<uint8_t> formula_bits;
-    if (!eval_node(formula_root, &formula_bits))
+    TokenBitset formula_sig_bits((size_t)canon_entry->nsig);
+    if (!eval_node(formula_root, &formula_sig_bits))
         return true;
 
-    out_words->clear();
-    out_words->total_blocks = target_ti.total_blocks;
-    for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
-        PF_CHECK_FOR_INTERRUPTS(rid);
-if (!rid_bit_test(formula_bits.data(), rid))
-            continue;
-        if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
-            continue;
-        (void)out_words->set_ctid(target_ti.ctid_blk[(size_t)rid], target_ti.ctid_off[(size_t)rid]);
-    }
-    if (out_rid_bits)
-        *out_rid_bits = formula_bits;
+    if (!project_sig_bits_to_words(formula_sig_bits, out_words))
+        return false;
+    if (!project_sig_bits_to_rids(formula_sig_bits, out_rid_bits))
+        return false;
 
     if (out_formula_sig_bits) {
-        if (!class_set_target_sig_bits_from_rids(loaded,
-                                                 target,
-                                                 target_ti,
-                                                 formula_bits,
-                                                 profile,
-                                                 out_formula_sig_bits)) {
-            return false;
-        }
+        *out_formula_sig_bits = formula_sig_bits;
+        out_formula_sig_bits->adapt_representation();
     }
 
     profile->terms_total++;
@@ -10527,23 +10609,21 @@ static bool class_set_target_sig_bits_from_rids(const Loaded &loaded,
         return false;
     if (!canon_entry)
         return false;
-    std::vector<int32_t> row_to_sid(target_ti.nrows, -1);
-    for (uint32 sid = 0; sid < canon_entry->nsig; sid++) {
-        uint32 b = canon_entry->row_offsets[(size_t)sid];
-        uint32 e = canon_entry->row_offsets[(size_t)sid + 1u];
-        for (uint32 p = b; p < e; p++) {
-            uint32 rid = canon_entry->rows_flat[(size_t)p];
-            if (rid < row_to_sid.size())
-                row_to_sid[(size_t)rid] = (int32_t)sid;
+    const std::vector<int32_t> &row_to_sid = canon_entry->rid_to_sid;
+    if (row_to_sid.size() != target_ti.nrows)
+        return false;
+    for (size_t bi = 0; bi < rid_bits.size(); bi++) {
+        uint8_t byte = rid_bits[bi];
+        while (byte) {
+            unsigned bit = (unsigned)__builtin_ctz((unsigned)byte);
+            uint32 rid = (uint32)(bi * 8u + (size_t)bit);
+            if (rid >= target_ti.nrows)
+                break;
+            int32_t sid = row_to_sid[(size_t)rid];
+            if (sid >= 0)
+                io_sig_bits->set((size_t)sid);
+            byte &= (uint8_t)(byte - 1u);
         }
-    }
-    for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
-        PF_CHECK_FOR_INTERRUPTS(rid);
-if (!rid_bit_test(rid_bits.data(), rid))
-            continue;
-        int32_t sid = row_to_sid[(size_t)rid];
-        if (sid >= 0)
-            io_sig_bits->set((size_t)sid);
     }
     io_sig_bits->adapt_representation();
     return true;
