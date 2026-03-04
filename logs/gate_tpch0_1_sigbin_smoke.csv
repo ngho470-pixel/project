@@ -1,0 +1,2 @@
+db,baseline,policy_set,query_id,status,hot_ms,rows,parallelism_off_verified,class_route_single_hub,single_table_bin_fastpath_used,bin_rids_scanned_total,sat_models_total,terms_total,policy_total_ms,artifact_load_ms,term_eval_ms_total
+tpch0_1,ours,S_A,1,ok,2501.449,4,true,5,5,0,0,5,2382.095,1921.963,455.688
