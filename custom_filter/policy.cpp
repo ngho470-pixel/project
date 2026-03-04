@@ -27,6 +27,7 @@ extern "C" {
 #include "postgres.h"
 #include "executor/spi.h"
 #include "fmgr.h"
+#include "miscadmin.h"
 #include "utils/builtins.h"
 #include "utils/elog.h"
 #include "utils/guc.h"
@@ -44,6 +45,12 @@ using Ms = std::chrono::duration<double, std::milli>;
     do {                                      \
         if (cf_trace_enabled())               \
             elog(NOTICE, fmt, ##__VA_ARGS__); \
+    } while (0)
+
+#define PF_CHECK_FOR_INTERRUPTS(counter)      \
+    do {                                      \
+        if (((counter) & 0x3FFFu) == 0u)      \
+            CHECK_FOR_INTERRUPTS();           \
     } while (0)
 
 extern "C" {
@@ -1596,6 +1603,21 @@ struct BuildProfile {
     std::unordered_map<std::string, uint64> prop_table_scan_counts;
     std::string prop_table_scans_compact;
     uint64 sat_calls = 0;
+    double sat_ms = 0.0;
+    uint64 sat_models_total = 0;
+    uint64 sat_conflicts = 0;
+    uint64 sat_decisions = 0;
+    uint64 terms_total = 0;
+    double term_eval_ms_total = 0.0;
+    double combine_algebra_ms = 0.0;
+    uint64 allow_rows_total = 0;
+    uint64 bin_ops_total = 0;
+    uint64 bins_touched_total = 0;
+    uint64 bin_rids_scanned_total = 0;
+    uint64 heap_rows_scanned_total = 0;
+    uint64 allow_cache_hit = 0;
+    uint64 allow_cache_miss = 0;
+    double allow_cache_build_ms = 0.0;
     uint64 signature_cache_hits = 0;
     uint64 signature_cache_misses = 0;
     uint64 term_code_scans = 0;
@@ -2002,6 +2024,69 @@ struct ClauseEvalCache {
     std::unordered_map<std::string, bool> table_witness;
 };
 
+struct AllowCacheEntry {
+    uint32 n_rows = 0;
+    uint32 total_blocks = 0;
+    std::vector<uint64_t> words;
+    std::vector<uint32_t> block_ids;
+    uint64 allowed_rows = 0;
+};
+
+static std::unordered_map<std::string, AllowCacheEntry> g_allow_cache;
+
+static std::string current_run_id_string()
+{
+    const char *cfg = GetConfigOption("custom_filter.run_id", true, false);
+    if (!cfg || !cfg[0])
+        return "";
+    return std::string(cfg);
+}
+
+static uint64_t target_plan_policy_fingerprint(const TargetPlan &tp)
+{
+    uint64_t h = 1469598103934665603ULL;
+    auto mix = [&](uint64_t v) {
+        h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+    };
+    mix(tp.deny_all ? 1u : 0u);
+    mix((uint64_t)tp.formula_atom_ids.size());
+    for (int aid : tp.formula_atom_ids)
+        mix((uint64_t)(uint32_t)aid);
+    std::vector<int> perm_vars;
+    for (const BoolAst *r : tp.perm_policy_roots)
+        collect_ast_positive_vars(r, &perm_vars);
+    std::sort(perm_vars.begin(), perm_vars.end());
+    perm_vars.erase(std::unique(perm_vars.begin(), perm_vars.end()), perm_vars.end());
+    mix((uint64_t)perm_vars.size());
+    for (int v : perm_vars)
+        mix((uint64_t)(uint32_t)v);
+    std::vector<int> rest_vars;
+    for (const BoolAst *r : tp.rest_policy_roots)
+        collect_ast_positive_vars(r, &rest_vars);
+    std::sort(rest_vars.begin(), rest_vars.end());
+    rest_vars.erase(std::unique(rest_vars.begin(), rest_vars.end()), rest_vars.end());
+    mix((uint64_t)rest_vars.size());
+    for (int v : rest_vars)
+        mix((uint64_t)(uint32_t)v);
+    return h;
+}
+
+static std::string allow_cache_key_for_target(const TargetPlan &tp,
+                                              const TableData &target_ti)
+{
+    std::string k = current_run_id_string();
+    k.push_back('|');
+    k += tp.target;
+    k += "|rows=" + std::to_string((unsigned long long)target_ti.nrows);
+    k += "|blocks=" + std::to_string((unsigned long long)target_ti.total_blocks);
+    char hbuf[32];
+    snprintf(hbuf, sizeof(hbuf), "%016llx",
+             (unsigned long long)target_plan_policy_fingerprint(tp));
+    k += "|policy=";
+    k += hbuf;
+    return k;
+}
+
 static std::string table_witness_signature(const ClauseTablePlan &tp, const uint8 *rbits)
 {
     std::string key = tp.table;
@@ -2080,7 +2165,8 @@ static bool table_has_predicate_witness(const ClauseTablePlan &tp,
 
     bool found = false;
     for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        if (!row_matches_table_predicates_only(tp, rid, nullptr))
+        PF_CHECK_FOR_INTERRUPTS(rid);
+if (!row_matches_table_predicates_only(tp, rid, nullptr))
             continue;
         if (restrict_state) {
             int32_t sid = (rid < rid_to_sid.size()) ? rid_to_sid[(size_t)rid] : -1;
@@ -2179,6 +2265,7 @@ static bool decode_cb02_append(const ArtifactBlob &b,
     int ntoks_seen = -1;
 
     for (uint32 r = 0; r < nrows; r++) {
+        PF_CHECK_FOR_INTERRUPTS(r);
         if (p + sizeof(uint16_t) > end)
             return false;
         uint16_t nt = 0;
@@ -2240,6 +2327,7 @@ static bool decode_cc04_column_append(const ArtifactBlob &b,
     uint64_t mask = (bitw == 32) ? 0xFFFFFFFFULL : ((uint64_t(1) << bitw) - 1ULL);
 
     for (uint32 r = 0; r < nrows; r++) {
+        PF_CHECK_FOR_INTERRUPTS(r);
         while (acc_bits < bitw) {
             if (p >= end)
                 return false;
@@ -3101,8 +3189,10 @@ static bool append_clause_plans_from_dnf(const std::string &target,
                 (void)ensure_node(a.left, a.join_class_id);
                 (void)ensure_node(a.right, a.join_class_id);
             } else {
-                if (a.join_class_id >= 0)
-                    (void)ensure_node(a.left, a.join_class_id);
+                /*
+                 * Unary const atoms are local table predicates and must not create
+                 * join-variable components. Join vars are induced only by JOIN/COLCOL atoms.
+                 */
             }
         }
 
@@ -3277,8 +3367,9 @@ static bool append_clause_plans_from_dnf(const std::string &target,
                 tmp_tables[a.left.table].preds.push_back(std::move(p));
                 (void)used_domain_dict;
 
-                if (a.join_class_id >= 0) {
-                    int idx = node_idx[a.left.key()];
+                auto it_node = node_idx.find(a.left.key());
+                if (it_node != node_idx.end()) {
+                    int idx = it_node->second;
                     int vp = root_to_var[findp(idx)];
                     tmp_tables[a.left.table].var_cols[vp].push_back(a.left.key());
                 }
@@ -3835,7 +3926,8 @@ static bool decode_table_needed_columns(TableData *ti,
 
         const int32_t *arr = (const int32_t *)ti->code_base.data;
         for (uint32 rid = 0; rid < ti->nrows; rid++) {
-            const int32_t *row = arr + (size_t)rid * stride;
+            PF_CHECK_FOR_INTERRUPTS(rid);
+const int32_t *row = arr + (size_t)rid * stride;
             for (int col_idx : ti->needed_cols) {
                 size_t off = has_rid ? (size_t)col_idx + 1u : (size_t)col_idx;
                 int32_t tok = row[off];
@@ -4101,7 +4193,8 @@ static bool build_signature_cache_entry(const std::string &table,
     std::vector<uint32_t> sid_by_rid(ti.nrows, 0);
 
     for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        uint64_t h = 1469598103934665603ULL;
+        PF_CHECK_FOR_INTERRUPTS(rid);
+uint64_t h = 1469598103934665603ULL;
         for (size_t i = 0; i < schema_cols.size(); i++) {
             int col_idx = schema_cols[i];
             if (col_idx < 0 || col_idx >= (int)ti.decoded_cols.size())
@@ -4132,7 +4225,8 @@ static bool build_signature_cache_entry(const std::string &table,
 
     std::vector<uint32_t> counts(out_entry->nsig, 0);
     for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        uint32 sid = sid_by_rid[(size_t)rid];
+        PF_CHECK_FOR_INTERRUPTS(rid);
+uint32 sid = sid_by_rid[(size_t)rid];
         if (sid >= counts.size())
             return false;
         counts[(size_t)sid]++;
@@ -4146,7 +4240,8 @@ static bool build_signature_cache_entry(const std::string &table,
     out_entry->rows_flat.assign(ti.nrows, 0);
     std::vector<uint32_t> cursor = out_entry->row_offsets;
     for (uint32 rid = 0; rid < ti.nrows; rid++) {
-        uint32 sid = sid_by_rid[(size_t)rid];
+        PF_CHECK_FOR_INTERRUPTS(rid);
+uint32 sid = sid_by_rid[(size_t)rid];
         uint32 pos = cursor[(size_t)sid]++;
         if (pos >= out_entry->rows_flat.size())
             return false;
@@ -4463,6 +4558,7 @@ struct Pf2TwoHopPattern {
     const ClauseClassGroup *b_h2 = nullptr;
     int h1_domain = -1;
     int h2_domain = -1;
+    std::vector<Pf2LocalComparator> t_local_cmps;
     std::vector<Pf2LocalComparator> a_local_cmps;
     std::vector<Pf2LocalComparator> b_local_cmps;
 };
@@ -4623,8 +4719,7 @@ static bool eval_term_conjunction_pf2_single_hub(const Loaded &loaded,
     auto t_pf20 = Clock::now();
 
     // PF-V2.2 intentionally excludes dependency-restricted witness tables.
-    if (restrict_sigs && !restrict_sigs->empty())
-        return true;
+    (void)restrict_sigs;
 
     std::unordered_set<int> cross_domains;
     cross_domains.reserve(4);
@@ -4649,9 +4744,7 @@ static bool eval_term_conjunction_pf2_single_hub(const Loaded &loaded,
         return true;
     int hub_domain_id = *cross_domains.begin();
 
-    // Target must be hub-only for this stage.
-    if (!target_tp.predicates.empty())
-        return true;
+    // Target must be hub-only for this stage (predicates are allowed and enforced at projection).
     const ClauseClassGroup *target_hub_group = nullptr;
     for (const auto &cg : target_tp.class_groups) {
         if (cg.domain_id == hub_domain_id) {
@@ -4747,7 +4840,8 @@ static bool eval_term_conjunction_pf2_single_hub(const Loaded &loaded,
         const auto &hub_col0 = *pl.hub_group->col_data[0];
         profile->pf2_stamp_rows_scanned_total += pl.ti->nrows;
         for (uint32 rid = 0; rid < pl.ti->nrows; rid++) {
-            if ((size_t)rid >= hub_col0.size())
+            PF_CHECK_FOR_INTERRUPTS(rid);
+if ((size_t)rid >= hub_col0.size())
                 return false;
             int32_t tok = hub_col0[rid];
             if (tok < 0 || (size_t)tok >= ntokens)
@@ -4786,7 +4880,8 @@ static bool eval_term_conjunction_pf2_single_hub(const Loaded &loaded,
     auto t_proj0 = Clock::now();
     uint32 projected_rows = 0;
     tok_allow.for_each_set([&](int32_t tok_i32) {
-        if (tok_i32 < 0)
+        CHECK_FOR_INTERRUPTS();
+if (tok_i32 < 0)
             return;
         const uint32_t *rid_ptr = nullptr;
         size_t rid_len = 0;
@@ -4796,8 +4891,11 @@ static bool eval_term_conjunction_pf2_single_hub(const Loaded &loaded,
                             target.c_str(), hub_domain_id, tok_i32)));
         profile->pf2_project_bin_rids_total += rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
             if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
+                continue;
+            if (!row_matches_table_predicates_only(target_tp, rid, nullptr))
                 continue;
             if (!out_words->set_ctid(target_ti.ctid_blk[(size_t)rid], target_ti.ctid_off[(size_t)rid]))
                 ereport(ERROR,
@@ -4829,12 +4927,6 @@ static bool pf2_detect_two_hop_pattern(const Loaded &loaded,
     *out_pat = Pf2TwoHopPattern{};
     out_pat->target_tp = &target_tp;
     out_pat->target_ti = &target_ti;
-
-    if (!target_tp.predicates.empty()) {
-        CF_TRACE_LOG("pf2_two_hop unsupported: target predicates present target=%s npred=%zu",
-                     target.c_str(), target_tp.predicates.size());
-        return true; // unsupported shape
-    }
 
     struct Edge { std::string u; std::string v; int d = -1; };
     std::vector<Edge> edges;
@@ -4962,13 +5054,14 @@ static bool pf2_detect_two_hop_pattern(const Loaded &loaded,
     // Local comparator support: same-table only on A/B; no cross-table comparator.
     bool unsupported_cmp = false;
     std::vector<Pf2LocalComparator> t_local;
-    if (!pf2_map_local_comparators_for_table(cl, target_tp, &t_local, &unsupported_cmp, false))
+    if (!pf2_map_local_comparators_for_table(cl, target_tp, &t_local, &unsupported_cmp, true))
         return false;
-    if (unsupported_cmp || !t_local.empty()) {
-        CF_TRACE_LOG("pf2_two_hop unsupported: target comparators unsupported=%d t_local=%zu",
-                     unsupported_cmp ? 1 : 0, t_local.size());
+    if (unsupported_cmp) {
+        CF_TRACE_LOG("pf2_two_hop unsupported: target comparators unsupported=%d",
+                     unsupported_cmp ? 1 : 0);
         return true;
     }
+    out_pat->t_local_cmps = std::move(t_local);
 
     if (!pf2_map_local_comparators_for_table(cl, *a_tp, &out_pat->a_local_cmps, &unsupported_cmp, true))
         return false;
@@ -5016,8 +5109,7 @@ static bool eval_term_conjunction_pf2_two_hop(const Loaded &loaded,
         return false;
     auto t_pf20 = Clock::now();
 
-    if (restrict_sigs && !restrict_sigs->empty())
-        return true;
+    (void)restrict_sigs;
 
     Pf2TwoHopPattern pat;
     if (!pf2_detect_two_hop_pattern(loaded, target, cl, target_tp, target_ti, &pat))
@@ -5075,7 +5167,8 @@ static bool eval_term_conjunction_pf2_two_hop(const Loaded &loaded,
     profile->pf2_stamp_rows_scanned_total += pat.b_ti->nrows;
     profile->pf2_stamp_rows_scanned_B += pat.b_ti->nrows;
     for (uint32 rid = 0; rid < pat.b_ti->nrows; rid++) {
-        if ((size_t)rid >= b_h2_col0.size())
+        PF_CHECK_FOR_INTERRUPTS(rid);
+if ((size_t)rid >= b_h2_col0.size())
             return false;
         int32_t h2 = b_h2_col0[(size_t)rid];
         if (h2 < 0 || (size_t)h2 >= ntok_h2)
@@ -5117,7 +5210,8 @@ static bool eval_term_conjunction_pf2_two_hop(const Loaded &loaded,
     profile->pf2_stamp_rows_scanned_total += pat.a_ti->nrows;
     profile->pf2_stamp_rows_scanned_A += pat.a_ti->nrows;
     for (uint32 rid = 0; rid < pat.a_ti->nrows; rid++) {
-        if ((size_t)rid >= a_h1_col0.size() || (size_t)rid >= a_h2_col0.size())
+        PF_CHECK_FOR_INTERRUPTS(rid);
+if ((size_t)rid >= a_h1_col0.size() || (size_t)rid >= a_h2_col0.size())
             return false;
         int32_t h1 = a_h1_col0[(size_t)rid];
         int32_t h2 = a_h2_col0[(size_t)rid];
@@ -5170,7 +5264,8 @@ static bool eval_term_conjunction_pf2_two_hop(const Loaded &loaded,
     auto t_proj0 = Clock::now();
     uint32 projected_rows = 0;
     tok_a_h1.for_each_set([&](int32_t tok_i32) {
-        if (tok_i32 < 0)
+        CHECK_FOR_INTERRUPTS();
+if (tok_i32 < 0)
             return;
         const uint32_t *rid_ptr = nullptr;
         size_t rid_len = 0;
@@ -5180,8 +5275,11 @@ static bool eval_term_conjunction_pf2_two_hop(const Loaded &loaded,
                             target.c_str(), pat.h1_domain, tok_i32)));
         profile->pf2_project_bin_rids_total += rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
             if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
+                continue;
+            if (!pf2_row_matches_table_local_atoms(target_tp, pat.t_local_cmps, rid))
                 continue;
             if (!out_words->set_ctid(target_ti.ctid_blk[(size_t)rid], target_ti.ctid_off[(size_t)rid]))
                 ereport(ERROR,
@@ -5855,7 +5953,8 @@ static bool pf2_tree_emit_table_messages(const Loaded &loaded,
             return false;
         profile->pf2_tree_rows_scanned_total += rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            if (!process_row(rid_ptr ? rid_ptr[i] : 0u))
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+if (!process_row(rid_ptr ? rid_ptr[i] : 0u))
                 return false;
         }
         return true;
@@ -5873,7 +5972,8 @@ static bool pf2_tree_emit_table_messages(const Loaded &loaded,
         for (size_t pos = 0; pos < tn.edge_ids.size(); pos++) {
             if (tn.edge_ids[pos] == drive_eid) {
                 inbound_bits[pos]->for_each_set([&](int32_t tok_i32) {
-                    if (!scan_token_slice(tok_i32))
+                    CHECK_FOR_INTERRUPTS();
+if (!scan_token_slice(tok_i32))
                         ereport(ERROR, (errmsg("policy: PF-V2.4 table scan token slice failed")));
                 });
                 break;
@@ -5882,7 +5982,8 @@ static bool pf2_tree_emit_table_messages(const Loaded &loaded,
     } else {
         size_t nt = ent->off.size() - 1u;
         for (size_t t = 0; t < nt; t++) {
-            if (ent->off[t + 1u] == ent->off[t])
+            PF_CHECK_FOR_INTERRUPTS((uint32)t);
+if (ent->off[t + 1u] == ent->off[t])
                 continue;
             if (!scan_token_slice((int32_t)t))
                 return false;
@@ -6240,7 +6341,8 @@ static bool pf2_cycle_build_cmp_summary_key2_direct(const Loaded &loaded,
     uint64 updates = 0;
 
     for (uint32 rid = 0; rid < pat.witness_ti->nrows; rid++) {
-        rows_scanned++;
+        PF_CHECK_FOR_INTERRUPTS(rid);
+rows_scanned++;
         if (!pf2_row_matches_table_local_atoms(*pat.witness_tp, pat.witness_local_cmps, rid))
             continue;
         int32_t k0 = -1, k1 = -1, ytok = -1;
@@ -6409,7 +6511,8 @@ static bool pf2_tree_build_cmp_summary_key1(const Loaded &loaded,
             return false;
         profile->pf2_tree_rows_scanned_total += rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
             if (!pf2_row_matches_table_local_atoms(*wn.tp, wn.local_cmps, rid))
                 continue;
             bool ok = true;
@@ -6474,7 +6577,8 @@ static bool pf2_tree_build_cmp_summary_key1(const Loaded &loaded,
 
     if (msg_d_to_t_ready[(size_t)key_edge_id]) {
         key_inbound.for_each_set([&](int32_t tok_i32) {
-            if (tok_i32 < 0)
+            CHECK_FOR_INTERRUPTS();
+if (tok_i32 < 0)
                 return;
             if (!scan_key_tok(tok_i32))
                 ereport(ERROR, (errmsg("policy: PF-V2.5 comparator summary scan failed")));
@@ -6482,7 +6586,8 @@ static bool pf2_tree_build_cmp_summary_key1(const Loaded &loaded,
     } else {
         size_t nt = ent->off.size() - 1u;
         for (size_t t = 0; t < nt; t++) {
-            if (ent->off[t + 1u] == ent->off[t])
+            PF_CHECK_FOR_INTERRUPTS((uint32)t);
+if (ent->off[t + 1u] == ent->off[t])
                 continue;
             if (!scan_key_tok((int32_t)t))
                 return false;
@@ -6597,7 +6702,8 @@ static bool pf2_tree_build_cmp_summary_key2(const Loaded &loaded,
         profile->pf2_tree_rows_scanned_total += rid_len;
         rows_scanned_total += (uint64)rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
             if (!pf2_row_matches_table_local_atoms(*wn.tp, wn.local_cmps, rid))
                 continue;
             bool ok = true;
@@ -6642,7 +6748,8 @@ static bool pf2_tree_build_cmp_summary_key2(const Loaded &loaded,
         return true;
     };
     w_key1_inbound.for_each_set([&](int32_t tok_i32) {
-        if (!scan_witness_key1(tok_i32))
+        CHECK_FOR_INTERRUPTS();
+if (!scan_witness_key1(tok_i32))
             ereport(ERROR, (errmsg("policy: PF-V2.6 key2 witness summary scan failed")));
     });
     if (need_eqset) {
@@ -6802,7 +6909,8 @@ static bool pf2_tree_build_cmp_summary_key2(const Loaded &loaded,
         profile->pf2_tree_rows_scanned_total += rid_len;
         rows_scanned_total += (uint64)rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
             if (!pf2_row_matches_table_local_atoms(*bn.tp, bn.local_cmps, rid))
                 continue;
             bool ok = true;
@@ -6826,7 +6934,8 @@ static bool pf2_tree_build_cmp_summary_key2(const Loaded &loaded,
     };
 
     drive_in.for_each_set([&](int32_t tok_i32) {
-        if (!scan_bridge_tok(tok_i32))
+        CHECK_FOR_INTERRUPTS();
+if (!scan_bridge_tok(tok_i32))
             ereport(ERROR, (errmsg("policy: PF-V2.6 key2 bridge summary scan failed")));
     });
 
@@ -7033,7 +7142,8 @@ static bool pf2_tree_build_cmp_summary_chain_key1(const Loaded &loaded,
             return false;
         profile->pf2_tree_rows_scanned_total += rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
             if (!pf2_row_matches_table_local_atoms(*wtn.tp, wtn.local_cmps, rid))
                 continue;
             bool ok = true;
@@ -7065,7 +7175,8 @@ static bool pf2_tree_build_cmp_summary_chain_key1(const Loaded &loaded,
     };
     if (msg_d_to_t_ready[(size_t)w_key_edge_id]) {
         msg_d_to_t[(size_t)w_key_edge_id].for_each_set([&](int32_t tok_i32) {
-            if (tok_i32 < 0)
+            CHECK_FOR_INTERRUPTS();
+if (tok_i32 < 0)
                 return;
             if (!scan_witness_tok(tok_i32))
                 ereport(ERROR, (errmsg("policy: class_engine chain witness summary scan failed")));
@@ -7073,7 +7184,8 @@ static bool pf2_tree_build_cmp_summary_chain_key1(const Loaded &loaded,
     } else {
         size_t nt = w_ent->off.size() - 1u;
         for (size_t t = 0; t < nt; t++) {
-            if (w_ent->off[t + 1u] == w_ent->off[t])
+            PF_CHECK_FOR_INTERRUPTS((uint32)t);
+if (w_ent->off[t + 1u] == w_ent->off[t])
                 continue;
             if (!scan_witness_tok((int32_t)t))
                 return false;
@@ -7150,7 +7262,8 @@ static bool pf2_tree_build_cmp_summary_chain_key1(const Loaded &loaded,
             profile->pf2_tree_rows_scanned_total += rid_len;
             bridge_rows_scanned += (uint64)rid_len;
             for (size_t i = 0; i < rid_len; i++) {
-                uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+                PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
                 if (!pf2_row_matches_table_local_atoms(*btn.tp, btn.local_cmps, rid))
                     continue;
                 bool ok = true;
@@ -7183,7 +7296,8 @@ static bool pf2_tree_build_cmp_summary_chain_key1(const Loaded &loaded,
 
         if (msg_d_to_t_ready[(size_t)drive_eid]) {
             msg_d_to_t[(size_t)drive_eid].for_each_set([&](int32_t tok_i32) {
-                if (tok_i32 < 0)
+                CHECK_FOR_INTERRUPTS();
+if (tok_i32 < 0)
                     return;
                 if (!scan_bridge_tok(tok_i32))
                     ereport(ERROR, (errmsg("policy: class_engine chain bridge summary scan failed")));
@@ -7191,7 +7305,8 @@ static bool pf2_tree_build_cmp_summary_chain_key1(const Loaded &loaded,
         } else {
             size_t nt = b_ent->off.size() - 1u;
             for (size_t t = 0; t < nt; t++) {
-                if (b_ent->off[t + 1u] == b_ent->off[t])
+                PF_CHECK_FOR_INTERRUPTS((uint32)t);
+if (b_ent->off[t + 1u] == b_ent->off[t])
                     continue;
                 if (!scan_bridge_tok((int32_t)t))
                     return false;
@@ -7573,8 +7688,7 @@ static bool eval_term_conjunction_pf2_cycle_rect(const Loaded &loaded,
     if (!profile || !out_words)
         return false;
 
-    if (restrict_sigs && !restrict_sigs->empty())
-        return true;
+    (void)restrict_sigs;
 
     auto t_pf0 = Clock::now();
     Pf2CycleRectPattern pat;
@@ -7649,7 +7763,8 @@ static bool eval_term_conjunction_pf2_cycle_rect(const Loaded &loaded,
     auto t_proj0 = Clock::now();
     uint32 projected_rows = 0;
     hub_allowed.for_each_set([&](int32_t tok_i32) {
-        if (tok_i32 < 0)
+        CHECK_FOR_INTERRUPTS();
+if (tok_i32 < 0)
             return;
         const uint32_t *rid_ptr = nullptr;
         size_t rid_len = 0;
@@ -7659,7 +7774,8 @@ static bool eval_term_conjunction_pf2_cycle_rect(const Loaded &loaded,
                             target.c_str(), pat.hub_domain_id, tok_i32)));
         profile->pf2_project_bin_rids_total += rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
             if (!pf2_row_matches_table_local_atoms(*pat.target_tp, pat.target_local_cmps, rid))
                 continue;
             if (!pf2_cmp_summary_accept_target_row(pat.cmp_plan, pat.target_table_idx, cmp_any, rid, profile))
@@ -7705,8 +7821,7 @@ static bool eval_term_conjunction_pf2_tree(const Loaded &loaded,
         return false;
 
     auto t_pf20 = Clock::now();
-    if (restrict_sigs && !restrict_sigs->empty())
-        return true;
+    (void)restrict_sigs;
 
     Pf2TreePattern pat;
     if (!pf2_tree_detect_pattern(loaded, target, cl, target_tp, target_ti, &pat))
@@ -7980,7 +8095,8 @@ static bool eval_term_conjunction_pf2_tree(const Loaded &loaded,
     int target_hub_domain_id = pat.domains[(size_t)pat.target_hub_domain_idx].domain_id;
     const auto &tnode = pat.tables[(size_t)pat.target_table_idx];
     target_root_allowed.for_each_set([&](int32_t tok_i32) {
-        if (tok_i32 < 0)
+        CHECK_FOR_INTERRUPTS();
+if (tok_i32 < 0)
             return;
         const uint32_t *rid_ptr = nullptr;
         size_t rid_len = 0;
@@ -7990,7 +8106,8 @@ static bool eval_term_conjunction_pf2_tree(const Loaded &loaded,
                             target.c_str(), target_hub_domain_id, tok_i32)));
         profile->pf2_project_bin_rids_total += rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
             if (!pf2_row_matches_table_local_atoms(*tnode.tp, tnode.local_cmps, rid))
                 continue;
             bool cmp_ok = true;
@@ -8528,7 +8645,8 @@ static bool class_td_build_factor_relation(const Loaded &loaded,
 
     if (f.vars.empty()) {
         for (uint32 rid = 0; rid < f.ti->nrows; rid++) {
-            if (out_rows_scanned)
+            PF_CHECK_FOR_INTERRUPTS(rid);
+if (out_rows_scanned)
                 (*out_rows_scanned)++;
             if (!pf2_row_matches_table_local_atoms(*f.tp, f.local_cmps, rid))
                 continue;
@@ -8551,7 +8669,8 @@ static bool class_td_build_factor_relation(const Loaded &loaded,
         if (out_rows_scanned)
             *out_rows_scanned += (uint64)rid_len;
         for (size_t i = 0; i < rid_len; i++) {
-            uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
             if (!pf2_row_matches_table_local_atoms(*f.tp, f.local_cmps, rid))
                 continue;
             ClassTdTuple tup;
@@ -9305,8 +9424,7 @@ static bool eval_term_conjunction_pf2_td_cycle(const Loaded &loaded,
         *out_term_has_rows = false;
     if (!profile || !out_words)
         return false;
-    if (restrict_sigs && !restrict_sigs->empty())
-        return true;
+    (void)restrict_sigs;
 
     profile->class_td_terms_total++;
     auto t_build0 = Clock::now();
@@ -9514,7 +9632,8 @@ static bool eval_term_conjunction_pf2_td_cycle(const Loaded &loaded,
                 return false;
             profile->pf2_project_bin_rids_total += rid_len;
             for (size_t i = 0; i < rid_len; i++) {
-                uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+                PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
                 if (!pf2_row_matches_table_local_atoms(target_tp, target_local_cmps, rid))
                     continue;
                 if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
@@ -9567,7 +9686,8 @@ static bool eval_term_conjunction_pf2_td_cycle(const Loaded &loaded,
     } else {
         // Width cap W=2 implies target vars <=3. For arity>2, scan target rows once and test tuple membership.
         for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
-            std::vector<int32_t> tv;
+            PF_CHECK_FOR_INTERRUPTS(rid);
+std::vector<int32_t> tv;
             tv.reserve(target_groups.size());
             bool ok = true;
             for (const ClauseClassGroup *cg : target_groups) {
@@ -9644,7 +9764,7 @@ static void log_class_route_notice(const std::string &target,
 static void log_policy_profile_query(const BuildProfile &p, int filtered_targets)
 {
     elog(NOTICE,
-         "policy_profile_query: K=%d query_id=%s total_ms=%.3f load_ms=%.3f local_ms=0.000 prop_ms=%.3f decode_ms=%.3f sat_calls=%llu cache_hits=0 closure_tables=0 filtered_targets=%d clause_plan_count_max=%d prop_join_scans_total=%llu unique_join_struct_sigs_max=%d signature_cache_hits=%llu signature_cache_misses=%llu term_code_scans=%llu target_full_row_scans=%llu target_rid_bitmap_bytes=%zu signature_cache_bytes=%zu active_sig_dense_count=%llu active_sig_sparse_count=%llu active_sig_density_sum=%.6f domain_set_dense_count=%llu domain_set_sparse_count=%llu domain_set_density_sum=%.6f block_words_blocks_allocated=%llu block_words_total_blocks=%llu block_words_dense_bytes=%zu block_words_nblocks=%llu block_words_nwords_per_block=%llu proj_sig_count=%llu proj_sig_total=%llu proj_sig_new=%llu proj_sig_skipped=%llu proj_mask_or_ops=%llu proj_rid_iters=%llu proj_rid_iters_scan_enforcement=%llu proj_rid_iters_dependency=%llu canon_term_map_cache_hits=%llu canon_term_map_cache_misses=%llu canon_term_map_build_ms=%.3f canon_term_map_bytes=%zu restrict_key_index_build_ms=%.3f restrict_key_index_entries=%llu restrict_key_index_bytes=%zu restrict_key_prune_ms=%.3f sigmask_cache_hits=%llu sigmask_cache_misses=%llu sigmask_build_ms=%.3f sigmask_bytes=%zu bytes_sig_ctid_masks=%zu bytes_block_words=%zu bytes_artifact_buffers_retained=%zu bytes_decoded_buffers_retained=%zu witness_activesig_tables=%llu witness_sig_count_total=%llu support_recompute_ms=%.3f sig_prune_ms=%.3f pair_bundle_count=%llu pair_bundle_build_ms=%.3f pair_bundle_prune_ms=%.3f pair_bundle_keys_total=%llu pair_bundle_pruned_sigs_total=%llu pair_bundle_iters=%llu qual_atoms_total=%llu qual_atoms_applied=%llu qual_pruned_sigs=%llu qual_prune_ms=%.3f restrict_sig_tables=%llu restrict_sig_schema_cols_total=%llu restrict_sig_bytes_total=%zu restrict_sig_apply_ms=%.3f restrict_term_apply_ms=%.3f restrict_term_sigs_kept=%llu restrict_term_sigs_dropped=%llu pf2_enabled_targets=%llu pf2_terms_total=%llu pf2_terms_supported=%llu pf2_terms_single_hub=%llu pf2_terms_two_hop=%llu pf2_terms_tree=%llu pf2_terms_failed_shape=%llu pf2_hub_domain_id=%lld pf2_hub_key_arity=%llu pf2_ntokens=%llu pf2_stamp_rows_scanned_total=%llu pf2_stamp_rows_scanned_A=%llu pf2_stamp_rows_scanned_B=%llu pf2_stamp_ms=%.3f pf2_stamp_ms_A=%.3f pf2_stamp_ms_B=%.3f pf2_tok_and_or_ms=%.3f pf2_tok_compose_ms=%.3f pf2_project_bin_rids_total=%llu pf2_project_ms=%.3f pf2_tree_domains=%llu pf2_tree_tables=%llu pf2_tree_edges=%llu pf2_tree_passes=%llu pf2_tree_table_updates=%llu pf2_tree_rows_scanned_total=%llu pf2_tree_update_ms=%.3f pf2_tree_project_ms=%.3f pf2_cmp_total=%llu pf2_cmp_supported=%llu pf2_cmp_key_arity_max=%llu pf2_cmp_summary_build_ms=%.3f pf2_cmp_summary_keys_total=%llu pf2_cmp_checks_total=%llu pf2_cmp_rejects_total=%llu pf2_cmp_key2_entries=%llu pf2_cmp_key2_dense_bytes=%zu pf2_cmp_key2_build_ms=%.3f pf2_cmp_key2_rows_scanned=%llu pf2_cmp_key2_updates=%llu pf2_cmp_key2_lookups=%llu pf2_cmp_witness_witness_total=%llu pf2_cmp_witness_witness_supported=%llu pf2_cmp_filter_rows_checked=%llu pf2_cmp_filter_rows_reject=%llu pf2_cmp_chain_total=%llu pf2_cmp_chain_supported=%llu pf2_cmp_chain_build_ms=%.3f pf2_cmp_chain_bridge_rows_scanned=%llu pf2_cmp_chain_compose_steps=%llu pf2_cmp_chain_filter_rows_checked=%llu pf2_cmp_chain_filter_rows_reject=%llu pf2_total_ms=%.3f class_td_terms_total=%llu class_td_terms_supported=%llu class_td_width_max=%llu class_td_bags=%llu class_td_build_ms=%.3f class_td_dp_ms=%.3f class_td_msg_entries_total=%llu class_td_msg_bytes_total=%llu class_td_msg_pairs_total=%llu class_td_join_ms=%.3f class_td_project_ms=%.3f class_td_reduction_passes=%llu class_td_reduction_ms=%.3f class_td_reduction_removed_pairs=%llu class_td_pairs_before=%llu class_td_pairs_after=%llu class_td_elim_order=%llu class_td_peak_msg_pairs=%llu class_td_peak_msg_bytes=%llu class_td_cmp_filter_ms=%.3f class_td_cmp_filter_removed_pairs=%llu class_td_fail_width=%llu class_terms_ok=%llu class_terms_reject=%llu class_route_single_hub=%llu class_route_two_hop=%llu class_route_tree=%llu class_route_cycle_rect=%llu class_route_td_cycle=%llu class_route_reject=%llu",
+         "policy_profile_query: K=%d query_id=%s total_ms=%.3f load_ms=%.3f local_ms=0.000 prop_ms=%.3f decode_ms=%.3f sat_calls=%llu sat_ms=%.3f sat_models_total=%llu sat_conflicts=%llu sat_decisions=%llu terms_total=%llu term_eval_ms_total=%.3f combine_algebra_ms=%.3f allow_rows_total=%llu bin_ops_total=%llu bins_touched_total=%llu bin_rids_scanned_total=%llu heap_rows_scanned_total=%llu allow_cache_hit=%llu allow_cache_miss=%llu allow_cache_build_ms=%.3f cache_hits=0 closure_tables=0 filtered_targets=%d clause_plan_count_max=%d prop_join_scans_total=%llu unique_join_struct_sigs_max=%d signature_cache_hits=%llu signature_cache_misses=%llu term_code_scans=%llu target_full_row_scans=%llu target_rid_bitmap_bytes=%zu signature_cache_bytes=%zu active_sig_dense_count=%llu active_sig_sparse_count=%llu active_sig_density_sum=%.6f domain_set_dense_count=%llu domain_set_sparse_count=%llu domain_set_density_sum=%.6f block_words_blocks_allocated=%llu block_words_total_blocks=%llu block_words_dense_bytes=%zu block_words_nblocks=%llu block_words_nwords_per_block=%llu proj_sig_count=%llu proj_sig_total=%llu proj_sig_new=%llu proj_sig_skipped=%llu proj_mask_or_ops=%llu proj_rid_iters=%llu proj_rid_iters_scan_enforcement=%llu proj_rid_iters_dependency=%llu canon_term_map_cache_hits=%llu canon_term_map_cache_misses=%llu canon_term_map_build_ms=%.3f canon_term_map_bytes=%zu restrict_key_index_build_ms=%.3f restrict_key_index_entries=%llu restrict_key_index_bytes=%zu restrict_key_prune_ms=%.3f sigmask_cache_hits=%llu sigmask_cache_misses=%llu sigmask_build_ms=%.3f sigmask_bytes=%zu bytes_sig_ctid_masks=%zu bytes_block_words=%zu bytes_artifact_buffers_retained=%zu bytes_decoded_buffers_retained=%zu witness_activesig_tables=%llu witness_sig_count_total=%llu support_recompute_ms=%.3f sig_prune_ms=%.3f pair_bundle_count=%llu pair_bundle_build_ms=%.3f pair_bundle_prune_ms=%.3f pair_bundle_keys_total=%llu pair_bundle_pruned_sigs_total=%llu pair_bundle_iters=%llu qual_atoms_total=%llu qual_atoms_applied=%llu qual_pruned_sigs=%llu qual_prune_ms=%.3f restrict_sig_tables=%llu restrict_sig_schema_cols_total=%llu restrict_sig_bytes_total=%zu restrict_sig_apply_ms=%.3f restrict_term_apply_ms=%.3f restrict_term_sigs_kept=%llu restrict_term_sigs_dropped=%llu pf2_enabled_targets=%llu pf2_terms_total=%llu pf2_terms_supported=%llu pf2_terms_single_hub=%llu pf2_terms_two_hop=%llu pf2_terms_tree=%llu pf2_terms_failed_shape=%llu pf2_hub_domain_id=%lld pf2_hub_key_arity=%llu pf2_ntokens=%llu pf2_stamp_rows_scanned_total=%llu pf2_stamp_rows_scanned_A=%llu pf2_stamp_rows_scanned_B=%llu pf2_stamp_ms=%.3f pf2_stamp_ms_A=%.3f pf2_stamp_ms_B=%.3f pf2_tok_and_or_ms=%.3f pf2_tok_compose_ms=%.3f pf2_project_bin_rids_total=%llu pf2_project_ms=%.3f pf2_tree_domains=%llu pf2_tree_tables=%llu pf2_tree_edges=%llu pf2_tree_passes=%llu pf2_tree_table_updates=%llu pf2_tree_rows_scanned_total=%llu pf2_tree_update_ms=%.3f pf2_tree_project_ms=%.3f pf2_cmp_total=%llu pf2_cmp_supported=%llu pf2_cmp_key_arity_max=%llu pf2_cmp_summary_build_ms=%.3f pf2_cmp_summary_keys_total=%llu pf2_cmp_checks_total=%llu pf2_cmp_rejects_total=%llu pf2_cmp_key2_entries=%llu pf2_cmp_key2_dense_bytes=%zu pf2_cmp_key2_build_ms=%.3f pf2_cmp_key2_rows_scanned=%llu pf2_cmp_key2_updates=%llu pf2_cmp_key2_lookups=%llu pf2_cmp_witness_witness_total=%llu pf2_cmp_witness_witness_supported=%llu pf2_cmp_filter_rows_checked=%llu pf2_cmp_filter_rows_reject=%llu pf2_cmp_chain_total=%llu pf2_cmp_chain_supported=%llu pf2_cmp_chain_build_ms=%.3f pf2_cmp_chain_bridge_rows_scanned=%llu pf2_cmp_chain_compose_steps=%llu pf2_cmp_chain_filter_rows_checked=%llu pf2_cmp_chain_filter_rows_reject=%llu pf2_total_ms=%.3f class_td_terms_total=%llu class_td_terms_supported=%llu class_td_width_max=%llu class_td_bags=%llu class_td_build_ms=%.3f class_td_dp_ms=%.3f class_td_msg_entries_total=%llu class_td_msg_bytes_total=%llu class_td_msg_pairs_total=%llu class_td_join_ms=%.3f class_td_project_ms=%.3f class_td_reduction_passes=%llu class_td_reduction_ms=%.3f class_td_reduction_removed_pairs=%llu class_td_pairs_before=%llu class_td_pairs_after=%llu class_td_elim_order=%llu class_td_peak_msg_pairs=%llu class_td_peak_msg_bytes=%llu class_td_cmp_filter_ms=%.3f class_td_cmp_filter_removed_pairs=%llu class_td_fail_width=%llu class_terms_ok=%llu class_terms_reject=%llu class_route_single_hub=%llu class_route_two_hop=%llu class_route_tree=%llu class_route_cycle_rect=%llu class_route_td_cycle=%llu class_route_reject=%llu",
          profile_k(),
          profile_query().c_str(),
          p.total_ms,
@@ -9652,6 +9772,21 @@ static void log_policy_profile_query(const BuildProfile &p, int filtered_targets
          p.propagate_ms,
          p.decode_ms,
          (unsigned long long)p.sat_calls,
+         p.sat_ms,
+         (unsigned long long)p.sat_models_total,
+         (unsigned long long)p.sat_conflicts,
+         (unsigned long long)p.sat_decisions,
+         (unsigned long long)p.terms_total,
+         p.term_eval_ms_total,
+         p.combine_algebra_ms,
+         (unsigned long long)p.allow_rows_total,
+         (unsigned long long)p.bin_ops_total,
+         (unsigned long long)p.bins_touched_total,
+         (unsigned long long)p.bin_rids_scanned_total,
+         (unsigned long long)p.heap_rows_scanned_total,
+         (unsigned long long)p.allow_cache_hit,
+         (unsigned long long)p.allow_cache_miss,
+         p.allow_cache_build_ms,
          filtered_targets,
          p.clause_plan_count_max,
          (unsigned long long)p.prop_join_scans_total,
@@ -9970,6 +10105,331 @@ static inline void rid_bits_and_inplace(std::vector<uint8_t> *dst, const std::ve
         (*dst)[i] = 0;
 }
 
+static int domain_id_for_table_col_idx(const Loaded &loaded,
+                                       const ClauseTablePlan &tp,
+                                       const TableData &ti,
+                                       int col_idx)
+{
+    for (const auto &cg : tp.class_groups) {
+        for (int idx : cg.col_idxs) {
+            if (idx == col_idx)
+                return cg.domain_id;
+        }
+    }
+    if (col_idx >= 0 && (size_t)col_idx < ti.meta_cols.size()) {
+        auto it = loaded.col_domain_by_col.find(ti.meta_cols[(size_t)col_idx]);
+        if (it != loaded.col_domain_by_col.end())
+            return it->second;
+    }
+    return -1;
+}
+
+static bool build_predicate_rid_bits_from_bins(const Loaded &loaded,
+                                               const ClauseTablePlan &tp,
+                                               const TableData &ti,
+                                               const ClausePredicate &pred,
+                                               BuildProfile *profile,
+                                               std::vector<uint8_t> *out_bits)
+{
+    if (!out_bits)
+        return false;
+    out_bits->assign((ti.nrows + 7u) / 8u, 0);
+    int domain_id = domain_id_for_table_col_idx(loaded, tp, ti, pred.col_idx);
+    if (domain_id < 0)
+        return false;
+
+    pred.allowed.for_each_set([&](int32_t tok_i32) {
+        CHECK_FOR_INTERRUPTS();
+if (tok_i32 < 0)
+            return;
+        const uint32_t *rid_ptr = nullptr;
+        size_t rid_len = 0;
+        if (!get_bin_slice(loaded, tp.table, domain_id, tok_i32, &rid_ptr, &rid_len)) {
+            ereport(ERROR,
+                    (errmsg("policy: bin slice lookup failed table=%s domain=%d tok=%d",
+                            tp.table.c_str(), domain_id, tok_i32)));
+        }
+        if (profile) {
+            profile->bins_touched_total++;
+            profile->bin_rids_scanned_total += (uint64)rid_len;
+            profile->bin_ops_total++;
+            profile->pf2_project_bin_rids_total += (uint64)rid_len;
+        }
+        for (size_t i = 0; i < rid_len; i++) {
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            if (rid < ti.nrows)
+                rid_bit_set(out_bits->data(), rid);
+        }
+    });
+    return true;
+}
+
+static bool maybe_eval_single_table_const_term_bin_only(const Loaded &loaded,
+                                                        const std::string &target,
+                                                        const ClausePlan &cl,
+                                                        const ClauseTablePlan &target_tp,
+                                                        const TableData &target_ti,
+                                                        BuildProfile *profile,
+                                                        SparseBlockWords *out_words,
+                                                        std::vector<uint8_t> *out_rid_bits,
+                                                        bool *out_term_has_rows,
+                                                        bool *out_applied)
+{
+    if (out_applied)
+        *out_applied = false;
+    if (!profile || !out_words)
+        return false;
+    if (!(cl.tables.size() == 1 && cl.tables[0].table == target))
+        return true;
+    if (!cl.compares.empty())
+        return true;
+
+    for (int aid : cl.atom_ids) {
+        auto ita = loaded.atoms_by_id.find(aid);
+        if (ita == loaded.atoms_by_id.end())
+            return false;
+        const Atom &a = ita->second;
+        if (a.kind != AtomKind::CONST || a.left.table != target)
+            return true;
+    }
+
+    out_words->clear();
+    out_words->total_blocks = target_ti.total_blocks;
+    std::vector<uint8_t> accum;
+    bool have_accum = false;
+
+    if (target_tp.predicates.empty()) {
+        build_all_allowed_for_target(target_ti, nullptr, out_words, out_rid_bits);
+        if (out_term_has_rows)
+            *out_term_has_rows = out_words->any();
+        if (out_applied)
+            *out_applied = true;
+        return true;
+    }
+
+    for (const ClausePredicate &pred : target_tp.predicates) {
+        std::vector<uint8_t> pred_bits;
+        if (!build_predicate_rid_bits_from_bins(loaded, target_tp, target_ti, pred, profile, &pred_bits))
+            return false;
+        if (!have_accum) {
+            accum = std::move(pred_bits);
+            have_accum = true;
+        } else {
+            rid_bits_and_inplace(&accum, pred_bits);
+        }
+    }
+
+    if (!have_accum)
+        accum.assign((target_ti.nrows + 7u) / 8u, 0);
+
+    uint32 kept_rows = 0;
+    for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
+        PF_CHECK_FOR_INTERRUPTS(rid);
+if (!rid_bit_test(accum.data(), rid))
+            continue;
+        if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
+            continue;
+        (void)out_words->set_ctid(target_ti.ctid_blk[(size_t)rid], target_ti.ctid_off[(size_t)rid]);
+        kept_rows++;
+    }
+    if (out_rid_bits)
+        *out_rid_bits = std::move(accum);
+    if (out_term_has_rows)
+        *out_term_has_rows = (kept_rows > 0);
+
+    profile->pf2_terms_supported++;
+    profile->pf2_terms_single_hub++;
+    if (out_applied)
+        *out_applied = true;
+    return true;
+}
+
+static bool build_const_atom_rid_bits_target(const Loaded &loaded,
+                                             const std::string &target,
+                                             const TableData &target_ti,
+                                             const Atom &a,
+                                             BuildProfile *profile,
+                                             std::vector<uint8_t> *out_bits)
+{
+    if (!out_bits)
+        return false;
+    out_bits->assign((target_ti.nrows + 7u) / 8u, 0);
+    if (a.kind != AtomKind::CONST || a.left.table != target)
+        return false;
+
+    int domain_id = a.join_class_id;
+    if (domain_id < 0) {
+        auto it_dom = loaded.col_domain_by_col.find(a.left.key());
+        if (it_dom != loaded.col_domain_by_col.end())
+            domain_id = it_dom->second;
+    }
+    if (domain_id < 0)
+        return false;
+
+    const std::vector<std::string> *dict_vals = nullptr;
+    DictType dtype = DictType::TEXT;
+    bool sorted = false;
+    auto itd = loaded.domain_dicts.find(domain_id);
+    if (itd != loaded.domain_dicts.end()) {
+        dict_vals = &itd->second;
+        auto itdt = loaded.domain_dict_types.find(domain_id);
+        if (itdt != loaded.domain_dict_types.end())
+            dtype = itdt->second;
+        sorted = (loaded.domain_dict_sorted.find(domain_id) != loaded.domain_dict_sorted.end());
+    }
+    if (!dict_vals)
+        return false;
+
+    TokenBitset allowed = build_allowed_token_set(a, *dict_vals, dtype, sorted);
+    if (!allowed.any())
+        return true;
+
+    allowed.for_each_set([&](int32_t tok_i32) {
+        CHECK_FOR_INTERRUPTS();
+const uint32_t *rid_ptr = nullptr;
+        size_t rid_len = 0;
+        if (!get_bin_slice(loaded, target, domain_id, tok_i32, &rid_ptr, &rid_len)) {
+            ereport(ERROR,
+                    (errmsg("policy: bin slice lookup failed table=%s domain=%d tok=%d",
+                            target.c_str(), domain_id, tok_i32)));
+        }
+        if (profile) {
+            profile->bins_touched_total++;
+            profile->bin_rids_scanned_total += (uint64)rid_len;
+            profile->bin_ops_total++;
+            profile->pf2_project_bin_rids_total += (uint64)rid_len;
+        }
+        for (size_t i = 0; i < rid_len; i++) {
+            PF_CHECK_FOR_INTERRUPTS((uint32)i);
+uint32 rid = rid_ptr ? rid_ptr[i] : 0u;
+            if (rid < target_ti.nrows)
+                rid_bit_set(out_bits->data(), rid);
+        }
+    });
+    return true;
+}
+
+static bool class_set_target_sig_bits_from_rids(const Loaded &loaded,
+                                                const std::string &target,
+                                                const TableData &target_ti,
+                                                const std::vector<uint8_t> &rid_bits,
+                                                BuildProfile *profile,
+                                                TokenBitset *io_sig_bits);
+
+static bool maybe_eval_formula_single_table_bin_fast(const Loaded &loaded,
+                                                     const std::string &target,
+                                                     const TableData &target_ti,
+                                                     const BoolAst *formula_root,
+                                                     const std::vector<int> &vars,
+                                                     BuildProfile *profile,
+                                                     SparseBlockWords *out_words,
+                                                     std::vector<uint8_t> *out_rid_bits,
+                                                     TokenBitset *out_formula_sig_bits,
+                                                     bool *out_applied)
+{
+    if (out_applied)
+        *out_applied = false;
+    if (!formula_root || !profile || !out_words)
+        return true;
+    auto t_fast0 = Clock::now();
+
+    std::unordered_map<int, std::vector<uint8_t>> atom_bits;
+    atom_bits.reserve(vars.size() * 2u + 1u);
+    for (int v : vars) {
+        if (v <= 0)
+            return true;
+        auto ita = loaded.atoms_by_id.find(v);
+        if (ita == loaded.atoms_by_id.end())
+            return true;
+        const Atom &a = ita->second;
+        if (a.kind != AtomKind::CONST || a.left.table != target)
+            return true;
+        std::vector<uint8_t> bits;
+        if (!build_const_atom_rid_bits_target(loaded, target, target_ti, a, profile, &bits))
+            return true;
+        atom_bits.emplace(v, std::move(bits));
+    }
+
+    std::unordered_map<const BoolAst *, std::vector<uint8_t>> memo;
+    std::function<bool(const BoolAst *, std::vector<uint8_t> *)> eval_node =
+        [&](const BoolAst *node, std::vector<uint8_t> *out_bits) -> bool {
+            if (!node || !out_bits)
+                return false;
+            auto it_m = memo.find(node);
+            if (it_m != memo.end()) {
+                *out_bits = it_m->second;
+                return true;
+            }
+            std::vector<uint8_t> bits((target_ti.nrows + 7u) / 8u, 0);
+            if (node->type == AstType::VAR) {
+                if (node->var_id <= 0) {
+                    // conservative: var<=0 treated as false for fast-path formulas
+                    bits.assign((target_ti.nrows + 7u) / 8u, 0);
+                } else {
+                    auto it = atom_bits.find(node->var_id);
+                    if (it == atom_bits.end())
+                        return false;
+                    bits = it->second;
+                }
+            } else if (node->type == AstType::AND || node->type == AstType::OR) {
+                std::vector<uint8_t> lb, rb;
+                if (!eval_node(node->left, &lb) || !eval_node(node->right, &rb))
+                    return false;
+                bits = std::move(lb);
+                if (node->type == AstType::AND)
+                    rid_bits_and_inplace(&bits, rb);
+                else
+                    rid_bits_or_inplace(&bits, rb);
+                if (profile)
+                    profile->bin_ops_total++;
+            } else {
+                return false;
+            }
+            memo.emplace(node, bits);
+            *out_bits = std::move(bits);
+            return true;
+        };
+
+    std::vector<uint8_t> formula_bits;
+    if (!eval_node(formula_root, &formula_bits))
+        return true;
+
+    out_words->clear();
+    out_words->total_blocks = target_ti.total_blocks;
+    for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
+        PF_CHECK_FOR_INTERRUPTS(rid);
+if (!rid_bit_test(formula_bits.data(), rid))
+            continue;
+        if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
+            continue;
+        (void)out_words->set_ctid(target_ti.ctid_blk[(size_t)rid], target_ti.ctid_off[(size_t)rid]);
+    }
+    if (out_rid_bits)
+        *out_rid_bits = formula_bits;
+
+    if (out_formula_sig_bits) {
+        if (!class_set_target_sig_bits_from_rids(loaded,
+                                                 target,
+                                                 target_ti,
+                                                 formula_bits,
+                                                 profile,
+                                                 out_formula_sig_bits)) {
+            return false;
+        }
+    }
+
+    profile->terms_total++;
+    profile->term_eval_ms_total += Ms(Clock::now() - t_fast0).count();
+    profile->class_terms_ok++;
+    profile->class_route_single_hub++;
+    log_class_route_notice(target, vars, ClassRouteKind::SINGLE_HUB, "single_table_formula_bin_fast");
+
+    if (out_applied)
+        *out_applied = true;
+    return true;
+}
+
 static uint32 popcount_sparse_words_flat(const std::vector<uint64_t> &words_flat)
 {
     uint64 total = 0;
@@ -9992,7 +10452,8 @@ static void build_all_allowed_for_target(const TableData &target_ti,
     if (out_rid_bits)
         out_rid_bits->assign((target_ti.nrows + 7u) / 8u, 0);
     for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
-        if (target_rbits && !rid_bit_test(target_rbits, rid))
+        PF_CHECK_FOR_INTERRUPTS(rid);
+if (target_rbits && !rid_bit_test(target_rbits, rid))
             continue;
         if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
             continue;
@@ -10036,7 +10497,8 @@ static bool class_set_target_sig_bits_from_rids(const Loaded &loaded,
         }
     }
     for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
-        if (!rid_bit_test(rid_bits.data(), rid))
+        PF_CHECK_FOR_INTERRUPTS(rid);
+if (!rid_bit_test(rid_bits.data(), rid))
             continue;
         int32_t sid = row_to_sid[(size_t)rid];
         if (sid >= 0)
@@ -10094,7 +10556,8 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
 
     if (term_atoms.empty()) {
         for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
-            if (target_rbits && !rid_bit_test(target_rbits, rid))
+            PF_CHECK_FOR_INTERRUPTS(rid);
+if (target_rbits && !rid_bit_test(target_rbits, rid))
                 continue;
             if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
                 continue;
@@ -10158,7 +10621,8 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
 
     if (!cl.target_present || !target_tp) {
         for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
-            if (target_rbits && !rid_bit_test(target_rbits, rid))
+            PF_CHECK_FOR_INTERRUPTS(rid);
+if (target_rbits && !rid_bit_test(target_rbits, rid))
                 continue;
             if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
                 continue;
@@ -10185,6 +10649,33 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
         route_rid_bits = &local_rid_bits;
     }
 
+    if (cl.tables.size() == 1 && cl.tables[0].table == target) {
+        bool applied_bin_only = false;
+        auto t_term0 = Clock::now();
+        if (!maybe_eval_single_table_const_term_bin_only(loaded,
+                                                         target,
+                                                         cl,
+                                                         *target_tp,
+                                                         target_ti,
+                                                         profile,
+                                                         out_words,
+                                                         route_rid_bits,
+                                                         out_term_has_rows,
+                                                         &applied_bin_only)) {
+            return false;
+        }
+        if (applied_bin_only) {
+            profile->class_terms_ok++;
+            profile->class_route_single_hub++;
+            log_class_route_notice(target, term_atoms, ClassRouteKind::SINGLE_HUB, "single_table_bin_only");
+            profile->term_eval_ms_total += Ms(Clock::now() - t_term0).count();
+            if (out_term_canon_sig_bits &&
+                !class_set_target_sig_bits_from_rids(loaded, target, target_ti, *route_rid_bits, profile, out_term_canon_sig_bits))
+                return false;
+            return true;
+        }
+    }
+
     if (target_tp->class_groups.empty() ||
         (cl.tables.size() == 1 && cl.tables[0].table == target)) {
         std::vector<Pf2LocalComparator> target_local_cmps;
@@ -10205,6 +10696,9 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
                     (errmsg("policy: class_engine unsupported local comparator shape on target=%s", target.c_str())));
         }
         for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
+            PF_CHECK_FOR_INTERRUPTS(rid);
+if (profile)
+                profile->heap_rows_scanned_total++;
             if (target_rbits && !rid_bit_test(target_rbits, rid))
                 continue;
             if (!pf2_row_matches_table_local_atoms(*target_tp, target_local_cmps, rid))
@@ -10229,6 +10723,18 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
 
     bool pf2_supported = false;
     bool pf2_has_rows = false;
+    std::string route_failures;
+    auto mark_route_fail = [&](const char *route, const char *why) {
+        if (!route || !route[0])
+            return;
+        if (!route_failures.empty())
+            route_failures.push_back(';');
+        route_failures += route;
+        if (why && why[0]) {
+            route_failures.push_back(':');
+            route_failures += why;
+        }
+    };
     auto record_ok_route = [&](ClassRouteKind r) {
         profile->class_terms_ok++;
         switch (r) {
@@ -10263,6 +10769,7 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
             return false;
         return true;
     }
+    mark_route_fail("single_hub", "no_match_or_unsupported");
 
     if (!eval_term_conjunction_pf2_two_hop(loaded,
                                            target,
@@ -10285,6 +10792,7 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
             return false;
         return true;
     }
+    mark_route_fail("two_hop", "no_match_or_unsupported");
 
     if (!eval_term_conjunction_pf2_cycle_rect(loaded,
                                               target,
@@ -10307,6 +10815,7 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
             return false;
         return true;
     }
+    mark_route_fail("cycle_rect", "no_match_or_unsupported");
 
     if (!eval_term_conjunction_pf2_td_cycle(loaded,
                                             target,
@@ -10336,6 +10845,7 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
             return false;
         return true;
     }
+    mark_route_fail("td_cycle", "no_match_or_unsupported");
 
     if (!eval_term_conjunction_pf2_tree(loaded,
                                         target,
@@ -10358,11 +10868,45 @@ static bool eval_term_conjunction_words(const Loaded &loaded,
             return false;
         return true;
     }
+    mark_route_fail("tree", "no_match_or_unsupported");
 
     profile->pf2_terms_failed_shape++;
     profile->class_terms_reject++;
     profile->class_route_reject++;
-    log_class_route_notice(target, term_atoms, ClassRouteKind::REJECT, "unsupported_term_shape");
+    std::string table_shape;
+    for (size_t i = 0; i < cl.tables.size(); i++) {
+        const auto &tp = cl.tables[i];
+        if (!table_shape.empty())
+            table_shape.push_back(';');
+        table_shape += tp.table;
+        table_shape += "(groups=" + std::to_string(tp.class_groups.size()) +
+                       ",preds=" + std::to_string(tp.predicates.size()) + ")";
+    }
+    std::string cmp_shape;
+    for (size_t i = 0; i < cl.compares.size(); i++) {
+        const auto &cp = cl.compares[i];
+        if (!cmp_shape.empty())
+            cmp_shape.push_back(';');
+        cmp_shape += "a" + std::to_string(cp.atom_id) +
+                     "(l=" + std::to_string(cp.left_pos) +
+                     ",r=" + std::to_string(cp.right_pos) +
+                     ",d=" + std::to_string(cp.domain_id) +
+                     ",op=" + std::to_string((int)cp.op) + ")";
+    }
+    elog(NOTICE,
+         "class_route_reject_debug: target=%s atom_ids=%zu tables=%s join_vars=%zu has_join=%d has_colcmp=%d compares=%s route_failures=%s",
+         target.c_str(),
+         cl.atom_ids.size(),
+         table_shape.empty() ? "-" : table_shape.c_str(),
+         cl.join_classes.size(),
+         cl.has_join_atom ? 1 : 0,
+         cl.has_colcmp_atom ? 1 : 0,
+         cmp_shape.empty() ? "-" : cmp_shape.c_str(),
+         route_failures.empty() ? "-" : route_failures.c_str());
+    log_class_route_notice(target,
+                           term_atoms,
+                           ClassRouteKind::REJECT,
+                           route_failures.empty() ? "unsupported_term_shape" : route_failures.c_str());
     ereport(ERROR,
             (errmsg("policy: class_engine unsupported term shape on target=%s", target.c_str()),
              errhint("strict experimental mode allows only class_engine supported shapes")));
@@ -10392,7 +10936,8 @@ static bool eval_formula_root_words(const Loaded &loaded,
     }
     if (!formula_root) {
         for (uint32 rid = 0; rid < target_ti.nrows; rid++) {
-            if (target_rbits && !rid_bit_test(target_rbits, rid))
+            PF_CHECK_FOR_INTERRUPTS(rid);
+if (target_rbits && !rid_bit_test(target_rbits, rid))
                 continue;
             if ((size_t)rid >= target_ti.ctid_blk.size() || (size_t)rid >= target_ti.ctid_off.size())
                 continue;
@@ -10421,10 +10966,30 @@ static bool eval_formula_root_words(const Loaded &loaded,
     }
 
     auto t_proj0 = Clock::now();
-    SatCnf cnf;
-    CnfBuildInfo cnf_info;
     std::vector<int> vars;
     collect_ast_positive_vars(formula_root, &vars);
+
+    bool single_table_fast_applied = false;
+    if (!maybe_eval_formula_single_table_bin_fast(loaded,
+                                                  target,
+                                                  target_ti,
+                                                  formula_root,
+                                                  vars,
+                                                  profile,
+                                                  out_words,
+                                                  out_rid_bits,
+                                                  out_formula_sig_bits,
+                                                  &single_table_fast_applied)) {
+        return false;
+    }
+    if (single_table_fast_applied) {
+        profile->project_row_ms += Ms(Clock::now() - t_proj0).count();
+        profile->project_ms += Ms(Clock::now() - t_proj0).count();
+        return true;
+    }
+
+    SatCnf cnf;
+    CnfBuildInfo cnf_info;
     int n_input_vars = 0;
     for (int v : vars)
         n_input_vars = std::max(n_input_vars, v);
@@ -10473,6 +11038,8 @@ static bool eval_formula_root_words(const Loaded &loaded,
             term_rids.assign((target_ti.nrows + 7u) / 8u, 0);
             term_rids_ptr = &term_rids;
         }
+        auto t_term0 = Clock::now();
+        profile->terms_total++;
         if (!eval_term_conjunction_words(loaded,
                                          target,
                                          term,
@@ -10486,6 +11053,7 @@ static bool eval_formula_root_words(const Loaded &loaded,
                                          &prop_conflict)) {
             return false;
         }
+        profile->term_eval_ms_total += Ms(Clock::now() - t_term0).count();
 
         if (!prop_conflict) {
             (void)out_words->or_inplace(term_words);
@@ -10529,14 +11097,17 @@ static bool eval_formula_root_words(const Loaded &loaded,
         return out;
     };
 
+    auto t_sat0 = Clock::now();
     for (;;) {
         profile->sat_calls++;
         if (!solver.solve_with_assumptions({}))
             break;
+        profile->sat_models_total++;
 
         std::vector<int> decision_lits = collect_selector_decision_lits();
         if (cnf_info.selectors.size() > 0 && decision_lits.empty())
             return false;
+        profile->sat_decisions += (uint64)decision_lits.size();
         if (!decision_lits.empty()) {
             std::string sel;
             for (size_t i = 0; i < decision_lits.size(); i++) {
@@ -10582,6 +11153,8 @@ static bool eval_formula_root_words(const Loaded &loaded,
             term_rids.assign((target_ti.nrows + 7u) / 8u, 0);
             term_rids_ptr = &term_rids;
         }
+        auto t_term0 = Clock::now();
+        profile->terms_total++;
         if (!eval_term_conjunction_words(loaded,
                                          target,
                                          term,
@@ -10595,10 +11168,12 @@ static bool eval_formula_root_words(const Loaded &loaded,
                                          &prop_conflict)) {
             return false;
         }
+        profile->term_eval_ms_total += Ms(Clock::now() - t_term0).count();
 
         if (prop_conflict) {
             CF_TRACE_LOG("policy: theory_lemma_conflict target=%s selectors=%zu",
                          target.c_str(), decision_lits.size());
+            profile->sat_conflicts++;
             if (!block_decision_clause(&solver, decision_lits))
                 return false;
             continue;
@@ -10628,6 +11203,7 @@ static bool eval_formula_root_words(const Loaded &loaded,
         if (!block_decision_clause(&solver, decision_lits))
             return false;
     }
+    profile->sat_ms += Ms(Clock::now() - t_sat0).count();
 
     if (out_formula_sig_bits)
         out_formula_sig_bits->adapt_representation();
@@ -10658,6 +11234,45 @@ static bool build_target_allow_list(const Loaded &loaded,
                 (errmsg("policy: target table artifacts missing: %s", tp.target.c_str())));
     }
     const TableData &target_ti = it_t->second;
+    const uint8 *target_rbits = nullptr;
+
+    const bool allow_cache_eligible = policy_runtime_strict_mode_enabled() &&
+                                      out_restrict_sig == nullptr &&
+                                      target_rbits == nullptr &&
+                                      !tp.target.empty();
+    std::string allow_cache_key;
+    if (allow_cache_eligible)
+        allow_cache_key = allow_cache_key_for_target(tp, target_ti);
+    if (allow_cache_eligible) {
+        auto itc = g_allow_cache.find(allow_cache_key);
+        if (itc != g_allow_cache.end()) {
+            const AllowCacheEntry &ce = itc->second;
+            size_t words_nbytes = ce.words.size() * sizeof(uint64_t);
+            size_t block_ids_nbytes = ce.block_ids.size() * sizeof(uint32_t);
+            uint64 *words = nullptr;
+            uint32 *block_ids = nullptr;
+            if (words_nbytes > 0) {
+                words = (uint64 *)palloc0(words_nbytes);
+                std::memcpy(words, ce.words.data(), words_nbytes);
+            }
+            if (block_ids_nbytes > 0) {
+                block_ids = (uint32 *)palloc0(block_ids_nbytes);
+                std::memcpy(block_ids, ce.block_ids.data(), block_ids_nbytes);
+            }
+            out_item->table = pstrdup(tp.target.c_str());
+            out_item->block_words = words;
+            out_item->block_ids = block_ids;
+            out_item->blocks = (uint32)ce.block_ids.size();
+            out_item->total_blocks = ce.total_blocks;
+            out_item->n_rows = ce.n_rows;
+            profile->allow_cache_hit++;
+            profile->allow_rows_total += ce.allowed_rows;
+            return true;
+        }
+        profile->allow_cache_miss++;
+    }
+
+    auto t_allow_build0 = Clock::now();
     std::vector<int> target_canon_schema = table_needed_signature_schema(target_ti);
     const SignatureCacheEntry *target_canon_entry = nullptr;
     if (out_restrict_sig) {
@@ -10683,8 +11298,6 @@ static bool build_target_allow_list(const Loaded &loaded,
         final_sig_bits.clear_all();
     }
 
-    const uint8 *target_rbits = nullptr;
-
     auto fill_all_target_sigs = [&](TokenBitset *dst) {
         if (!dst || !target_canon_entry)
             return;
@@ -10696,6 +11309,11 @@ static bool build_target_allow_list(const Loaded &loaded,
     profile->clause_plan_count_max = std::max(profile->clause_plan_count_max, (int)tp.formula_atom_ids.size());
     profile->unique_join_struct_sigs_max =
         std::max(profile->unique_join_struct_sigs_max, (int)tp.formula_tables.size());
+    auto combine_op_timed = [&](const std::function<void()> &fn) {
+        auto t0 = Clock::now();
+        fn();
+        profile->combine_algebra_ms += Ms(Clock::now() - t0).count();
+    };
 
     if (tp.deny_all) {
         final_words.clear();
@@ -10740,11 +11358,11 @@ static bool build_target_allow_list(const Loaded &loaded,
                                              tmp_rids_ptr,
                                              out_restrict_sig ? &tmp_sig_bits : nullptr))
                     return false;
-                (void)perm_words.or_inplace(tmp_words);
+                combine_op_timed([&]() { (void)perm_words.or_inplace(tmp_words); });
                 if (need_rid_bits)
-                    rid_bits_or_inplace(&perm_rids, tmp_rids);
+                    combine_op_timed([&]() { rid_bits_or_inplace(&perm_rids, tmp_rids); });
                 if (out_restrict_sig)
-                    perm_sig_bits.bit_or(tmp_sig_bits);
+                    combine_op_timed([&]() { perm_sig_bits.bit_or(tmp_sig_bits); });
             }
         } else {
             std::vector<uint8_t> *perm_rids_ptr = need_rid_bits ? &perm_rids : nullptr;
@@ -10797,17 +11415,17 @@ static bool build_target_allow_list(const Loaded &loaded,
                                              tmp_rids_ptr,
                                              out_restrict_sig ? &tmp_sig_bits : nullptr))
                     return false;
-                (void)rest_words.and_inplace(tmp_words);
+                combine_op_timed([&]() { (void)rest_words.and_inplace(tmp_words); });
                 if (need_rid_bits)
-                    rid_bits_and_inplace(&rest_rids, tmp_rids);
+                    combine_op_timed([&]() { rid_bits_and_inplace(&rest_rids, tmp_rids); });
                 if (out_restrict_sig)
-                    rest_sig_bits.bit_and(tmp_sig_bits);
+                    combine_op_timed([&]() { rest_sig_bits.bit_and(tmp_sig_bits); });
             }
-            (void)final_words.and_inplace(rest_words);
+            combine_op_timed([&]() { (void)final_words.and_inplace(rest_words); });
             if (need_rid_bits)
-                rid_bits_and_inplace(&final_rid_bits, rest_rids);
+                combine_op_timed([&]() { rid_bits_and_inplace(&final_rid_bits, rest_rids); });
             if (out_restrict_sig)
-                final_sig_bits.bit_and(rest_sig_bits);
+                combine_op_timed([&]() { final_sig_bits.bit_and(rest_sig_bits); });
         }
     } else if (!tp.formula_root) {
         build_all_allowed_for_target(target_ti,
@@ -10865,6 +11483,7 @@ static bool build_target_allow_list(const Loaded &loaded,
         std::memcpy(block_ids, block_ids_vec.data(), block_ids_nbytes);
     }
     uint32 allowed_rows = popcount_sparse_words_flat(words_vec);
+    profile->allow_rows_total += (uint64)allowed_rows;
     profile->block_words_blocks_allocated += blocks;
     profile->block_words_total_blocks += final_words.total_blocks;
     profile->block_words_dense_bytes += final_words.words_bytes();
@@ -10881,6 +11500,17 @@ static bool build_target_allow_list(const Loaded &loaded,
     out_item->blocks = blocks;
     out_item->total_blocks = final_words.total_blocks;
     out_item->n_rows = target_ti.nrows;
+
+    if (allow_cache_eligible) {
+        AllowCacheEntry ce;
+        ce.n_rows = target_ti.nrows;
+        ce.total_blocks = final_words.total_blocks;
+        ce.words = words_vec;
+        ce.block_ids = block_ids_vec;
+        ce.allowed_rows = (uint64)allowed_rows;
+        g_allow_cache[allow_cache_key] = std::move(ce);
+        profile->allow_cache_build_ms += Ms(Clock::now() - t_allow_build0).count();
+    }
 
     CF_TRACE_LOG("policy: allow_%s count=%u/%u", tp.target.c_str(), allowed_rows, target_ti.nrows);
     return true;

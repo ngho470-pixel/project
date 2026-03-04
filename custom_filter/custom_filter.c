@@ -1250,6 +1250,10 @@ typedef struct CfExec
     double ctid_to_rid_ms;
     double allow_check_ms;
     double projection_ms;
+    uint64 child_next_calls;
+    double tid_heap_fetch_ms;
+    double tid_slot_store_ms;
+    double tid_visibility_ms;
 
     uint64 tuples_seen;
     uint64 tuples_passed;
@@ -1422,6 +1426,9 @@ typedef struct PolicyQueryState
     double ctid_to_rid_ms;
     double allow_check_ms;
     double projection_ms;
+    double custom_scan_total_ms;
+    double custom_scan_overhead_ms;
+    uint64 child_next_calls_total;
     uint64 rows_seen;
     uint64 rows_passed;
     uint64 ctid_misses;
@@ -1434,6 +1441,9 @@ typedef struct PolicyQueryState
     uint64 tid_tuples_fetched;
     double tid_fetch_ms;
     double tid_qual_ms;
+    double tid_heap_fetch_ms;
+    double tid_slot_store_ms;
+    double tid_visibility_ms;
     uint64 empty_short_circuit_tables;
     double empty_short_circuit_ms;
     bool query_short_circuit_empty;
@@ -1916,12 +1926,15 @@ cf_log_query_metrics(PolicyQueryState *qs)
          "restrict_sig_tables=%llu restrict_sig_schema_cols_total=%llu restrict_sig_bytes_total=%zu restrict_sig_apply_ms=%.3f restrict_term_apply_ms=%.3f restrict_term_sigs_kept=%llu restrict_term_sigs_dropped=%llu "
          "stamp_ms=%.3f bin_ms=%.3f local_sat_ms=%.3f fill_ms=%.3f prop_ms=%.3f prop_iters=%d "
          "decode_ms=%.3f policy_total_ms=%.3f ctid_map_ms=%.3f filter_ms=%.3f "
-         "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f "
+         "custom_scan_total_ms=%.3f custom_scan_overhead_ms=%.3f "
+         "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f child_next_calls_total=%llu "
+         "tid_heap_fetch_ms=%.3f tid_slot_store_ms=%.3f tid_visibility_ms=%.3f "
          "blocks_seen=%llu blocks_skipped=%llu block_skip_hit_rate=%.6f "
          "scan_mode_tid_tables=%llu scan_mode_filter_tables=%llu scan_mode_empty_tables=%llu "
          "empty_short_circuit_tables=%llu empty_short_circuit_ms=%.3f "
          "query_short_circuit_empty=%d query_short_circuit_reason=%s query_short_circuit_ms=%.3f query_short_circuit_hits=%llu "
          "tid_blocks_visited=%llu tid_tuples_fetched=%llu tid_fetch_ms=%.3f tid_qual_ms=%.3f "
+         "tid_count=%llu tid_fetch_calls=%llu tid_heap_pages_touched=%llu "
          "n_scanned_tables=%d n_policy_targets=%d n_filters=%d "
          "bytes_artifacts_loaded=%zu bytes_allow=%zu bytes_ctid=%zu bytes_blk_index=%zu "
          "rows_seen=%llu rows_passed=%llu ctid_misses=%llu "
@@ -2004,11 +2017,17 @@ cf_log_query_metrics(PolicyQueryState *qs)
          qs->policy_total_ms,
          qs->ctid_map_ms,
          qs->filter_ms,
+         qs->custom_scan_total_ms,
+         qs->custom_scan_overhead_ms,
          qs->child_exec_ms,
          qs->ctid_extract_ms,
          qs->ctid_to_rid_ms,
          qs->allow_check_ms,
          qs->projection_ms,
+         (unsigned long long) qs->child_next_calls_total,
+         qs->tid_heap_fetch_ms,
+         qs->tid_slot_store_ms,
+         qs->tid_visibility_ms,
          (unsigned long long) qs->blocks_seen,
          (unsigned long long) qs->blocks_skipped,
          (qs->blocks_seen > 0 ? ((double) qs->blocks_skipped / (double) qs->blocks_seen) : 0.0),
@@ -2025,6 +2044,9 @@ cf_log_query_metrics(PolicyQueryState *qs)
          (unsigned long long) qs->tid_tuples_fetched,
          qs->tid_fetch_ms,
          qs->tid_qual_ms,
+         (unsigned long long) qs->tid_tuples_fetched,
+         (unsigned long long) qs->tid_tuples_fetched,
+         (unsigned long long) qs->tid_blocks_visited,
          qs->n_scanned_tables,
          qs->n_policy_targets,
          qs->n_filters,
@@ -3353,13 +3375,27 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
     double density = 0.0;
     const char *reason = "no_filter";
     PlanState *child = st ? st->child_plan : NULL;
+    bool have_row_density = false;
 
     if (tf)
     {
-        if (tf->total_blocks > 0)
+        if (tf->n_rows > 0)
+        {
+            /*
+             * Use row-density as primary decision signal.
+             * Block-density can look dense even when the allow-set is sparse in rows.
+             */
+            density = (double) tf->allowed_rows / (double) tf->n_rows;
+            have_row_density = true;
+        }
+        else if (tf->total_blocks > 0)
+        {
             density = (double) tf->blocks / (double) tf->total_blocks;
+        }
         else
+        {
             density = 0.0;
+        }
 
         if (tf->allow_is_empty || tf->allowed_rows == 0 || tf->blocks == 0 || !tf->block_words || tf->block_words_nbytes == 0)
         {
@@ -3383,7 +3419,11 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
         {
             reason = "parallel_aware";
         }
-        else if (tf->total_blocks == 0)
+        else if (!have_row_density && tf->n_rows == 0 && tf->total_blocks == 0)
+        {
+            reason = "missing_total_rows_and_blocks";
+        }
+        else if (!have_row_density && tf->total_blocks == 0)
         {
             reason = "missing_total_blocks";
         }
@@ -3412,7 +3452,7 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
     }
     st->scan_mode_density = density;
 
-    if (!st->scan_mode_logged && tf && cf_profile_query && cf_profile_query[0])
+    if (!st->scan_mode_logged && tf)
     {
         elog(NOTICE,
              "scan_mode_decision: rel=%s mode=%s allow_rows=%llu allow_blocks=%u relpages=%u density=%.6f reason=%s scan=%s",
@@ -3513,12 +3553,22 @@ cf_exec_seqscan_tid_mode(CustomScanState *node, CfExec *st, TableFilterState *tf
         ExecClearTuple(scan_slot);
         if (!table_tuple_fetch_row_version(ss->ss_currentRelation, &tid, snap, scan_slot))
         {
+            double fetch_ms = 0.0;
             INSTR_TIME_SET_CURRENT(fetch_end);
-            st->tid_fetch_ms += INSTR_TIME_GET_MILLISEC(fetch_end) - INSTR_TIME_GET_MILLISEC(fetch_start);
+            fetch_ms = INSTR_TIME_GET_MILLISEC(fetch_end) - INSTR_TIME_GET_MILLISEC(fetch_start);
+            st->tid_fetch_ms += fetch_ms;
+            st->tid_heap_fetch_ms += fetch_ms;
+            st->tid_visibility_ms += fetch_ms;
             continue;
         }
-        INSTR_TIME_SET_CURRENT(fetch_end);
-        st->tid_fetch_ms += INSTR_TIME_GET_MILLISEC(fetch_end) - INSTR_TIME_GET_MILLISEC(fetch_start);
+        {
+            double fetch_ms = 0.0;
+            INSTR_TIME_SET_CURRENT(fetch_end);
+            fetch_ms = INSTR_TIME_GET_MILLISEC(fetch_end) - INSTR_TIME_GET_MILLISEC(fetch_start);
+            st->tid_fetch_ms += fetch_ms;
+            st->tid_heap_fetch_ms += fetch_ms;
+            st->tid_visibility_ms += fetch_ms;
+        }
         st->tid_tuples_fetched++;
         st->tuples_seen++;
         if (tf)
@@ -3535,24 +3585,26 @@ cf_exec_seqscan_tid_mode(CustomScanState *node, CfExec *st, TableFilterState *tf
             econtext->ecxt_scantuple = scan_slot;
             qual_ok = ExecQual(child->qual, econtext);
         }
+        INSTR_TIME_SET_CURRENT(qual_end);
+        st->tid_qual_ms += INSTR_TIME_GET_MILLISEC(qual_end) - INSTR_TIME_GET_MILLISEC(qual_start);
         if (!qual_ok)
         {
-            INSTR_TIME_SET_CURRENT(qual_end);
-            st->tid_qual_ms += INSTR_TIME_GET_MILLISEC(qual_end) - INSTR_TIME_GET_MILLISEC(qual_start);
             continue;
         }
         slot = scan_slot;
         if (child->ps_ProjInfo)
         {
+            instr_time store_start, store_end;
             if (!econtext)
                 econtext = child->ps_ExprContext;
             if (!econtext)
                 econtext = CreateExprContext(child->state);
             econtext->ecxt_scantuple = scan_slot;
+            INSTR_TIME_SET_CURRENT(store_start);
             slot = ExecProject(child->ps_ProjInfo);
+            INSTR_TIME_SET_CURRENT(store_end);
+            st->tid_slot_store_ms += INSTR_TIME_GET_MILLISEC(store_end) - INSTR_TIME_GET_MILLISEC(store_start);
         }
-        INSTR_TIME_SET_CURRENT(qual_end);
-        st->tid_qual_ms += INSTR_TIME_GET_MILLISEC(qual_end) - INSTR_TIME_GET_MILLISEC(qual_start);
 
         st->tuples_passed++;
         if (tf)
@@ -3915,8 +3967,8 @@ cf_collect_scanned_tables(EState *estate, MemoryContext mcxt,
      * scalar subqueries). These scans are not reachable from planTree via
      * SubqueryScan::subplan, so we must also walk plannedstmt->subplans.
      *
-     * This matters for correctness on TPC-H q15 (WITH/CTE) and queries with
-     * initplans that scan protected tables.
+     * This matters for correctness on queries that rely on WITH/CTE or initplans
+     * scanning protected tables.
      */
     if (estate->es_plannedstmt->subplans)
     {
@@ -4693,6 +4745,10 @@ cf_create_state(CustomScan *cscan)
     st->ctid_to_rid_ms = 0.0;
     st->allow_check_ms = 0.0;
     st->projection_ms = 0.0;
+    st->child_next_calls = 0;
+    st->tid_heap_fetch_ms = 0.0;
+    st->tid_slot_store_ms = 0.0;
+    st->tid_visibility_ms = 0.0;
     st->tuples_seen = 0;
     st->tuples_passed = 0;
     st->misses = 0;
@@ -4962,7 +5018,11 @@ cf_exec(CustomScanState *node)
             INSTR_TIME_SET_CURRENT(proj_start);
             TupleTableSlot *ret = cf_store_slot(node, slot);
             INSTR_TIME_SET_CURRENT(proj_end);
-            st->projection_ms += INSTR_TIME_GET_MILLISEC(proj_end) - INSTR_TIME_GET_MILLISEC(proj_start);
+            {
+                double proj_ms = INSTR_TIME_GET_MILLISEC(proj_end) - INSTR_TIME_GET_MILLISEC(proj_start);
+                st->projection_ms += proj_ms;
+                st->tid_slot_store_ms += proj_ms;
+            }
             cf_accum_validation_time(st, &validation_start);
             return ret;
         }
@@ -4972,6 +5032,7 @@ cf_exec(CustomScanState *node)
     {
         instr_time child_start, child_end;
         INSTR_TIME_SET_CURRENT(child_start);
+        st->child_next_calls++;
         TupleTableSlot *slot = ExecProcNode(child);
         INSTR_TIME_SET_CURRENT(child_end);
         st->child_exec_ms += INSTR_TIME_GET_MILLISEC(child_end) - INSTR_TIME_GET_MILLISEC(child_start);
@@ -5262,8 +5323,12 @@ cf_end(CustomScanState *node)
     }
 
     if (cf_query_state) {
+        double accounted_ms = 0.0;
+        double overhead_ms = 0.0;
         cf_query_state->filter_ms += st->row_validation_ms;
+        cf_query_state->custom_scan_total_ms += st->row_validation_ms;
         cf_query_state->child_exec_ms += st->child_exec_ms;
+        cf_query_state->child_next_calls_total += st->child_next_calls;
         cf_query_state->ctid_extract_ms += st->ctid_extract_ms;
         cf_query_state->ctid_to_rid_ms += st->ctid_to_rid_ms;
         cf_query_state->allow_check_ms += st->allow_check_ms;
@@ -5286,9 +5351,26 @@ cf_end(CustomScanState *node)
         cf_query_state->tid_tuples_fetched += st->tid_tuples_fetched;
         cf_query_state->tid_fetch_ms += st->tid_fetch_ms;
         cf_query_state->tid_qual_ms += st->tid_qual_ms;
+        cf_query_state->tid_heap_fetch_ms += st->tid_heap_fetch_ms;
+        cf_query_state->tid_slot_store_ms += st->tid_slot_store_ms;
+        cf_query_state->tid_visibility_ms += st->tid_visibility_ms;
         if (st->empty_short_circuit_recorded)
             cf_query_state->empty_short_circuit_tables++;
         cf_query_state->empty_short_circuit_ms += st->empty_short_circuit_ms;
+
+        accounted_ms = st->child_exec_ms +
+                       st->ctid_extract_ms +
+                       st->ctid_to_rid_ms +
+                       st->allow_check_ms +
+                       st->projection_ms +
+                       st->tid_fetch_ms +
+                       st->tid_qual_ms +
+                       st->empty_short_circuit_ms;
+        if (st->row_validation_ms > accounted_ms)
+            overhead_ms = st->row_validation_ms - accounted_ms;
+        else
+            overhead_ms = 0.0;
+        cf_query_state->custom_scan_overhead_ms += overhead_ms;
     }
 }
 
