@@ -8,7 +8,31 @@ import fast_sweep_profile_60s as h
 from baselines.common import BaselineSetup
 
 
-_TABLES = ["lineitem", "orders", "customer", "nation", "region", "part", "supplier", "partsupp"]
+_ALIAS_RESERVED = {
+    "where",
+    "group",
+    "order",
+    "limit",
+    "offset",
+    "join",
+    "inner",
+    "left",
+    "right",
+    "full",
+    "cross",
+    "on",
+    "having",
+    "union",
+}
+
+
+def _safe_alias(alias: str) -> str:
+    a = (alias or "").strip()
+    if not a:
+        return ""
+    if a.lower() in _ALIAS_RESERVED:
+        return ""
+    return a
 
 
 def _compile_view_predicates(policy_lines: List[str]) -> Dict[str, str]:
@@ -50,9 +74,12 @@ def _rewrite_query_with_views(query_sql: str, view_map: Dict[str, str]) -> str:
         def r1(m):
             kw = m.group(1)
             alias_chunk = m.group(3) or ""
-            alias_name = m.group(4) or ""
+            alias_name = _safe_alias(m.group(4) or "")
             if alias_name:
                 return f"{kw} {view_name}{alias_chunk}"
+            if alias_chunk:
+                # Alias-like token was reserved (e.g., WHERE/GROUP); preserve it.
+                return f"{kw} {view_name} {table}{alias_chunk}"
             return f"{kw} {view_name} {table}"
 
         sql = p1.sub(r1, sql)
@@ -65,9 +92,12 @@ def _rewrite_query_with_views(query_sql: str, view_map: Dict[str, str]) -> str:
         def r2(m):
             comma = m.group(1)
             alias_chunk = m.group(3) or ""
-            alias_name = m.group(4) or ""
+            alias_name = _safe_alias(m.group(4) or "")
             if alias_name:
                 return f"{comma} {view_name}{alias_chunk}"
+            if alias_chunk:
+                # Alias-like token was reserved (e.g., WHERE/GROUP); preserve it.
+                return f"{comma} {view_name} {table}{alias_chunk}"
             return f"{comma} {view_name} {table}"
 
         sql = p2.sub(r2, sql)

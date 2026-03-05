@@ -12,6 +12,23 @@ if str(REPO_ROOT) not in sys.path:
 import fast_sweep_profile_60s as h  # noqa: E402
 
 
+def _managed_tables() -> List[str]:
+    tbls = getattr(h, "TABLES", None)
+    if isinstance(tbls, (list, tuple)) and tbls:
+        return [str(x) for x in tbls]
+    # Fallback for trimmed harness modules where TABLES is not exported.
+    return [
+        "lineitem",
+        "orders",
+        "customer",
+        "supplier",
+        "part",
+        "partsupp",
+        "nation",
+        "region",
+    ]
+
+
 def _connect_once(db: str):
     """Fail-fast connect for hygiene preflight (don't inherit long harness retries)."""
     import psycopg2
@@ -48,7 +65,8 @@ def _rows(cur) -> List[Tuple]:
 
 
 def _managed_lock_rows(cur) -> List[Tuple]:
-    table_list = ", ".join("'" + t.replace("'", "''") + "'" for t in h.TABLES)
+    managed = _managed_tables()
+    table_list = ", ".join("'" + t.replace("'", "''") + "'" for t in managed)
     cur.execute(
         f"""
         SELECT a.pid,
@@ -102,6 +120,7 @@ def _print_diag(cur, label: str) -> None:
 
 def _has_hard_blockers(lock_rows: List[Tuple]) -> bool:
     """Allow nonblocking readers on public.files*; treat managed TPCH table locks as blockers."""
+    managed = set(_managed_tables())
     for r in lock_rows:
         rel = str(r[4] or "")
         mode = (r[5] or "")
@@ -114,7 +133,7 @@ def _has_hard_blockers(lock_rows: List[Tuple]) -> bool:
             continue
         # Harness performs DDL on managed TPCH tables (RLS/index setup/teardown), so any live lock
         # on those tables can block progress and should fail preflight.
-        if rel in h.TABLES:
+        if rel in managed:
             return True
     return False
 
@@ -147,7 +166,7 @@ def main() -> None:
     import argparse
 
     ap = argparse.ArgumentParser(description="Preflight DB hygiene for harness runs")
-    ap.add_argument("--db", default="tpch0_1")
+    ap.add_argument("--db", default="postgres")
     ap.add_argument("--timeout-seconds", type=float, default=10.0)
     ap.add_argument("--kill-nonidle", action="store_true", help="Attempt cancel/terminate of non-idle backends (default behavior).")
     ap.add_argument("--no-kill-nonidle", dest="kill_nonidle", action="store_false", help="Diagnostics only; do not cancel/terminate.")

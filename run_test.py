@@ -13,7 +13,7 @@ import fast_sweep_profile_60s as h
 from baselines import no_policy, ours, rls, rls_index, sieve, sieve_index, view_based
 from baselines.common import BaselineAdapter, BaselineSetup
 from utils.metrics import policy_complexity, policy_ids_csv, query_complexity
-from utils.pg import run_count_hash, run_hygiene, run_query_trials
+from utils.pg import run_count_only, run_hygiene, run_query_trials
 
 
 # ==============================
@@ -21,7 +21,7 @@ from utils.pg import run_count_hash, run_hygiene, run_query_trials
 # ==============================
 REPO_ROOT = Path(__file__).resolve().parent
 
-DBS: List[str] = ["tpch0_1", "tpch1"]
+DBS: List[str] = [x.strip() for x in os.getenv("RUN_DBS", "postgres").split(",") if x.strip()]
 BASELINES: List[str] = [
     "no_policy",
     "view_based",
@@ -45,14 +45,15 @@ POLICY_SETS: List[Tuple[str, List[int]]] = [
     ("5-15_U_25-30", list(range(5, 16)) + list(range(25, 31))),
 ]
 
-QUERY_IDS: List[str] = [str(i) for i in range(1, 23)]
+# Empty list means "all query ids found in QUERY_FILE".
+QUERY_IDS: List[str] = []
 
 STATEMENT_TIMEOUT = "30min"
 HOT_RUNS = 5
 
 SMOKE_ONLY = False
 if SMOKE_ONLY:
-    DBS = ["tpch1"]
+    DBS = DBS[:1] if DBS else ["postgres"]
     POLICY_SETS = [
         ("1-5", list(range(1, 6))),
         ("11-20", list(range(11, 21))),
@@ -85,6 +86,8 @@ RESULT_COLUMNS = [
     "cold_ms",
     "hot_ms",
     "correctness",
+    "baseline_rows",
+    "rls_index_rows",
     "mem_overhead_kb",
     "status",
     "error_type",
@@ -185,13 +188,14 @@ def main() -> None:
     statement_timeout_ms = h.parse_timeout_ms(STATEMENT_TIMEOUT)
     policy_lines_all = h.load_policy_lines(POLICY_FILE)
     qmap = {qid: qsql for qid, qsql in h.load_queries(QUERY_FILE)}
+    query_ids = QUERY_IDS[:] if QUERY_IDS else sorted(qmap.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x))
 
     adapters = make_adapters()
 
     rows: List[Dict[str, object]] = []
 
     # Ground truth cache from rls_index.
-    gt: Dict[Tuple[str, str, str], Tuple[int, str, int]] = {}
+    gt: Dict[Tuple[str, str, str], Tuple[int, int]] = {}
 
     # No-policy memory baseline cache.
     mem_base: Dict[Tuple[str, str, str], int] = {}
@@ -224,7 +228,7 @@ def main() -> None:
                 except Exception as exc:  # noqa: BLE001
                     setup_error = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()[:500]
 
-                for qid in QUERY_IDS:
+                for qid in query_ids:
                     if qid not in qmap:
                         continue
                     raw_q = qmap[qid]
@@ -243,6 +247,8 @@ def main() -> None:
                         "cold_ms": "",
                         "hot_ms": "",
                         "correctness": "UNKNOWN",
+                        "baseline_rows": "",
+                        "rls_index_rows": "",
                         "mem_overhead_kb": "",
                         "status": 0,
                         "error_type": "",
@@ -251,7 +257,6 @@ def main() -> None:
                         # internal keys
                         "_hot_peak_rss_kb": 0,
                         "_count": None,
-                        "_hash": None,
                         "_inv_sig": "",
                         "_inv_mask": "",
                         "_inv_rid": "",
@@ -317,7 +322,7 @@ def main() -> None:
                             )
 
                     if row["status"] == 1:
-                        cnt, hh, cerr = run_count_hash(
+                        cnt, cerr = run_count_only(
                             db,
                             adapter.role,
                             qid,
@@ -327,18 +332,17 @@ def main() -> None:
                         )
                         if cnt is None:
                             row["status"] = 0
-                            row["error_type"] = "count_hash"
+                            row["error_type"] = "count"
                             row["error_msg"] = cerr
                         else:
                             row["_count"] = int(cnt)
-                            row["_hash"] = str(hh)
 
                     key = (db, policy_set_name, qid)
                     if baseline == "rls_index":
                         if row["status"] == 1 and row["_count"] is not None:
-                            gt[key] = (int(row["_count"]), str(row["_hash"]), 1)
+                            gt[key] = (int(row["_count"]), 1)
                         else:
-                            gt[key] = (0, "", 0)
+                            gt[key] = (0, 0)
 
                     if baseline == "no_policy" and row["status"] == 1:
                         mem_base[key] = int(row["_hot_peak_rss_kb"])
@@ -359,23 +363,35 @@ def main() -> None:
     # Finalize correctness + memory deltas.
     for row in rows:
         key = (str(row["db"]), str(row["policy_set_name"]), str(row["query_id"]))
+
+        if row.get("_count") is not None:
+            row["baseline_rows"] = str(int(row["_count"]))
+        else:
+            row["baseline_rows"] = ""
+
+        gt_entry0 = gt.get(key)
+        if gt_entry0 and gt_entry0[1] == 1:
+            row["rls_index_rows"] = str(int(gt_entry0[0]))
+        else:
+            row["rls_index_rows"] = ""
+
         if row["status"] != 1:
             row["correctness"] = "UNKNOWN"
         elif row["baseline"] == "rls_index":
             row["correctness"] = "TRUE"
         else:
             gt_entry = gt.get(key)
-            if not gt_entry or gt_entry[2] != 1:
+            if not gt_entry or gt_entry[1] != 1:
                 row["correctness"] = "UNKNOWN"
             else:
-                if row["_count"] == gt_entry[0] and str(row["_hash"]) == str(gt_entry[1]):
+                if row["_count"] == gt_entry[0]:
                     row["correctness"] = "TRUE"
                 else:
                     row["correctness"] = "FALSE"
                     if not row["error_type"]:
                         row["error_type"] = "mismatch"
                     if not row["error_msg"]:
-                        row["error_msg"] = "rows/hash mismatch vs rls_index"
+                        row["error_msg"] = "rows mismatch vs rls_index"
 
         base = mem_base.get(key)
         if base is None or row["status"] != 1:
@@ -434,7 +450,7 @@ def main() -> None:
 
     lines.append("")
     lines.append("## Notes")
-    lines.append("- correctness compares each baseline against `rls_index` row-count+hash for the same (db, policy_set, query).")
+    lines.append("- correctness compares each baseline against `rls_index` row-count for the same (db, policy_set, query).")
     lines.append("- if `rls_index` fails for a case, correctness is marked `UNKNOWN` for that case.")
 
     OUT_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")

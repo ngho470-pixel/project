@@ -24,7 +24,7 @@ from psycopg2 import extensions as pgext
 
 # Use the script directory as repo root so the harness is portable across machines.
 ROOT = Path(__file__).resolve().parent
-DEFAULT_DB = "tpch0_1"
+DEFAULT_DB = "postgres"
 DEFAULT_POLICY = ROOT / "policy.txt"
 DEFAULT_QUERIES = ROOT / "queries.txt"
 DEFAULT_POLICIES_ENABLED = ROOT / "policies_enabled.txt"
@@ -45,7 +45,7 @@ PG_PORT = int(os.getenv("PGPORT", "5432"))
 DEFAULT_KS = [1, 5, 10, 11]
 DEFAULT_POLICY_POOL = "1-5,10-15"
 DEFAULT_MATRIX_KS = [1, 5, 10, 15, 20]
-DEFAULT_MATRIX_DBS = ["tpch0_1", "tpch1", "tpch10"]
+DEFAULT_MATRIX_DBS = [DEFAULT_DB]
 CROSS_TABLE_QUERY_IDS = {"3", "5", "7", "8", "10", "12", "13", "18", "22"}
 
 DEFAULT_LAYER_PROBE_KS = [5, 15]
@@ -56,7 +56,6 @@ ROLE_CONFIG = {
     "rls_user": {"user": "rls_user", "password": "secret"},
 }
 
-TABLES = ["lineitem", "orders", "customer", "nation", "region", "part", "supplier", "partsupp"]
 KEYWORDS = {
     "and",
     "or",
@@ -102,13 +101,6 @@ KEYWORDS = {
     "true",
     "false",
 }
-
-KNOWN_OLD_INDEXES = [
-    "idx_orders_o_custkey",
-    "idx_customer_c_custkey",
-    "idx_lineitem_l_orderkey",
-    "idx_customer_c_custkey_mktsegment",
-]
 
 TIMES_COLUMNS = [
     "row_type",
@@ -721,18 +713,18 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Stage S2.5 policy-scaling stress harness")
     p.add_argument("--run", action="store_true", help="Run experiment")
     p.add_argument(
-        "--matrix-tpch-scale",
-        "--matrix_tpch_scale",
-        dest="matrix_tpch_scale",
+        "--matrix-scale",
+        "--matrix_scale",
+        dest="matrix_scale",
         action="store_true",
-        help="Run the 4-metric dashboard matrix (dbs=tpch0_1,tpch1,tpch10; K=1,5,10,15,20; pool=1-20; skip q20)",
+        help="Run the 4-metric dashboard matrix over configured DBs/K values.",
     )
     p.add_argument(
         "--layer-probe",
         "--layer_probe",
         dest="layer_probe",
         action="store_true",
-        help="Run OURS-only per-layer timing probe (dbs=tpch0_1,tpch1,tpch10; K=5,15; queries=1,3,6,13,22)",
+        help="Run OURS-only per-layer timing probe over configured DBs/K values.",
     )
     p.add_argument("--smoke-check", action="store_true", help="Run smoke check (K=11 pool-full, q3/q13, hot=2)")
     p.add_argument("--smoke-only", action="store_true", help="Run smoke check only, then exit")
@@ -793,7 +785,7 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         default=None,
         help=(
-            "Baselines to run in --matrix-tpch-scale mode. "
+            "Baselines to run in --matrix-scale mode. "
             "Supported: ours, ours_with_index, rls, rls_with_index. "
             "Default: ours rls_with_index"
         ),
@@ -844,11 +836,16 @@ def apply_no_parallel_settings(cur) -> None:
     stmts = [
         "SET max_parallel_workers_per_gather = 0;",
         "SET max_parallel_maintenance_workers = 0;",
+        "SET max_parallel_workers = 0;",
+        "SET parallel_setup_cost = 1000000000;",
+        "SET parallel_tuple_cost = 1000000000;",
         "SET parallel_leader_participation = off;",
         "SET force_parallel_mode = off;",
         "SET enable_parallel_append = off;",
         "SET enable_parallel_hash = off;",
-        "SET max_parallel_workers = 0;",
+        "SET jit = off;",
+        "SET enable_partitionwise_join = off;",
+        "SET enable_partitionwise_aggregate = off;",
     ]
 
     # Some clusters may run older Postgres versions (no parallel query) or
@@ -1162,21 +1159,16 @@ def parse_timeout_ms(raw: str) -> int:
 
 def db_scale_from_name(db: str) -> str:
     d = db.strip().lower()
-    if d == "tpch":
-        return "1"
-    if d.startswith("tpch"):
-        tail = d[4:]
-        if tail.startswith("_"):
-            tail = tail[1:]
-        if tail:
-            tail = tail.replace("_", ".")
-            try:
-                v = float(tail)
-                if v.is_integer():
-                    return str(int(v))
-                return str(v)
-            except Exception:
-                pass
+    m = re.search(r"([0-9]+(?:_[0-9]+)?)$", d)
+    if m:
+        tail = m.group(1).replace("_", ".")
+        try:
+            v = float(tail)
+            if v.is_integer():
+                return str(int(v))
+            return str(v)
+        except Exception:
+            pass
     return ""
 
 
@@ -1360,10 +1352,12 @@ def maybe_dump_rls_state(cur, tag: str) -> None:
         print(f"[CF_RLS_DUMP] role rolname={rolname} rolsuper={rolsuper} rolbypassrls={rolbypassrls}")
 
     cur.execute(
-        "SELECT relname, relrowsecurity, relforcerowsecurity "
-        "FROM pg_class "
-        "WHERE relname IN ('orders','customer','lineitem') "
-        "ORDER BY relname;"
+        "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
+        "FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname='public' AND c.relkind IN ('r','p') "
+        "ORDER BY c.relname "
+        "LIMIT 64;"
     )
     for relname, relrowsecurity, relforcerowsecurity in cur.fetchall():
         print(
@@ -1440,22 +1434,29 @@ def drop_harness_indexes(cur) -> None:
     names = [r[0] for r in cur.fetchall()]
     for n in names:
         cur.execute(sql.SQL("DROP INDEX IF EXISTS public.{};").format(sql.Identifier(n)))
-    for n in KNOWN_OLD_INDEXES:
-        cur.execute(sql.SQL("DROP INDEX IF EXISTS public.{};").format(sql.Identifier(n)))
 
 
 def drop_harness_policies_and_disable_rls(cur) -> None:
     cur.execute("SET LOCAL search_path TO public, pg_catalog")
-    for t in TABLES:
-        cur.execute(sql.SQL("ALTER TABLE {} DISABLE ROW LEVEL SECURITY;").format(sql.Identifier(t)))
-        cur.execute(
-            "SELECT policyname FROM pg_policies WHERE schemaname='public' AND tablename=%s AND policyname LIKE 'cf_%%';",
-            [t],
-        )
-        for (pname,) in cur.fetchall():
-            cur.execute(
-                sql.SQL("DROP POLICY IF EXISTS {} ON {};").format(sql.Identifier(pname), sql.Identifier(t))
-            )
+    cur.execute(
+        "SELECT relname "
+        "FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = 'public' "
+        "  AND c.relkind IN ('r', 'p') "
+        "  AND c.relrowsecurity;"
+    )
+    for (tname,) in cur.fetchall():
+        cur.execute(sql.SQL("ALTER TABLE {} DISABLE ROW LEVEL SECURITY;").format(sql.Identifier(tname)))
+
+    cur.execute(
+        "SELECT tablename, policyname "
+        "FROM pg_policies "
+        "WHERE schemaname='public' AND policyname LIKE 'cf_%' "
+        "ORDER BY tablename, policyname;"
+    )
+    for tname, pname in cur.fetchall():
+        cur.execute(sql.SQL("DROP POLICY IF EXISTS {} ON {};").format(sql.Identifier(pname), sql.Identifier(tname)))
 
 
 def clear_artifacts(db: str) -> None:
@@ -2290,69 +2291,36 @@ def is_single_select(query_sql: str) -> bool:
     return s.lower().startswith("select")
 
 
-def count_wrapper(query_sql: str) -> Optional[str]:
-    if not is_single_select(query_sql):
+def final_select_statement(query_sql: str) -> Optional[str]:
+    s = (query_sql or "").strip()
+    if not s:
         return None
-    s = query_sql.strip()
-    if s.endswith(";"):
-        s = s[:-1].strip()
-    return f"SELECT COUNT(*) FROM ({s}) AS __q;"
-
-
-def count_fallback_sql(query_id: str) -> Optional[str]:
-    # TPC-H q15 is multi-statement (create view; select; drop view) in queries.txt,
-    # so we can't COUNT-wrap it directly. Use an equivalent single-statement count.
-    if str(query_id) == "15":
-        return (
-            "WITH revenue0 AS ("
-            "  SELECT l_suppkey AS supplier_no, SUM(l_extendedprice * (1 - l_discount)) AS total_revenue "
-            "  FROM lineitem "
-            "  WHERE l_shipdate >= DATE '1996-10-01' "
-            "    AND l_shipdate < DATE '1996-10-01' + INTERVAL '3' month "
-            "  GROUP BY l_suppkey"
-            "), maxrev AS ("
-            "  SELECT MAX(total_revenue) AS max_total_revenue FROM revenue0"
-            ") "
-            "SELECT COUNT(*) "
-            "FROM supplier, revenue0, maxrev "
-            "WHERE s_suppkey = supplier_no "
-            "  AND total_revenue = max_total_revenue;"
-        )
-    # TPC-H q6 returns a single aggregate row; COUNT-wrapping it gets planner-simplified
-    # into a constant and bypasses scans (and thus enforcement). Use a meaningful
-    # row-count on the underlying base relation instead.
-    if str(query_id) == "6":
-        return (
-            "SELECT COUNT(*) "
-            "FROM lineitem "
-            "WHERE l_shipdate >= DATE '1994-01-01' "
-            "  AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' year "
-            "  AND l_discount BETWEEN 0.04 - 0.01 AND 0.04 + 0.01 "
-            "  AND l_quantity < 24;"
-        )
+    parts = [p.strip() for p in s.split(";") if p.strip()]
+    if not parts:
+        return None
+    for stmt in reversed(parts):
+        low = stmt.lstrip().lower()
+        if low.startswith("select") or low.startswith("with"):
+            return stmt
     return None
 
 
-def timing_fallback_sql(query_id: str) -> Optional[str]:
-    # For matrix runs we need single-statement EXPLAIN-able SQL.
-    if str(query_id) == "15":
-        return (
-            "WITH revenue0 AS ("
-            "  SELECT l_suppkey AS supplier_no, SUM(l_extendedprice * (1 - l_discount)) AS total_revenue "
-            "  FROM lineitem "
-            "  WHERE l_shipdate >= DATE '1996-10-01' "
-            "    AND l_shipdate < DATE '1996-10-01' + INTERVAL '3' month "
-            "  GROUP BY l_suppkey"
-            "), maxrev AS ("
-            "  SELECT MAX(total_revenue) AS max_total_revenue FROM revenue0"
-            ") "
-            "SELECT s_suppkey, s_name, s_address, s_phone, total_revenue "
-            "FROM supplier, revenue0, maxrev "
-            "WHERE s_suppkey = supplier_no "
-            "  AND total_revenue = max_total_revenue "
-            "ORDER BY s_suppkey;"
-        )
-    return None
+def count_wrapper(query_sql: str) -> Optional[str]:
+    base = final_select_statement(query_sql)
+    if base is None:
+        return None
+    return f"SELECT COUNT(*) FROM ({base}) AS __q;"
+
+
+def count_fallback_sql(query_sql: str) -> Optional[str]:
+    base = final_select_statement(query_sql)
+    if base is None:
+        return None
+    return f"SELECT COUNT(*) FROM ({base}) AS __q;"
+
+
+def timing_fallback_sql(query_sql: str) -> Optional[str]:
+    return final_select_statement(query_sql)
 
 
 def count_query_sql(db: str, baseline: str, sql_text: str, enabled_path: Path, statement_timeout_ms: int) -> int:
@@ -2391,7 +2359,7 @@ def count_query(db: str, baseline: str, query_sql: str, enabled_path: Path, stat
 
 
 def compare_counts(db: str, k: int, qid: str, qsql: str, enabled_path: Path, statement_timeout_ms: int) -> Dict[str, str]:
-    fb = count_fallback_sql(qid)
+    fb = count_fallback_sql(qsql)
     try:
         if fb is not None:
             oc = count_query_sql(db, "ours", fb, enabled_path, statement_timeout_ms)
@@ -2572,7 +2540,8 @@ def measure_explain_median_in_session(
 
 
 def result_count_in_session(cur, query_id: str, query_sql: str) -> int:
-    fb = count_fallback_sql(query_id)
+    _ = query_id
+    fb = count_fallback_sql(query_sql)
     if fb is not None:
         cur.execute(fb)
         return int(cur.fetchone()[0])
@@ -2586,14 +2555,12 @@ def result_count_in_session(cur, query_id: str, query_sql: str) -> int:
 
 def count_and_hash_wrapper(query_sql: str) -> Optional[str]:
     # Order-insensitive hash (multiset) over result rows.
-    if not is_single_select(query_sql):
+    base = final_select_statement(query_sql)
+    if base is None:
         return None
-    s = query_sql.strip()
-    if s.endswith(";"):
-        s = s[:-1].strip()
     return (
         "WITH __q AS ("
-        + s
+        + base
         + "), __h AS (SELECT md5(row_to_json(__q)::text) AS h FROM __q) "
         + "SELECT COUNT(*)::bigint AS count, "
         + "COALESCE(md5(string_agg(h, '' ORDER BY h)), md5('')) AS hash "
@@ -2602,7 +2569,8 @@ def count_and_hash_wrapper(query_sql: str) -> Optional[str]:
 
 
 def result_count_and_hash_in_session(cur, query_id: str, query_sql: str) -> Tuple[int, str]:
-    base_sql: Optional[str] = query_sql if is_single_select(query_sql) else timing_fallback_sql(query_id)
+    _ = query_id
+    base_sql: Optional[str] = final_select_statement(query_sql)
     wrapped = count_and_hash_wrapper(base_sql) if base_sql is not None else None
     if wrapped is None:
         # Best-effort fallback: keep counts so runs can proceed, but correctness becomes "skip".
@@ -2615,7 +2583,8 @@ def result_count_and_hash_in_session(cur, query_id: str, query_sql: str) -> Tupl
 
 
 def timing_sql_for_query(query_id: str, query_sql: str) -> str:
-    fb = timing_fallback_sql(query_id)
+    _ = query_id
+    fb = timing_fallback_sql(query_sql)
     if fb is not None:
         return fb
     if is_single_select(query_sql):
@@ -2654,7 +2623,7 @@ def setup_ours_for_k_with_sizes(db: str, k: int, enabled_path: Path, statement_t
     return setup_ms, bytes_db, bytes_disk
 
 
-def run_matrix_tpch_scale(args: argparse.Namespace) -> None:
+def run_matrix_scale(args: argparse.Namespace) -> None:
     statement_timeout_ms = parse_timeout_ms(args.statement_timeout)
     warmup_runs = int(args.warmup_runs)
     timed_runs = int(args.timed_runs)
@@ -3828,7 +3797,7 @@ def run_experiment(args: argparse.Namespace) -> None:
                     out_path.write_text("\n".join(notices) + "\n", encoding="utf-8")
 
                 if qid in correctness_qids:
-                    fb = count_fallback_sql(qid)
+                    fb = count_fallback_sql(qsql)
                     try:
                         if fb is not None:
                             oc = count_query_sql(db, "ours", fb, enabled_path_k_server, statement_timeout_ms)
@@ -3886,7 +3855,7 @@ def run_experiment(args: argparse.Namespace) -> None:
                 append_csv_row(times_csv, TIMES_COLUMNS, row)
 
                 if qid in correctness_qids:
-                    fb = count_fallback_sql(qid)
+                    fb = count_fallback_sql(qsql)
                     try:
                         if fb is not None:
                             rc = count_query_sql(db, "rls_with_index", fb, enabled_path_k_server, statement_timeout_ms)
@@ -3963,8 +3932,8 @@ def main() -> None:
         run_layer_probe(args)
         return
 
-    if args.matrix_tpch_scale:
-        run_matrix_tpch_scale(args)
+    if args.matrix_scale:
+        run_matrix_scale(args)
         return
 
     policy_lines = load_policy_lines(Path(args.policy))

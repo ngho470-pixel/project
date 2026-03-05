@@ -10,7 +10,7 @@ This repo is sanitized to run baseline sweeps for the class-engine policy system
 - `baselines/`: baseline adapters (`no_policy`, `view_based`, `rls`, `rls_index`, `sieve`, `sieve_index`, `ours`).
 - `utils/`: runner utilities.
 - `fast_sweep_profile_60s.py`: shared DB/session/policy helper layer.
-- `policy.txt`, `queries.txt`: policy pool and TPCH query text.
+- `policy.txt`, `queries.txt`: policy pool and query text used by the harness.
 - `scripts/`: `drona_run.sh`, `pg_hygiene.py`, `setup_drona_env.sh`, `smoke_analysis.py`.
 - `wheels/`: offline Python wheelhouse for drona venv installs.
 
@@ -26,7 +26,7 @@ python3 run_test.py
 Set in `run_test.py`:
 - `SMOKE_ONLY = True`
 
-Smoke covers `tpch1`, policy sets `{1-5, 11-20, 21-30}`, queries `{1,3,6,10,11}`, baselines `{no_policy, view_based, rls, rls_index, ours, sieve, sieve_index}`.
+Smoke uses the first configured DB from `RUN_DBS`, policy sets `{1-5, 11-20, 21-30}`, queries `{1,3,6,10,11}`, baselines `{no_policy, view_based, rls, rls_index, ours, sieve, sieve_index}`.
 
 ## Drona deployment
 Sync and run on drona (`/home/nghosh/setu`):

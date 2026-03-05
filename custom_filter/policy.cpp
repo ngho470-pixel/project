@@ -68,6 +68,11 @@ typedef struct PolicyTableAllowC {
     uint32 blocks;         // number of allocated block entries in block_words
     uint32 total_blocks;   // total physical block span for this table (max_blk + 1)
     uint32 n_rows;
+    uint32 allowed_sids;   // count of signature ids with at least one allowed row
+    uint32 total_sids;     // total signature ids for the target table schema
+    double hub_prop_ms;    // per-target hub propagation / fixpoint time
+    double sat_ms;         // per-target SAT/model-enumeration time
+    double sid_build_ms;   // per-target sid->access structure build time
 } PolicyTableAllowC;
 
 typedef struct PolicyAllowListC {
@@ -2031,69 +2036,6 @@ static uint64_t hash_token_bitset_words(const TokenBitset &bs)
 struct ClauseEvalCache {
     std::unordered_map<std::string, bool> table_witness;
 };
-
-struct AllowCacheEntry {
-    uint32 n_rows = 0;
-    uint32 total_blocks = 0;
-    std::vector<uint64_t> words;
-    std::vector<uint32_t> block_ids;
-    uint64 allowed_rows = 0;
-};
-
-static std::unordered_map<std::string, AllowCacheEntry> g_allow_cache;
-
-static std::string current_run_id_string()
-{
-    const char *cfg = GetConfigOption("custom_filter.run_id", true, false);
-    if (!cfg || !cfg[0])
-        return "";
-    return std::string(cfg);
-}
-
-static uint64_t target_plan_policy_fingerprint(const TargetPlan &tp)
-{
-    uint64_t h = 1469598103934665603ULL;
-    auto mix = [&](uint64_t v) {
-        h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-    };
-    mix(tp.deny_all ? 1u : 0u);
-    mix((uint64_t)tp.formula_atom_ids.size());
-    for (int aid : tp.formula_atom_ids)
-        mix((uint64_t)(uint32_t)aid);
-    std::vector<int> perm_vars;
-    for (const BoolAst *r : tp.perm_policy_roots)
-        collect_ast_positive_vars(r, &perm_vars);
-    std::sort(perm_vars.begin(), perm_vars.end());
-    perm_vars.erase(std::unique(perm_vars.begin(), perm_vars.end()), perm_vars.end());
-    mix((uint64_t)perm_vars.size());
-    for (int v : perm_vars)
-        mix((uint64_t)(uint32_t)v);
-    std::vector<int> rest_vars;
-    for (const BoolAst *r : tp.rest_policy_roots)
-        collect_ast_positive_vars(r, &rest_vars);
-    std::sort(rest_vars.begin(), rest_vars.end());
-    rest_vars.erase(std::unique(rest_vars.begin(), rest_vars.end()), rest_vars.end());
-    mix((uint64_t)rest_vars.size());
-    for (int v : rest_vars)
-        mix((uint64_t)(uint32_t)v);
-    return h;
-}
-
-static std::string allow_cache_key_for_target(const TargetPlan &tp,
-                                              const TableData &target_ti)
-{
-    std::string k = current_run_id_string();
-    k.push_back('|');
-    k += tp.target;
-    k += "|rows=" + std::to_string((unsigned long long)target_ti.nrows);
-    k += "|blocks=" + std::to_string((unsigned long long)target_ti.total_blocks);
-    char hbuf[32];
-    snprintf(hbuf, sizeof(hbuf), "%016llx",
-             (unsigned long long)target_plan_policy_fingerprint(tp));
-    k += "|policy=";
-    k += hbuf;
-    return k;
-}
 
 static std::string table_witness_signature(const ClauseTablePlan &tp, const uint8 *rbits)
 {
@@ -10629,6 +10571,42 @@ static bool class_set_target_sig_bits_from_rids(const Loaded &loaded,
     return true;
 }
 
+static uint32 count_allowed_signature_ids_from_words(const SignatureCacheEntry &entry,
+                                                     const SparseBlockWords &allowed_words)
+{
+    if (entry.nsig == 0 || entry.sig_mask_offsets.size() < (size_t)entry.nsig + 1u)
+        return 0;
+    uint32 allowed = 0;
+    for (uint32 sid = 0; sid < entry.nsig; sid++) {
+        uint32 begin = entry.sig_mask_offsets[(size_t)sid];
+        uint32 end = entry.sig_mask_offsets[(size_t)sid + 1u];
+        if (begin >= end)
+            continue;
+        bool hit = false;
+        for (uint32 i = begin; i < end; i++) {
+            if ((size_t)i >= entry.sig_mask_blocks.size() ||
+                (size_t)i >= entry.sig_mask_word_idx.size() ||
+                (size_t)i >= entry.sig_mask_word_vals.size()) {
+                break;
+            }
+            uint32 blk = entry.sig_mask_blocks[(size_t)i];
+            uint8 wi = entry.sig_mask_word_idx[(size_t)i];
+            if (wi >= kWordsPerBlock)
+                continue;
+            size_t flat = (size_t)blk * (size_t)kWordsPerBlock + (size_t)wi;
+            if (flat >= allowed_words.dense_words.size())
+                continue;
+            if ((allowed_words.dense_words[flat] & entry.sig_mask_word_vals[(size_t)i]) != 0) {
+                hit = true;
+                break;
+            }
+        }
+        if (hit)
+            allowed++;
+    }
+    return allowed;
+}
+
 static bool eval_term_conjunction_words(const Loaded &loaded,
                                         const std::string &target,
                                         const std::vector<int> &term_atoms,
@@ -11358,6 +11336,7 @@ static bool build_target_allow_list(const Loaded &loaded,
 {
     if (!out_item || !profile)
         return false;
+    std::memset(out_item, 0, sizeof(*out_item));
     (void)shared_cache;
     if (policy_runtime_strict_mode_enabled() && !out_restrict_sig)
         profile->pf2_enabled_targets++;
@@ -11370,56 +11349,19 @@ static bool build_target_allow_list(const Loaded &loaded,
     const TableData &target_ti = it_t->second;
     const uint8 *target_rbits = nullptr;
 
-    const bool allow_cache_eligible = policy_runtime_strict_mode_enabled() &&
-                                      out_restrict_sig == nullptr &&
-                                      target_rbits == nullptr &&
-                                      !tp.target.empty();
-    std::string allow_cache_key;
-    if (allow_cache_eligible)
-        allow_cache_key = allow_cache_key_for_target(tp, target_ti);
-    if (allow_cache_eligible) {
-        auto itc = g_allow_cache.find(allow_cache_key);
-        if (itc != g_allow_cache.end()) {
-            const AllowCacheEntry &ce = itc->second;
-            size_t words_nbytes = ce.words.size() * sizeof(uint64_t);
-            size_t block_ids_nbytes = ce.block_ids.size() * sizeof(uint32_t);
-            uint64 *words = nullptr;
-            uint32 *block_ids = nullptr;
-            if (words_nbytes > 0) {
-                words = (uint64 *)palloc0(words_nbytes);
-                std::memcpy(words, ce.words.data(), words_nbytes);
-            }
-            if (block_ids_nbytes > 0) {
-                block_ids = (uint32 *)palloc0(block_ids_nbytes);
-                std::memcpy(block_ids, ce.block_ids.data(), block_ids_nbytes);
-            }
-            out_item->table = pstrdup(tp.target.c_str());
-            out_item->block_words = words;
-            out_item->block_ids = block_ids;
-            out_item->blocks = (uint32)ce.block_ids.size();
-            out_item->total_blocks = ce.total_blocks;
-            out_item->n_rows = ce.n_rows;
-            profile->allow_cache_hit++;
-            profile->allow_rows_total += ce.allowed_rows;
-            return true;
-        }
-        profile->allow_cache_miss++;
-    }
-
-    auto t_allow_build0 = Clock::now();
+    const double prop_ms_before = profile->propagate_ms;
+    const double sat_ms_before = profile->sat_ms;
     std::vector<int> target_canon_schema = table_needed_signature_schema(target_ti);
     const SignatureCacheEntry *target_canon_entry = nullptr;
-    if (out_restrict_sig) {
-        if (!get_or_build_signature_cache_entry_with_schema(loaded,
-                                                            tp.target,
-                                                            target_ti,
-                                                            target_canon_schema,
-                                                            &target_canon_entry,
-                                                            profile))
-            return false;
-        if (!target_canon_entry)
-            return false;
-    }
+    if (!get_or_build_signature_cache_entry_with_schema(loaded,
+                                                        tp.target,
+                                                        target_ti,
+                                                        target_canon_schema,
+                                                        &target_canon_entry,
+                                                        profile))
+        return false;
+    if (!target_canon_entry)
+        return false;
     SparseBlockWords final_words;
     final_words.total_blocks = target_ti.total_blocks;
     std::vector<uint8_t> final_rid_bits;
@@ -11617,6 +11559,8 @@ static bool build_target_allow_list(const Loaded &loaded,
         std::memcpy(block_ids, block_ids_vec.data(), block_ids_nbytes);
     }
     uint32 allowed_rows = popcount_sparse_words_flat(words_vec);
+    uint32 allowed_sids = count_allowed_signature_ids_from_words(*target_canon_entry, final_words);
+    uint32 total_sids = target_canon_entry->nsig;
     profile->allow_rows_total += (uint64)allowed_rows;
     profile->block_words_blocks_allocated += blocks;
     profile->block_words_total_blocks += final_words.total_blocks;
@@ -11627,6 +11571,9 @@ static bool build_target_allow_list(const Loaded &loaded,
     profile->bytes_block_words += words_nbytes + block_ids_nbytes;
     auto t_decode1 = Clock::now();
     profile->decode_ms += Ms(t_decode1 - t_decode0).count();
+    const double sid_build_ms = Ms(t_decode1 - t_decode0).count();
+    const double hub_prop_ms = std::max(0.0, profile->propagate_ms - prop_ms_before);
+    const double sat_ms = std::max(0.0, profile->sat_ms - sat_ms_before);
 
     out_item->table = pstrdup(tp.target.c_str());
     out_item->block_words = words;
@@ -11634,17 +11581,11 @@ static bool build_target_allow_list(const Loaded &loaded,
     out_item->blocks = blocks;
     out_item->total_blocks = final_words.total_blocks;
     out_item->n_rows = target_ti.nrows;
-
-    if (allow_cache_eligible) {
-        AllowCacheEntry ce;
-        ce.n_rows = target_ti.nrows;
-        ce.total_blocks = final_words.total_blocks;
-        ce.words = words_vec;
-        ce.block_ids = block_ids_vec;
-        ce.allowed_rows = (uint64)allowed_rows;
-        g_allow_cache[allow_cache_key] = std::move(ce);
-        profile->allow_cache_build_ms += Ms(Clock::now() - t_allow_build0).count();
-    }
+    out_item->allowed_sids = allowed_sids;
+    out_item->total_sids = total_sids;
+    out_item->hub_prop_ms = hub_prop_ms;
+    out_item->sat_ms = sat_ms;
+    out_item->sid_build_ms = sid_build_ms;
 
     CF_TRACE_LOG("policy: allow_%s count=%u/%u", tp.target.c_str(), allowed_rows, target_ti.nrows);
     return true;

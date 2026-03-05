@@ -77,6 +77,11 @@ typedef struct PolicyTableAllowC {
     uint32 blocks;
     uint32 total_blocks;
     uint32 n_rows;
+    uint32 allowed_sids;
+    uint32 total_sids;
+    double hub_prop_ms;
+    double sat_ms;
+    double sid_build_ms;
 } PolicyTableAllowC;
 
 typedef struct PolicyAllowListC {
@@ -1309,6 +1314,12 @@ typedef struct TableFilterState
     size_t block_words_nbytes;
     size_t block_ids_nbytes;
     uint64 allowed_rows;
+    uint32 allowed_sids;
+    uint32 total_sids;
+    double policy_hub_prop_ms;
+    double policy_sat_ms;
+    double policy_sid_build_ms;
+    double allowed_density;
     bool allow_is_empty;
     uint64 seen;
     uint64 passed;
@@ -1454,6 +1465,17 @@ typedef struct PolicyQueryState
     char query_short_circuit_reason[64];
     double query_short_circuit_ms;
     uint64 query_short_circuit_hits;
+    uint64 scan_reuse_hits;
+    uint64 scan_reuse_misses;
+    Oid *scan_reuse_relids;
+    int scan_reuse_relids_count;
+    int scan_reuse_relids_cap;
+    uint64 empty_short_circuit_hits;
+    double policy_hub_prop_ms_total;
+    double policy_sat_ms_total;
+    double policy_sid_build_ms_total;
+    uint64 policy_allowed_sids_total;
+    uint64 policy_total_sids_total;
     long rss_kb_before_eval;
     long rss_kb_after_eval;
     long rss_kb_after_load;
@@ -1920,6 +1942,15 @@ cf_reset_query_exec_metrics(PolicyQueryState *qs)
     qs->tid_heap_fetch_ms = 0.0;
     qs->tid_slot_store_ms = 0.0;
     qs->tid_visibility_ms = 0.0;
+    qs->scan_reuse_hits = 0;
+    qs->scan_reuse_misses = 0;
+    qs->scan_reuse_relids_count = 0;
+    qs->empty_short_circuit_hits = 0;
+    qs->policy_hub_prop_ms_total = 0.0;
+    qs->policy_sat_ms_total = 0.0;
+    qs->policy_sid_build_ms_total = 0.0;
+    qs->policy_allowed_sids_total = 0;
+    qs->policy_total_sids_total = 0;
     qs->custom_scan_total_ms = 0.0;
     qs->custom_scan_overhead_ms = 0.0;
     qs->rss_kb_after_ctid = -1;
@@ -1989,7 +2020,9 @@ cf_log_query_metrics(PolicyQueryState *qs)
          "tid_heap_fetch_ms=%.3f tid_slot_store_ms=%.3f tid_visibility_ms=%.3f "
          "blocks_seen=%llu blocks_skipped=%llu block_skip_hit_rate=%.6f "
          "scan_mode_tid_tables=%llu scan_mode_filter_tables=%llu scan_mode_empty_tables=%llu "
-         "empty_short_circuit_tables=%llu empty_short_circuit_ms=%.3f "
+         "scan_reuse_hits=%llu scan_reuse_misses=%llu "
+         "empty_short_circuit_tables=%llu empty_short_circuit_hits=%llu empty_short_circuit_ms=%.3f "
+         "policy_hub_prop_ms_total=%.3f policy_sat_ms_total=%.3f policy_sid_build_ms_total=%.3f policy_allowed_sids_total=%llu policy_total_sids_total=%llu "
          "query_short_circuit_empty=%d query_short_circuit_reason=%s query_short_circuit_ms=%.3f query_short_circuit_hits=%llu "
          "tid_blocks_visited=%llu tid_tuples_fetched=%llu tid_fetch_ms=%.3f tid_qual_ms=%.3f "
          "tid_count=%llu tid_fetch_calls=%llu tid_heap_pages_touched=%llu "
@@ -2092,8 +2125,16 @@ cf_log_query_metrics(PolicyQueryState *qs)
          (unsigned long long) qs->scan_mode_tid_tables,
          (unsigned long long) qs->scan_mode_filter_tables,
          (unsigned long long) qs->scan_mode_empty_tables,
+         (unsigned long long) qs->scan_reuse_hits,
+         (unsigned long long) qs->scan_reuse_misses,
          (unsigned long long) qs->empty_short_circuit_tables,
+         (unsigned long long) qs->empty_short_circuit_hits,
          qs->empty_short_circuit_ms,
+         qs->policy_hub_prop_ms_total,
+         qs->policy_sat_ms_total,
+         qs->policy_sid_build_ms_total,
+         (unsigned long long) qs->policy_allowed_sids_total,
+         (unsigned long long) qs->policy_total_sids_total,
          qs->query_short_circuit_empty ? 1 : 0,
          (qs->query_short_circuit_reason[0] ? qs->query_short_circuit_reason : "none"),
          qs->query_short_circuit_ms,
@@ -2132,6 +2173,8 @@ cf_log_query_metrics(PolicyQueryState *qs)
          "allow_build_ms=%.3f executor_init_ms_ours=%.3f custom_scan_total_ms=%.3f custom_scan_overhead_ms=%.3f "
          "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f "
          "tid_fetch_ms=%.3f tid_heap_fetch_ms=%.3f tid_slot_store_ms=%.3f tid_visibility_ms=%.3f "
+         "scan_reuse_hits=%llu scan_reuse_misses=%llu empty_short_circuit_hits=%llu "
+         "policy_hub_prop_ms_total=%.3f policy_sat_ms_total=%.3f policy_sid_build_ms_total=%.3f "
          "tid_pages_read_ms=%.3f tid_tuple_extract_ms=%.3f "
          "tid_blocks_touched=%llu tid_offsets_total=%llu",
          qs->policy_total_ms,
@@ -2150,6 +2193,12 @@ cf_log_query_metrics(PolicyQueryState *qs)
          qs->tid_heap_fetch_ms,
          qs->tid_slot_store_ms,
          qs->tid_visibility_ms,
+         (unsigned long long) qs->scan_reuse_hits,
+         (unsigned long long) qs->scan_reuse_misses,
+         (unsigned long long) qs->empty_short_circuit_hits,
+         qs->policy_hub_prop_ms_total,
+         qs->policy_sat_ms_total,
+         qs->policy_sid_build_ms_total,
          qs->tid_heap_fetch_ms,
          qs->tid_slot_store_ms,
          (unsigned long long) qs->tid_blocks_visited,
@@ -2370,6 +2419,33 @@ cf_find_filter(PolicyQueryState *qs, Oid relid, bool log_on_miss)
         elog(NOTICE, "%s", buf.data);
     }
     return NULL;
+}
+
+static void
+cf_record_scan_reuse(PolicyQueryState *qs, Oid relid)
+{
+    if (!qs || !OidIsValid(relid))
+        return;
+    for (int i = 0; i < qs->scan_reuse_relids_count; i++)
+    {
+        if (qs->scan_reuse_relids[i] == relid)
+        {
+            qs->scan_reuse_hits++;
+            return;
+        }
+    }
+    qs->scan_reuse_misses++;
+    if (qs->scan_reuse_relids_count >= qs->scan_reuse_relids_cap)
+    {
+        int new_cap = (qs->scan_reuse_relids_cap > 0) ? (qs->scan_reuse_relids_cap * 2) : 8;
+        size_t new_bytes = sizeof(Oid) * (size_t)new_cap;
+        if (qs->scan_reuse_relids)
+            qs->scan_reuse_relids = (Oid *) repalloc(qs->scan_reuse_relids, new_bytes);
+        else
+            qs->scan_reuse_relids = (Oid *) palloc(new_bytes);
+        qs->scan_reuse_relids_cap = new_cap;
+    }
+    qs->scan_reuse_relids[qs->scan_reuse_relids_count++] = relid;
 }
 
 static PolicyQueryState *
@@ -3032,12 +3108,34 @@ cf_build_query_state(EState *estate, const char *query_str)
             tf->block_words = copy_words;
             tf->block_ids = copy_ids;
             tf->allowed_rows = (tf->block_words && tf->blocks > 0) ? cf_popcount_block_words(tf->block_words, tf->blocks) : 0;
+            tf->allowed_sids = it->allowed_sids;
+            tf->total_sids = it->total_sids;
+            tf->policy_hub_prop_ms = it->hub_prop_ms;
+            tf->policy_sat_ms = it->sat_ms;
+            tf->policy_sid_build_ms = it->sid_build_ms;
+            tf->allowed_density = (tf->n_rows > 0) ? ((double) tf->allowed_rows / (double) tf->n_rows) : 0.0;
             tf->allow_is_empty = (tf->allowed_rows == 0);
+            qs->policy_hub_prop_ms_total += tf->policy_hub_prop_ms;
+            qs->policy_sat_ms_total += tf->policy_sat_ms;
+            qs->policy_sid_build_ms_total += tf->policy_sid_build_ms;
+            qs->policy_allowed_sids_total += tf->allowed_sids;
+            qs->policy_total_sids_total += tf->total_sids;
 
             qs->bytes_allow += tf->block_words_nbytes + tf->block_ids_nbytes;
 
             CF_TRACE_LOG("custom_filter: allow_%s blocks_alloc=%u total_blocks=%u words_bytes=%zu ids_bytes=%zu",
                          tname, tf->blocks, tf->total_blocks, tf->block_words_nbytes, tf->block_ids_nbytes);
+            elog(NOTICE,
+                 "policy_target_phase: rel=%s hub_prop_ms=%.3f sat_ms=%.3f sid_access_build_ms=%.3f allowed_sids=%u total_sids=%u allowed_rows=%llu total_rows=%u density=%.6f",
+                 tname,
+                 tf->policy_hub_prop_ms,
+                 tf->policy_sat_ms,
+                 tf->policy_sid_build_ms,
+                 tf->allowed_sids,
+                 tf->total_sids,
+                 (unsigned long long) tf->allowed_rows,
+                 tf->n_rows,
+                 tf->allowed_density);
         }
     }
     INSTR_TIME_SET_CURRENT(allow_build_end);
@@ -3470,7 +3568,6 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
     double page_density = 0.0;
     const char *reason = "no_filter";
     PlanState *child = st ? st->child_plan : NULL;
-    bool have_row_density = false;
 
     if (tf)
     {
@@ -3481,7 +3578,6 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
              * Block-density can look dense even when the allow-set is sparse in rows.
              */
             density = (double) tf->allowed_rows / (double) tf->n_rows;
-            have_row_density = true;
         }
         else if (tf->total_blocks > 0)
         {
@@ -3518,27 +3614,14 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
         {
             reason = "parallel_aware";
         }
-        else if (!have_row_density && tf->n_rows == 0 && tf->total_blocks == 0)
-        {
-            reason = "missing_total_rows_and_blocks";
-        }
-        else if (!have_row_density && tf->total_blocks == 0)
-        {
-            reason = "missing_total_blocks";
-        }
-        else if (density < cf_tidscan_density_threshold || page_density < cf_tidscan_density_threshold)
-        {
-            new_mode = CF_SCAN_MODE_TID;
-            if (density < cf_tidscan_density_threshold && page_density < cf_tidscan_density_threshold)
-                reason = "sparse_tid_row_page";
-            else if (density < cf_tidscan_density_threshold)
-                reason = "sparse_tid_row";
-            else
-                reason = "sparse_tid_page";
-        }
         else
         {
-            reason = "density_high";
+            /*
+             * Strict class-engine routing: enforce via allowed CTID locations
+             * directly, regardless of density. This avoids full FILTER scans.
+             */
+            new_mode = CF_SCAN_MODE_TID;
+            reason = "bitmap_tid_enforced";
         }
     }
 
@@ -5022,8 +5105,10 @@ cf_exec(CustomScanState *node)
              * If query-state is rebuilt mid-query (e.g., due to subplan contexts),
              * old pointers can become stale and appear "valid" while holding
              * corrupted metadata (ctid_pairs_len/n_rows/etc).
-             */
+            */
             st->filter = cf_find_filter(cf_query_state, st->relid, expect_filter);
+            if (expect_filter && st->filter && st->rescan_calls == 0)
+                cf_record_scan_reuse(cf_query_state, st->relid);
             if (cf_debug_ids && cf_query_state && !st->filter)
             {
                 if (expect_filter)
@@ -5461,6 +5546,7 @@ cf_end(CustomScanState *node)
         cf_query_state->tid_visibility_ms += st->tid_visibility_ms;
         if (st->empty_short_circuit_recorded)
             cf_query_state->empty_short_circuit_tables++;
+        cf_query_state->empty_short_circuit_hits += st->empty_short_circuit_calls;
         cf_query_state->empty_short_circuit_ms += st->empty_short_circuit_ms;
 
         accounted_ms = st->child_exec_ms +
