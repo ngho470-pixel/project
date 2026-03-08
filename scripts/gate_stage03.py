@@ -17,10 +17,10 @@ if str(REPO_ROOT) not in sys.path:
 import fast_sweep_profile_60s as h
 from baselines import ours, rls_index, sieve_index
 from baselines.common import BaselineAdapter, BaselineSetup
-from utils.pg import run_count_hash, run_hygiene, run_query_trials
+from utils.pg import run_canonical_rows, run_hygiene, run_query_trials
 
 DBS: List[str] = ["tpch0_1", "tpch1"]
-BASELINES: List[str] = ["rls_index", "sieve_index", "ours"]
+BASELINES: List[str] = ["rls_index", "ours"]
 POLICY_SETS: List[Tuple[str, List[int]]] = [
     ("S_A", list(range(1, 6))),
     ("S_B", list(range(1, 11))),
@@ -30,7 +30,7 @@ POLICY_SETS: List[Tuple[str, List[int]]] = [
     ("S_F", list(range(21, 31))),
     ("S_G", list(range(5, 16)) + list(range(25, 31))),
 ]
-QUERY_IDS: List[str] = ["1", "3", "6", "10", "11"]
+QUERY_IDS: List[str] = ["1", "3", "6", "11", "13"]
 STATEMENT_TIMEOUT = "120s"
 HOT_RUNS = 1
 
@@ -50,10 +50,14 @@ CSV_COLUMNS = [
     "hot_ms",
     "peak_rss_kb",
     "rows",
-    "hash",
     "gt_rows",
-    "gt_hash",
     "match_gt",
+    "cmp_mode",
+    "cmp_first_diff_idx",
+    "cmp_first_ours",
+    "cmp_first_gt",
+    "cmp_rows_file_ours",
+    "cmp_rows_file_gt",
     "setup_ms",
     "disk_bytes",
     "parallelism_off_verified",
@@ -91,25 +95,46 @@ CSV_COLUMNS = [
     "tid_heap_fetch_ms",
     "tid_slot_store_ms",
     "tid_visibility_ms",
+    "decode_ms",
+    "hub_ms",
+    "stamp_ms",
+    "propagate_ms",
+    "sig_ms",
+    "project_allowset_ms",
+    "prop_build_arcs_ms",
+    "prop_ac_ms",
+    "prop_scc_ms",
+    "prop_context_lookup_ms",
+    "prop_context_build_ms",
+    "prop_witness_ms",
+    "prop_cmp_ms",
+    "prop_bin_catalog_ms",
+    "prop_base_active_bins_ms",
+    "table_bin_catalog_cache_hits",
+    "table_bin_catalog_cache_misses",
     "sat_ms",
+    "sat_sid_count",
+    "sat_check_calls",
+    "sat_assumptions_total",
+    "sat_avg_assumptions",
+    "sat_unique_assignments",
+    "sat_cache_hits",
+    "sat_nogood_prunes",
+    "sat_nogoods_added",
+    "sat_subsumed_dropped",
+    "sat_core_terms_total",
+    "sat_core_terms_max",
+    "sat_avg_core_terms",
     "sat_models_total",
     "terms_total",
     "single_hub_ms",
     "two_hop_ms",
-    "tree_ms",
-    "cycle_rect_ms",
-    "td_cycle_ms",
-    "td_dp_ms",
-    "td_reduction_ms",
-    "td_msg_pairs",
-    "td_peak_pairs",
     "cmp_summary_build_ms",
     "cmp_checks_total",
     "bin_eval_ms_total",
     "single_table_bin_fastpath_used",
     "bin_ops_total",
     "bins_touched_total",
-    "bin_rids_scanned_total",
     "allow_cache_hit",
     "allow_cache_miss",
     "allow_cache_build_ms",
@@ -182,6 +207,13 @@ def _make_adapters() -> Dict[str, BaselineAdapter]:
     }
 
 
+def _clean_db_state(db: str) -> None:
+    # Strict isolation between baseline phases:
+    # no harness indexes/policies and no persisted artifacts.
+    h.clear_rls_indexes_and_policies(db)
+    h.clear_all_artifacts(db, drop_tables=True)
+
+
 def _prepare_sql(adapter: BaselineAdapter, qid: str, qsql: str, setup_state: BaselineSetup, db: str) -> Tuple[str, str]:
     try:
         if adapter.name.startswith("sieve"):
@@ -242,7 +274,7 @@ def _run_single_case(
     query_id: str,
     query_sql: str,
     statement_timeout_ms: int,
-) -> Dict[str, str]:
+) -> Tuple[Dict[str, str], Optional[List[str]]]:
     out: Dict[str, str] = {k: "" for k in CSV_COLUMNS}
     out.update(
         {
@@ -253,6 +285,7 @@ def _run_single_case(
             "query_id": query_id,
             "status": "0",
             "match_gt": "UNKNOWN",
+            "cmp_mode": "canonical_multiset",
             "setup_ms": f"{(ctx.setup_state.pre_run_memory_building_ms or 0.0):.3f}",
             "disk_bytes": str(int(ctx.setup_state.disk_overhead_bytes or 0)),
             "parallelism_off_verified": "false",
@@ -263,7 +296,7 @@ def _run_single_case(
     if prep_err:
         out["error_type"] = "prepare_error"
         out["error_msg"] = prep_err
-        return out
+        return out, None
 
     def _session_setup(cur):
         return adapter.session_setup(cur, ctx.enabled_path, statement_timeout_ms, ctx.setup_state)
@@ -282,13 +315,13 @@ def _run_single_case(
     if run.status != 1:
         out["error_type"] = run.error_type
         out["error_msg"] = _safe_err(run.error_msg)
-        return out
+        return out, None
 
     out["status"] = "1"
     out["hot_ms"] = f"{run.hot_ms:.3f}"
     out["peak_rss_kb"] = str(int(run.hot_peak_rss_kb))
 
-    cnt, hh, cerr = run_count_hash(
+    cnt, canonical_rows, cerr = run_canonical_rows(
         db=ctx.db,
         role=adapter.role,
         query_id=query_id,
@@ -298,14 +331,13 @@ def _run_single_case(
     )
     if cnt is None:
         out["status"] = "0"
-        out["error_type"] = "count"
+        out["error_type"] = "rows"
         out["error_msg"] = _safe_err(cerr)
-        return out
+        return out, None
     out["rows"] = str(int(cnt))
-    out["hash"] = str(hh or "")
 
     if adapter.name != "ours":
-        return out
+        return out, canonical_rows
 
     notices = run.hot_notices if run.hot_notices else (run.notices if run.notices else run.cold_notices)
     _payload_q, kv_q, _cnt_q = h.extract_policy_profile_query(notices)
@@ -363,18 +395,41 @@ def _run_single_case(
     out["tid_slot_store_ms"] = _kv_any(kv_exec, ["tid_slot_store_ms"], _kv_any(kv_p, ["tid_slot_store_ms"], "0"))
     out["tid_visibility_ms"] = _kv_any(kv_exec, ["tid_visibility_ms"], _kv_any(kv_p, ["tid_visibility_ms"], "0"))
 
+    out["decode_ms"] = _kv_any(kv_q, ["decode_ms"], "0")
+    out["hub_ms"] = _kv_any(kv_q, ["hub_ms"], "0")
+    out["stamp_ms"] = _kv_any(kv_q, ["stamp_ms"], "0")
+    out["propagate_ms"] = _kv_any(kv_q, ["propagate_ms"], "0")
+    out["sig_ms"] = _kv_any(kv_q, ["sig_ms", "signature_build_ms"], "0")
+    out["project_allowset_ms"] = _kv_any(kv_q, ["project_allowset_ms"], "0")
+    out["prop_build_arcs_ms"] = _kv_any(kv_q, ["prop_build_arcs_ms"], "0")
+    out["prop_ac_ms"] = _kv_any(kv_q, ["prop_ac_ms"], "0")
+    out["prop_scc_ms"] = _kv_any(kv_q, ["prop_scc_ms"], "0")
+    out["prop_context_lookup_ms"] = _kv_any(kv_q, ["prop_context_lookup_ms"], "0")
+    out["prop_context_build_ms"] = _kv_any(kv_q, ["prop_context_build_ms"], "0")
+    out["prop_witness_ms"] = _kv_any(kv_q, ["prop_witness_ms"], "0")
+    out["prop_cmp_ms"] = _kv_any(kv_q, ["prop_cmp_ms"], "0")
+    out["prop_bin_catalog_ms"] = _kv_any(kv_q, ["prop_bin_catalog_ms"], "0")
+    out["prop_base_active_bins_ms"] = _kv_any(kv_q, ["prop_base_active_bins_ms"], "0")
+    out["table_bin_catalog_cache_hits"] = _kv_any(kv_q, ["table_bin_catalog_cache_hits"], "0")
+    out["table_bin_catalog_cache_misses"] = _kv_any(kv_q, ["table_bin_catalog_cache_misses"], "0")
+
     out["sat_ms"] = _kv_any(kv_s3, ["sat_ms"], _kv_any(kv_q, ["sat_ms"], "0"))
+    out["sat_sid_count"] = _kv_any(kv_q, ["sat_sid_count"], "0")
+    out["sat_check_calls"] = _kv_any(kv_q, ["sat_check_calls"], "0")
+    out["sat_assumptions_total"] = _kv_any(kv_q, ["sat_assumptions_total"], "0")
+    out["sat_avg_assumptions"] = _kv_any(kv_q, ["sat_avg_assumptions"], "0")
+    out["sat_unique_assignments"] = _kv_any(kv_q, ["sat_unique_assignments"], "0")
+    out["sat_cache_hits"] = _kv_any(kv_q, ["sat_cache_hits"], "0")
+    out["sat_nogood_prunes"] = _kv_any(kv_q, ["sat_nogood_prunes"], "0")
+    out["sat_nogoods_added"] = _kv_any(kv_q, ["sat_nogoods_added"], "0")
+    out["sat_subsumed_dropped"] = _kv_any(kv_q, ["sat_subsumed_dropped"], "0")
+    out["sat_core_terms_total"] = _kv_any(kv_q, ["sat_core_terms_total"], "0")
+    out["sat_core_terms_max"] = _kv_any(kv_q, ["sat_core_terms_max"], "0")
+    out["sat_avg_core_terms"] = _kv_any(kv_q, ["sat_avg_core_terms"], "0")
     out["sat_models_total"] = _kv_any(kv_s3, ["sat_models_total"], _kv_any(kv_q, ["sat_models_total"], "0"))
     out["terms_total"] = _kv_any(kv_s3, ["terms_total"], _kv_any(kv_q, ["terms_total"], "0"))
     out["single_hub_ms"] = _kv_any(kv_s3, ["single_hub_ms"], "0")
     out["two_hop_ms"] = _kv_any(kv_s3, ["two_hop_ms"], "0")
-    out["tree_ms"] = _kv_any(kv_s3, ["tree_ms"], "0")
-    out["cycle_rect_ms"] = _kv_any(kv_s3, ["cycle_rect_ms"], "0")
-    out["td_cycle_ms"] = _kv_any(kv_s3, ["td_cycle_ms"], "0")
-    out["td_dp_ms"] = _kv_any(kv_s3, ["td_dp_ms"], _kv_any(kv_q, ["class_td_dp_ms"], "0"))
-    out["td_reduction_ms"] = _kv_any(kv_s3, ["td_reduction_ms"], _kv_any(kv_q, ["class_td_reduction_ms"], "0"))
-    out["td_msg_pairs"] = _kv_any(kv_s3, ["td_msg_pairs"], _kv_any(kv_q, ["class_td_msg_pairs_total"], "0"))
-    out["td_peak_pairs"] = _kv_any(kv_s3, ["td_peak_pairs"], _kv_any(kv_q, ["class_td_peak_msg_pairs"], "0"))
     out["cmp_summary_build_ms"] = _kv_any(kv_s3, ["cmp_summary_build_ms"], _kv_any(kv_q, ["pf2_cmp_summary_build_ms"], "0"))
     out["cmp_checks_total"] = _kv_any(kv_s3, ["cmp_checks_total"], _kv_any(kv_q, ["pf2_cmp_checks_total"], "0"))
     out["bin_eval_ms_total"] = _kv_any(kv_s3, ["bin_eval_ms_total"], "0")
@@ -382,7 +437,6 @@ def _run_single_case(
 
     out["bin_ops_total"] = _kv_any(kv_q, ["bin_ops_total"], "0")
     out["bins_touched_total"] = _kv_any(kv_q, ["bins_touched_total"], "0")
-    out["bin_rids_scanned_total"] = _kv_any(kv_q, ["bin_rids_scanned_total"], "0")
     out["allow_cache_hit"] = _kv_any(kv_q, ["allow_cache_hit"], "0")
     out["allow_cache_miss"] = _kv_any(kv_q, ["allow_cache_miss"], "0")
     out["allow_cache_build_ms"] = _kv_any(kv_q, ["allow_cache_build_ms"], "0")
@@ -392,7 +446,7 @@ def _run_single_case(
     out["scan_mode_reason"] = rsn
     out["allow_density"] = den
     out["allow_page_density"] = pden
-    return out
+    return out, canonical_rows
 
 
 def _write_csv(path: Path, rows: List[Dict[str, str]]) -> None:
@@ -401,6 +455,20 @@ def _write_csv(path: Path, rows: List[Dict[str, str]]) -> None:
         w.writeheader()
         for r in rows:
             w.writerow({k: r.get(k, "") for k in CSV_COLUMNS})
+
+
+def _trim_cell(v: str, limit: int = 220) -> str:
+    s = str(v or "")
+    if len(s) <= limit:
+        return s
+    return s[: limit - 3] + "..."
+
+
+def _write_rows_dump(path: Path, rows: List[str]) -> None:
+    with path.open("w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(str(r))
+            f.write("\n")
 
 
 def _write_md(path: Path, db: str, rows: List[Dict[str, str]]) -> None:
@@ -467,13 +535,15 @@ def main() -> None:
         out_csv = LOG_DIR / f"gate_{db}_stage03.csv"
         out_md = LOG_DIR / f"gate_{db}_stage03.md"
         rows: List[Dict[str, str]] = []
-        gt: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        gt_rows: Dict[Tuple[str, str], List[str]] = {}
+        row_payloads: Dict[Tuple[str, str, str], List[str]] = {}
         _write_csv(out_csv, rows)
 
         for set_name, ids in POLICY_SETS:
             active_policy_lines = _parse_policy_ids(policy_lines_all, ids)
             enabled = Path("/tmp") / f"gate_stage03_{db}_{set_name}.txt"
             h.write_enabled_policy_file(active_policy_lines, enabled)
+            _clean_db_state(db)
             for baseline in BASELINES:
                 adapter = adapters[baseline]
                 setup_state = BaselineSetup()
@@ -481,6 +551,7 @@ def main() -> None:
                 setup_done = False
                 t0 = time.perf_counter()
                 try:
+                    _clean_db_state(db)
                     setup_state = adapter.setup(db, active_policy_lines, enabled, statement_timeout_ms)
                     setup_done = True
                 except Exception as exc:  # noqa: BLE001
@@ -495,6 +566,7 @@ def main() -> None:
                         continue
                     if setup_err:
                         row = {k: "" for k in CSV_COLUMNS}
+                        canonical_rows = None
                         row.update(
                             {
                                 "db": db,
@@ -508,10 +580,11 @@ def main() -> None:
                                 "setup_ms": f"{(setup_state.pre_run_memory_building_ms or setup_ms):.3f}",
                                 "disk_bytes": str(int(setup_state.disk_overhead_bytes or 0)),
                                 "parallelism_off_verified": "false",
+                                "cmp_mode": "canonical_multiset",
                             }
                         )
                     else:
-                        row = _run_single_case(adapter, ctx, qid, qmap[qid], statement_timeout_ms)
+                        row, canonical_rows = _run_single_case(adapter, ctx, qid, qmap[qid], statement_timeout_ms)
                     rows.append(row)
                     _write_csv(out_csv, rows)
                     print(
@@ -520,32 +593,93 @@ def main() -> None:
                         flush=True,
                     )
 
-                    if baseline == "rls_index" and row.get("status") == "1":
-                        gt[(set_name, qid)] = (row.get("rows", ""), row.get("hash", ""))
+                    case_key = (baseline, set_name, qid)
+                    if canonical_rows is not None and row.get("status") == "1":
+                        row_payloads[case_key] = canonical_rows
+                    if baseline == "rls_index" and canonical_rows is not None and row.get("status") == "1":
+                        gt_rows[(set_name, qid)] = canonical_rows
 
                 if setup_done:
                     try:
                         adapter.teardown(db, setup_state)
                     except Exception:
                         pass
+                try:
+                    _clean_db_state(db)
+                except Exception:
+                    pass
 
+        gt_dump_files: Dict[Tuple[str, str], str] = {}
         for r in rows:
-            g = gt.get((r["policy_set"], r["query_id"]))
-            if g is None:
+            set_q = (r["policy_set"], r["query_id"])
+            gt_case_rows = gt_rows.get(set_q)
+            if gt_case_rows is None:
                 r["match_gt"] = "UNKNOWN"
                 continue
-            r["gt_rows"], r["gt_hash"] = g
+            r["gt_rows"] = str(len(gt_case_rows))
             if r.get("status") != "1":
                 r["match_gt"] = "FALSE"
-            else:
-                r["match_gt"] = "TRUE" if (r.get("rows", "") == g[0] and r.get("hash", "") == g[1]) else "FALSE"
+                continue
+
+            ours_case_rows = row_payloads.get((r["baseline"], r["policy_set"], r["query_id"]))
+            if ours_case_rows is None:
+                r["match_gt"] = "FALSE"
+                r["cmp_first_diff_idx"] = "0"
+                r["cmp_first_ours"] = "<NO_ROWS_CAPTURED>"
+                r["cmp_first_gt"] = _trim_cell(gt_case_rows[0] if gt_case_rows else "<EMPTY_GT>")
+                continue
+
+            if ours_case_rows == gt_case_rows:
+                r["match_gt"] = "TRUE"
+                continue
+
+            r["match_gt"] = "FALSE"
+            max_len = max(len(ours_case_rows), len(gt_case_rows))
+            first_diff = max_len
+            first_ours = "<END>"
+            first_gt = "<END>"
+            for idx in range(max_len):
+                ov = ours_case_rows[idx] if idx < len(ours_case_rows) else "<END>"
+                gv = gt_case_rows[idx] if idx < len(gt_case_rows) else "<END>"
+                if ov != gv:
+                    first_diff = idx
+                    first_ours = ov
+                    first_gt = gv
+                    break
+
+            r["cmp_first_diff_idx"] = str(first_diff)
+            r["cmp_first_ours"] = _trim_cell(first_ours)
+            r["cmp_first_gt"] = _trim_cell(first_gt)
+
+            ours_dump = LOG_DIR / f"stage03_rows_{db}_{r['baseline']}_{r['policy_set']}_q{r['query_id']}_ours.txt"
+            _write_rows_dump(ours_dump, ours_case_rows)
+            r["cmp_rows_file_ours"] = str(ours_dump)
+
+            gt_dump = gt_dump_files.get(set_q)
+            if not gt_dump:
+                gt_path = LOG_DIR / f"stage03_rows_{db}_rls_index_{r['policy_set']}_q{r['query_id']}_gt.txt"
+                _write_rows_dump(gt_path, gt_case_rows)
+                gt_dump = str(gt_path)
+                gt_dump_files[set_q] = gt_dump
+            r["cmp_rows_file_gt"] = gt_dump
 
         _write_csv(out_csv, rows)
         _write_md(out_md, db, rows)
         combined[db] = rows
 
+    combined_csv = LOG_DIR / "gate_tpch0_1_tpch1_stage03.csv"
+    combined_rows: List[Dict[str, str]] = []
+    for db in DBS:
+        combined_rows.extend(combined.get(db, []))
+    _write_csv(combined_csv, combined_rows)
+
     summary = LOG_DIR / "gate_tpch0_1_tpch1_summary_stage03.md"
-    lines = ["# Gate Stage03 Combined", ""]
+    lines = [
+        "# Gate Stage03 Combined",
+        "",
+        f"- combined_csv: `logs/{combined_csv.name}`",
+        "",
+    ]
     for db in DBS:
         rows = combined.get(db, [])
         ours = {
@@ -579,4 +713,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

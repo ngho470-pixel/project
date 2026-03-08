@@ -1,0 +1,2 @@
+db,policy_id,target,query_id,status,correctness,reason,route_main,route_summary,route_reject_reason,ours_rows,ours_hash,gt_rows,gt_hash,policy_total_ms,class_terms_ok,class_terms_reject,class_route_single_hub,class_route_two_hop,class_route_tree,class_route_cycle_rect,class_route_td_cycle,class_route_reject,pf2_cmp_key_arity_max,pf2_hub_key_arity,proj_sig_count,proj_mask_or_ops,proj_rid_iters,hygiene_ok
+tpch1,19,lineitem,1,ok,PASS,,td_cycle,td_cycle:48,,4,8aa73fc3e171f15fe0f0b1dff23e877a,4,8aa73fc3e171f15fe0f0b1dff23e877a,,48,0,0,0,0,0,48,0,0,0,0,0,0,1

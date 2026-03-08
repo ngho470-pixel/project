@@ -1,0 +1,280 @@
+nohup: ignoring input
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=4308.193 disk=75563008 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[stage03] db=tpch0_1 set=S_A baseline=rls_index q1 status=1 hot_ms=121.085 err=
+[stage03] db=tpch0_1 set=S_A baseline=rls_index q3 status=1 hot_ms=60.575 err=
+[stage03] db=tpch0_1 set=S_A baseline=rls_index q6 status=1 hot_ms=60.601 err=
+[stage03] db=tpch0_1 set=S_A baseline=rls_index q10 status=1 hot_ms=60.814 err=
+[stage03] db=tpch0_1 set=S_A baseline=rls_index q11 status=1 hot_ms=30.488 err=
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=4308.348 disk=75563008 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[stage03] db=tpch0_1 set=S_A baseline=sieve_index q1 status=1 hot_ms=120.753 err=
+[stage03] db=tpch0_1 set=S_A baseline=sieve_index q3 status=1 hot_ms=90.833 err=
+[stage03] db=tpch0_1 set=S_A baseline=sieve_index q6 status=1 hot_ms=60.671 err=
+[stage03] db=tpch0_1 set=S_A baseline=sieve_index q10 status=1 hot_ms=60.670 err=
+[stage03] db=tpch0_1 set=S_A baseline=sieve_index q11 status=1 hot_ms=30.465 err=
+[setup_ours] K=5 setup_ms=1148.357 disk=9388689
+[stage03] db=tpch0_1 set=S_A baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_A baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_A baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_A baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_A baseline=ours q11 status=1 hot_ms=30.680 err=
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_mktsegment', 'customer.c_name', 'customer.c_nationkey', 'customer.c_phone', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=10 setup_ms=4383.642 disk=77275136 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_mktsegment_2', 'cf_rls_k10_customer_c_name_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_customer_c_phone_5', 'cf_rls_k10_lineitem_l_discount_6', 'cf_rls_k10_lineitem_l_extendedprice_7', 'cf_rls_k10_lineitem_l_linestatus_8', 'cf_rls_k10_lineitem_l_quantity_9', 'cf_rls_k10_lineitem_l_returnflag_10', 'cf_rls_k10_lineitem_l_shipinstruct_11', 'cf_rls_k10_lineitem_l_shipmode_12', 'cf_rls_k10_lineitem_l_tax_13']
+[stage03] db=tpch0_1 set=S_B baseline=rls_index q1 status=1 hot_ms=120.730 err=
+[stage03] db=tpch0_1 set=S_B baseline=rls_index q3 status=1 hot_ms=30.404 err=
+[stage03] db=tpch0_1 set=S_B baseline=rls_index q6 status=1 hot_ms=60.648 err=
+[stage03] db=tpch0_1 set=S_B baseline=rls_index q10 status=1 hot_ms=60.562 err=
+[stage03] db=tpch0_1 set=S_B baseline=rls_index q11 status=1 hot_ms=30.471 err=
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_mktsegment', 'customer.c_name', 'customer.c_nationkey', 'customer.c_phone', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=10 setup_ms=4387.573 disk=77275136 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_mktsegment_2', 'cf_rls_k10_customer_c_name_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_customer_c_phone_5', 'cf_rls_k10_lineitem_l_discount_6', 'cf_rls_k10_lineitem_l_extendedprice_7', 'cf_rls_k10_lineitem_l_linestatus_8', 'cf_rls_k10_lineitem_l_quantity_9', 'cf_rls_k10_lineitem_l_returnflag_10', 'cf_rls_k10_lineitem_l_shipinstruct_11', 'cf_rls_k10_lineitem_l_shipmode_12', 'cf_rls_k10_lineitem_l_tax_13']
+[stage03] db=tpch0_1 set=S_B baseline=sieve_index q1 status=1 hot_ms=120.938 err=
+[stage03] db=tpch0_1 set=S_B baseline=sieve_index q3 status=1 hot_ms=30.482 err=
+[stage03] db=tpch0_1 set=S_B baseline=sieve_index q6 status=1 hot_ms=60.587 err=
+[stage03] db=tpch0_1 set=S_B baseline=sieve_index q10 status=1 hot_ms=30.411 err=
+[stage03] db=tpch0_1 set=S_B baseline=sieve_index q11 status=1 hot_ms=30.534 err=
+[setup_ours] K=10 setup_ms=1200.256 disk=10378913
+[stage03] db=tpch0_1 set=S_B baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_B baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_B baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_B baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_B baseline=ours q11 status=1 hot_ms=30.873 err=
+[index_infer] K=5 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_orderkey', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'region.r_name', 'region.r_regionkey']
+[setup_rls] K=5 setup_ms=1911.507 disk=28426240 indexes=['cf_rls_k5_customer_c_acctbal_1', 'cf_rls_k5_customer_c_custkey_2', 'cf_rls_k5_customer_c_mktsegment_3', 'cf_rls_k5_customer_c_nationkey_4', 'cf_rls_k5_lineitem_l_orderkey_5', 'cf_rls_k5_lineitem_l_returnflag_6', 'cf_rls_k5_lineitem_l_shipinstruct_7', 'cf_rls_k5_lineitem_l_shipmode_8', 'cf_rls_k5_nation_n_name_9', 'cf_rls_k5_nation_n_nationkey_10', 'cf_rls_k5_nation_n_regionkey_11', 'cf_rls_k5_orders_o_custkey_12', 'cf_rls_k5_orders_o_orderkey_13', 'cf_rls_k5_orders_o_orderpriority_14', 'cf_rls_k5_orders_o_orderstatus_15', 'cf_rls_k5_region_r_name_16', 'cf_rls_k5_region_r_regionkey_17']
+[stage03] db=tpch0_1 set=S_C baseline=rls_index q1 status=1 hot_ms=1354.761 err=
+[stage03] db=tpch0_1 set=S_C baseline=rls_index q3 status=1 hot_ms=150.945 err=
+[stage03] db=tpch0_1 set=S_C baseline=rls_index q6 status=1 hot_ms=662.870 err=
+[stage03] db=tpch0_1 set=S_C baseline=rls_index q10 status=1 hot_ms=331.868 err=
+[stage03] db=tpch0_1 set=S_C baseline=rls_index q11 status=1 hot_ms=30.793 err=
+[index_infer] K=5 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_orderkey', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'region.r_name', 'region.r_regionkey']
+[setup_rls] K=5 setup_ms=1905.886 disk=28426240 indexes=['cf_rls_k5_customer_c_acctbal_1', 'cf_rls_k5_customer_c_custkey_2', 'cf_rls_k5_customer_c_mktsegment_3', 'cf_rls_k5_customer_c_nationkey_4', 'cf_rls_k5_lineitem_l_orderkey_5', 'cf_rls_k5_lineitem_l_returnflag_6', 'cf_rls_k5_lineitem_l_shipinstruct_7', 'cf_rls_k5_lineitem_l_shipmode_8', 'cf_rls_k5_nation_n_name_9', 'cf_rls_k5_nation_n_nationkey_10', 'cf_rls_k5_nation_n_regionkey_11', 'cf_rls_k5_orders_o_custkey_12', 'cf_rls_k5_orders_o_orderkey_13', 'cf_rls_k5_orders_o_orderpriority_14', 'cf_rls_k5_orders_o_orderstatus_15', 'cf_rls_k5_region_r_name_16', 'cf_rls_k5_region_r_regionkey_17']
+[stage03] db=tpch0_1 set=S_C baseline=sieve_index q1 status=1 hot_ms=301.739 err=
+[stage03] db=tpch0_1 set=S_C baseline=sieve_index q3 status=1 hot_ms=422.105 err=
+[stage03] db=tpch0_1 set=S_C baseline=sieve_index q6 status=1 hot_ms=271.522 err=
+[stage03] db=tpch0_1 set=S_C baseline=sieve_index q10 status=1 hot_ms=422.208 err=
+[stage03] db=tpch0_1 set=S_C baseline=sieve_index q11 status=1 hot_ms=30.472 err=
+[setup_ours] K=5 setup_ms=817.247 disk=10597814
+[stage03] db=tpch0_1 set=S_C baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_C baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_C baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_C baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_C baseline=ours q11 status=1 hot_ms=30.741 err=
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_discount', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_brand', 'part.p_partkey', 'part.p_size', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_nationkey', 'supplier.s_suppkey']
+[setup_rls] K=10 setup_ms=4012.364 disk=73252864 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_custkey_2', 'cf_rls_k10_customer_c_mktsegment_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_lineitem_l_discount_5', 'cf_rls_k10_lineitem_l_orderkey_6', 'cf_rls_k10_lineitem_l_partkey_7', 'cf_rls_k10_lineitem_l_quantity_8', 'cf_rls_k10_lineitem_l_returnflag_9', 'cf_rls_k10_lineitem_l_shipinstruct_10', 'cf_rls_k10_lineitem_l_shipmode_11', 'cf_rls_k10_lineitem_l_suppkey_12', 'cf_rls_k10_nation_n_name_13', 'cf_rls_k10_nation_n_nationkey_14', 'cf_rls_k10_nation_n_regionkey_15', 'cf_rls_k10_orders_o_custkey_16', 'cf_rls_k10_orders_o_orderkey_17', 'cf_rls_k10_orders_o_orderpriority_18', 'cf_rls_k10_orders_o_orderstatus_19', 'cf_rls_k10_orders_o_totalprice_20', 'cf_rls_k10_part_p_brand_21', 'cf_rls_k10_part_p_partkey_22', 'cf_rls_k10_part_p_size_23', 'cf_rls_k10_partsupp_ps_partkey_24', 'cf_rls_k10_partsupp_ps_suppkey_25', 'cf_rls_k10_partsupp_ps_supplycost_26', 'cf_rls_k10_region_r_name_27', 'cf_rls_k10_region_r_regionkey_28', 'cf_rls_k10_supplier_s_nationkey_29', 'cf_rls_k10_supplier_s_suppkey_30']
+[stage03] db=tpch0_1 set=S_D baseline=rls_index q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_D baseline=rls_index q3 status=1 hot_ms=150.852 err=
+[stage03] db=tpch0_1 set=S_D baseline=rls_index q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_D baseline=rls_index q10 status=1 hot_ms=158.723 err=
+[stage03] db=tpch0_1 set=S_D baseline=rls_index q11 status=1 hot_ms=30.743 err=
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_discount', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_brand', 'part.p_partkey', 'part.p_size', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_nationkey', 'supplier.s_suppkey']
+[setup_rls] K=10 setup_ms=4001.231 disk=14491648 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_custkey_2', 'cf_rls_k10_customer_c_mktsegment_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_lineitem_l_discount_5', 'cf_rls_k10_lineitem_l_orderkey_6', 'cf_rls_k10_lineitem_l_partkey_7', 'cf_rls_k10_lineitem_l_quantity_8', 'cf_rls_k10_lineitem_l_returnflag_9', 'cf_rls_k10_lineitem_l_shipinstruct_10', 'cf_rls_k10_lineitem_l_shipmode_11', 'cf_rls_k10_lineitem_l_suppkey_12', 'cf_rls_k10_nation_n_name_13', 'cf_rls_k10_nation_n_nationkey_14', 'cf_rls_k10_nation_n_regionkey_15', 'cf_rls_k10_orders_o_custkey_16', 'cf_rls_k10_orders_o_orderkey_17', 'cf_rls_k10_orders_o_orderpriority_18', 'cf_rls_k10_orders_o_orderstatus_19', 'cf_rls_k10_orders_o_totalprice_20', 'cf_rls_k10_part_p_brand_21', 'cf_rls_k10_part_p_partkey_22', 'cf_rls_k10_part_p_size_23', 'cf_rls_k10_partsupp_ps_partkey_24', 'cf_rls_k10_partsupp_ps_suppkey_25', 'cf_rls_k10_partsupp_ps_supplycost_26', 'cf_rls_k10_region_r_name_27', 'cf_rls_k10_region_r_regionkey_28', 'cf_rls_k10_supplier_s_nationkey_29', 'cf_rls_k10_supplier_s_suppkey_30']
+[stage03] db=tpch0_1 set=S_D baseline=sieve_index q1 status=1 hot_ms=211.478 err=
+[stage03] db=tpch0_1 set=S_D baseline=sieve_index q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_D baseline=sieve_index q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_D baseline=sieve_index q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_D baseline=sieve_index q11 status=1 hot_ms=30.637 err=
+[setup_ours] K=10 setup_ms=1598.630 disk=17433677
+[stage03] db=tpch0_1 set=S_D baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_D baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_D baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_D baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_D baseline=ours q11 status=1 hot_ms=31.123 err=
+[index_infer] K=5 specs=['lineitem.l_commitdate', 'lineitem.l_discount', 'lineitem.l_quantity', 'lineitem.l_receiptdate', 'lineitem.l_returnflag', 'lineitem.l_shipdate', 'lineitem.l_tax', 'partsupp.ps_availqty', 'partsupp.ps_supplycost', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=5 setup_ms=3464.618 disk=24748032 indexes=['cf_rls_k5_lineitem_l_commitdate_1', 'cf_rls_k5_lineitem_l_discount_2', 'cf_rls_k5_lineitem_l_quantity_3', 'cf_rls_k5_lineitem_l_receiptdate_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipdate_6', 'cf_rls_k5_lineitem_l_tax_7', 'cf_rls_k5_partsupp_ps_availqty_8', 'cf_rls_k5_partsupp_ps_supplycost_9', 'cf_rls_k5_supplier_s_acctbal_10', 'cf_rls_k5_supplier_s_nationkey_11']
+[stage03] db=tpch0_1 set=S_E baseline=rls_index q1 status=1 hot_ms=632.894 err=
+[stage03] db=tpch0_1 set=S_E baseline=rls_index q3 status=1 hot_ms=121.151 err=
+[stage03] db=tpch0_1 set=S_E baseline=rls_index q6 status=1 hot_ms=90.689 err=
+[stage03] db=tpch0_1 set=S_E baseline=rls_index q10 status=1 hot_ms=157.128 err=
+[stage03] db=tpch0_1 set=S_E baseline=rls_index q11 status=1 hot_ms=30.492 err=
+[index_infer] K=5 specs=['lineitem.l_commitdate', 'lineitem.l_discount', 'lineitem.l_quantity', 'lineitem.l_receiptdate', 'lineitem.l_returnflag', 'lineitem.l_shipdate', 'lineitem.l_tax', 'partsupp.ps_availqty', 'partsupp.ps_supplycost', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=5 setup_ms=3388.238 disk=24748032 indexes=['cf_rls_k5_lineitem_l_commitdate_1', 'cf_rls_k5_lineitem_l_discount_2', 'cf_rls_k5_lineitem_l_quantity_3', 'cf_rls_k5_lineitem_l_receiptdate_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipdate_6', 'cf_rls_k5_lineitem_l_tax_7', 'cf_rls_k5_partsupp_ps_availqty_8', 'cf_rls_k5_partsupp_ps_supplycost_9', 'cf_rls_k5_supplier_s_acctbal_10', 'cf_rls_k5_supplier_s_nationkey_11']
+[stage03] db=tpch0_1 set=S_E baseline=sieve_index q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_E baseline=sieve_index q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_E baseline=sieve_index q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_E baseline=sieve_index q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_E baseline=sieve_index q11 status=1 hot_ms=30.540 err=
+[setup_ours] K=5 setup_ms=851.003 disk=10611702
+[stage03] db=tpch0_1 set=S_E baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_E baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_E baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_E baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_E baseline=ours q11 status=0 hot_ms= err=db_error
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_nationkey', 'lineitem.l_commitdate', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_receiptdate', 'lineitem.l_returnflag', 'lineitem.l_shipdate', 'lineitem.l_suppkey', 'lineitem.l_tax', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_totalprice', 'part.p_partkey', 'part.p_retailprice', 'part.p_size', 'partsupp.ps_availqty', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=10 setup_ms=4956.764 disk=108052480 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_custkey_2', 'cf_rls_k10_customer_c_nationkey_3', 'cf_rls_k10_lineitem_l_commitdate_4', 'cf_rls_k10_lineitem_l_discount_5', 'cf_rls_k10_lineitem_l_extendedprice_6', 'cf_rls_k10_lineitem_l_orderkey_7', 'cf_rls_k10_lineitem_l_partkey_8', 'cf_rls_k10_lineitem_l_quantity_9', 'cf_rls_k10_lineitem_l_receiptdate_10', 'cf_rls_k10_lineitem_l_returnflag_11', 'cf_rls_k10_lineitem_l_shipdate_12', 'cf_rls_k10_lineitem_l_suppkey_13', 'cf_rls_k10_lineitem_l_tax_14', 'cf_rls_k10_nation_n_nationkey_15', 'cf_rls_k10_nation_n_regionkey_16', 'cf_rls_k10_orders_o_custkey_17', 'cf_rls_k10_orders_o_orderkey_18', 'cf_rls_k10_orders_o_totalprice_19', 'cf_rls_k10_part_p_partkey_20', 'cf_rls_k10_part_p_retailprice_21', 'cf_rls_k10_part_p_size_22', 'cf_rls_k10_partsupp_ps_availqty_23', 'cf_rls_k10_partsupp_ps_partkey_24', 'cf_rls_k10_partsupp_ps_suppkey_25', 'cf_rls_k10_partsupp_ps_supplycost_26', 'cf_rls_k10_supplier_s_acctbal_27', 'cf_rls_k10_supplier_s_nationkey_28']
+[stage03] db=tpch0_1 set=S_F baseline=rls_index q1 status=1 hot_ms=1717.484 err=
+[stage03] db=tpch0_1 set=S_F baseline=rls_index q3 status=1 hot_ms=30.585 err=
+[stage03] db=tpch0_1 set=S_F baseline=rls_index q6 status=1 hot_ms=1205.454 err=
+[stage03] db=tpch0_1 set=S_F baseline=rls_index q10 status=1 hot_ms=30.544 err=
+[stage03] db=tpch0_1 set=S_F baseline=rls_index q11 status=1 hot_ms=30.505 err=
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_nationkey', 'lineitem.l_commitdate', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_receiptdate', 'lineitem.l_returnflag', 'lineitem.l_shipdate', 'lineitem.l_suppkey', 'lineitem.l_tax', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_totalprice', 'part.p_partkey', 'part.p_retailprice', 'part.p_size', 'partsupp.ps_availqty', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=10 setup_ms=4950.203 disk=45465600 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_custkey_2', 'cf_rls_k10_customer_c_nationkey_3', 'cf_rls_k10_lineitem_l_commitdate_4', 'cf_rls_k10_lineitem_l_discount_5', 'cf_rls_k10_lineitem_l_extendedprice_6', 'cf_rls_k10_lineitem_l_orderkey_7', 'cf_rls_k10_lineitem_l_partkey_8', 'cf_rls_k10_lineitem_l_quantity_9', 'cf_rls_k10_lineitem_l_receiptdate_10', 'cf_rls_k10_lineitem_l_returnflag_11', 'cf_rls_k10_lineitem_l_shipdate_12', 'cf_rls_k10_lineitem_l_suppkey_13', 'cf_rls_k10_lineitem_l_tax_14', 'cf_rls_k10_nation_n_nationkey_15', 'cf_rls_k10_nation_n_regionkey_16', 'cf_rls_k10_orders_o_custkey_17', 'cf_rls_k10_orders_o_orderkey_18', 'cf_rls_k10_orders_o_totalprice_19', 'cf_rls_k10_part_p_partkey_20', 'cf_rls_k10_part_p_retailprice_21', 'cf_rls_k10_part_p_size_22', 'cf_rls_k10_partsupp_ps_availqty_23', 'cf_rls_k10_partsupp_ps_partkey_24', 'cf_rls_k10_partsupp_ps_suppkey_25', 'cf_rls_k10_partsupp_ps_supplycost_26', 'cf_rls_k10_supplier_s_acctbal_27', 'cf_rls_k10_supplier_s_nationkey_28']
+[stage03] db=tpch0_1 set=S_F baseline=sieve_index q1 status=1 hot_ms=301.837 err=
+[stage03] db=tpch0_1 set=S_F baseline=sieve_index q3 status=1 hot_ms=452.091 err=
+[stage03] db=tpch0_1 set=S_F baseline=sieve_index q6 status=1 hot_ms=271.658 err=
+[stage03] db=tpch0_1 set=S_F baseline=sieve_index q10 status=1 hot_ms=422.000 err=
+[stage03] db=tpch0_1 set=S_F baseline=sieve_index q11 status=1 hot_ms=30.544 err=
+[setup_ours] K=10 setup_ms=2421.619 disk=24559179
+[stage03] db=tpch0_1 set=S_F baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_F baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_F baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_F baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_F baseline=ours q11 status=0 hot_ms= err=db_error
+[index_infer] K=17 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_name', 'customer.c_nationkey', 'customer.c_phone', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_partkey', 'part.p_retailprice', 'part.p_size', 'partsupp.ps_availqty', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=17 setup_ms=4926.395 disk=97665024 indexes=['cf_rls_k17_customer_c_acctbal_1', 'cf_rls_k17_customer_c_custkey_2', 'cf_rls_k17_customer_c_mktsegment_3', 'cf_rls_k17_customer_c_name_4', 'cf_rls_k17_customer_c_nationkey_5', 'cf_rls_k17_customer_c_phone_6', 'cf_rls_k17_lineitem_l_discount_7', 'cf_rls_k17_lineitem_l_extendedprice_8', 'cf_rls_k17_lineitem_l_linestatus_9', 'cf_rls_k17_lineitem_l_orderkey_10', 'cf_rls_k17_lineitem_l_partkey_11', 'cf_rls_k17_lineitem_l_quantity_12', 'cf_rls_k17_lineitem_l_returnflag_13', 'cf_rls_k17_lineitem_l_shipinstruct_14', 'cf_rls_k17_lineitem_l_shipmode_15', 'cf_rls_k17_lineitem_l_suppkey_16', 'cf_rls_k17_nation_n_name_17', 'cf_rls_k17_nation_n_nationkey_18', 'cf_rls_k17_nation_n_regionkey_19', 'cf_rls_k17_orders_o_custkey_20', 'cf_rls_k17_orders_o_orderkey_21', 'cf_rls_k17_orders_o_orderpriority_22', 'cf_rls_k17_orders_o_orderstatus_23', 'cf_rls_k17_orders_o_totalprice_24', 'cf_rls_k17_part_p_partkey_25', 'cf_rls_k17_part_p_retailprice_26', 'cf_rls_k17_part_p_size_27', 'cf_rls_k17_partsupp_ps_availqty_28', 'cf_rls_k17_partsupp_ps_partkey_29', 'cf_rls_k17_partsupp_ps_suppkey_30', 'cf_rls_k17_partsupp_ps_supplycost_31', 'cf_rls_k17_region_r_name_32', 'cf_rls_k17_region_r_regionkey_33', 'cf_rls_k17_supplier_s_acctbal_34', 'cf_rls_k17_supplier_s_nationkey_35']
+[stage03] db=tpch0_1 set=S_G baseline=rls_index q1 status=1 hot_ms=3133.035 err=
+[stage03] db=tpch0_1 set=S_G baseline=rls_index q3 status=1 hot_ms=30.414 err=
+[stage03] db=tpch0_1 set=S_G baseline=rls_index q6 status=1 hot_ms=2168.852 err=
+[stage03] db=tpch0_1 set=S_G baseline=rls_index q10 status=1 hot_ms=30.748 err=
+[stage03] db=tpch0_1 set=S_G baseline=rls_index q11 status=1 hot_ms=30.441 err=
+[index_infer] K=17 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_name', 'customer.c_nationkey', 'customer.c_phone', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_partkey', 'part.p_retailprice', 'part.p_size', 'partsupp.ps_availqty', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=17 setup_ms=4908.941 disk=97665024 indexes=['cf_rls_k17_customer_c_acctbal_1', 'cf_rls_k17_customer_c_custkey_2', 'cf_rls_k17_customer_c_mktsegment_3', 'cf_rls_k17_customer_c_name_4', 'cf_rls_k17_customer_c_nationkey_5', 'cf_rls_k17_customer_c_phone_6', 'cf_rls_k17_lineitem_l_discount_7', 'cf_rls_k17_lineitem_l_extendedprice_8', 'cf_rls_k17_lineitem_l_linestatus_9', 'cf_rls_k17_lineitem_l_orderkey_10', 'cf_rls_k17_lineitem_l_partkey_11', 'cf_rls_k17_lineitem_l_quantity_12', 'cf_rls_k17_lineitem_l_returnflag_13', 'cf_rls_k17_lineitem_l_shipinstruct_14', 'cf_rls_k17_lineitem_l_shipmode_15', 'cf_rls_k17_lineitem_l_suppkey_16', 'cf_rls_k17_nation_n_name_17', 'cf_rls_k17_nation_n_nationkey_18', 'cf_rls_k17_nation_n_regionkey_19', 'cf_rls_k17_orders_o_custkey_20', 'cf_rls_k17_orders_o_orderkey_21', 'cf_rls_k17_orders_o_orderpriority_22', 'cf_rls_k17_orders_o_orderstatus_23', 'cf_rls_k17_orders_o_totalprice_24', 'cf_rls_k17_part_p_partkey_25', 'cf_rls_k17_part_p_retailprice_26', 'cf_rls_k17_part_p_size_27', 'cf_rls_k17_partsupp_ps_availqty_28', 'cf_rls_k17_partsupp_ps_partkey_29', 'cf_rls_k17_partsupp_ps_suppkey_30', 'cf_rls_k17_partsupp_ps_supplycost_31', 'cf_rls_k17_region_r_name_32', 'cf_rls_k17_region_r_regionkey_33', 'cf_rls_k17_supplier_s_acctbal_34', 'cf_rls_k17_supplier_s_nationkey_35']
+[stage03] db=tpch0_1 set=S_G baseline=sieve_index q1 status=1 hot_ms=2650.769 err=
+[stage03] db=tpch0_1 set=S_G baseline=sieve_index q3 status=1 hot_ms=30.646 err=
+[stage03] db=tpch0_1 set=S_G baseline=sieve_index q6 status=1 hot_ms=1747.206 err=
+[stage03] db=tpch0_1 set=S_G baseline=sieve_index q10 status=1 hot_ms=30.590 err=
+[stage03] db=tpch0_1 set=S_G baseline=sieve_index q11 status=1 hot_ms=30.400 err=
+[setup_ours] K=17 setup_ms=2408.182 disk=22845803
+[stage03] db=tpch0_1 set=S_G baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_G baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_G baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_G baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch0_1 set=S_G baseline=ours q11 status=0 hot_ms= err=db_error
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=49744.963 disk=753713152 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[stage03] db=tpch1 set=S_A baseline=rls_index q1 status=1 hot_ms=1747.720 err=
+[stage03] db=tpch1 set=S_A baseline=rls_index q3 status=1 hot_ms=1295.711 err=
+[stage03] db=tpch1 set=S_A baseline=rls_index q6 status=1 hot_ms=632.934 err=
+[stage03] db=tpch1 set=S_A baseline=rls_index q10 status=1 hot_ms=1435.295 err=
+[stage03] db=tpch1 set=S_A baseline=rls_index q11 status=1 hot_ms=294.089 err=
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=49515.479 disk=753713152 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[stage03] db=tpch1 set=S_A baseline=sieve_index q1 status=1 hot_ms=1777.470 err=
+[stage03] db=tpch1 set=S_A baseline=sieve_index q3 status=1 hot_ms=1416.135 err=
+[stage03] db=tpch1 set=S_A baseline=sieve_index q6 status=1 hot_ms=1205.189 err=
+[stage03] db=tpch1 set=S_A baseline=sieve_index q10 status=1 hot_ms=1445.913 err=
+[stage03] db=tpch1 set=S_A baseline=sieve_index q11 status=1 hot_ms=294.677 err=
+[setup_ours] K=5 setup_ms=12159.498 disk=91789270
+[stage03] db=tpch1 set=S_A baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_A baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_A baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_A baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_A baseline=ours q11 status=1 hot_ms=295.964 err=
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_mktsegment', 'customer.c_name', 'customer.c_nationkey', 'customer.c_phone', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=10 setup_ms=51052.553 disk=770105344 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_mktsegment_2', 'cf_rls_k10_customer_c_name_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_customer_c_phone_5', 'cf_rls_k10_lineitem_l_discount_6', 'cf_rls_k10_lineitem_l_extendedprice_7', 'cf_rls_k10_lineitem_l_linestatus_8', 'cf_rls_k10_lineitem_l_quantity_9', 'cf_rls_k10_lineitem_l_returnflag_10', 'cf_rls_k10_lineitem_l_shipinstruct_11', 'cf_rls_k10_lineitem_l_shipmode_12', 'cf_rls_k10_lineitem_l_tax_13']
+[stage03] db=tpch1 set=S_B baseline=rls_index q1 status=1 hot_ms=1777.815 err=
+[stage03] db=tpch1 set=S_B baseline=rls_index q3 status=1 hot_ms=60.649 err=
+[stage03] db=tpch1 set=S_B baseline=rls_index q6 status=1 hot_ms=632.874 err=
+[stage03] db=tpch1 set=S_B baseline=rls_index q10 status=1 hot_ms=1325.657 err=
+[stage03] db=tpch1 set=S_B baseline=rls_index q11 status=1 hot_ms=293.668 err=
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_mktsegment', 'customer.c_name', 'customer.c_nationkey', 'customer.c_phone', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=10 setup_ms=50649.023 disk=770105344 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_mktsegment_2', 'cf_rls_k10_customer_c_name_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_customer_c_phone_5', 'cf_rls_k10_lineitem_l_discount_6', 'cf_rls_k10_lineitem_l_extendedprice_7', 'cf_rls_k10_lineitem_l_linestatus_8', 'cf_rls_k10_lineitem_l_quantity_9', 'cf_rls_k10_lineitem_l_returnflag_10', 'cf_rls_k10_lineitem_l_shipinstruct_11', 'cf_rls_k10_lineitem_l_shipmode_12', 'cf_rls_k10_lineitem_l_tax_13']
+[stage03] db=tpch1 set=S_B baseline=sieve_index q1 status=1 hot_ms=1777.418 err=
+[stage03] db=tpch1 set=S_B baseline=sieve_index q3 status=1 hot_ms=60.826 err=
+[stage03] db=tpch1 set=S_B baseline=sieve_index q6 status=1 hot_ms=1205.193 err=
+[stage03] db=tpch1 set=S_B baseline=sieve_index q10 status=1 hot_ms=30.386 err=
+[stage03] db=tpch1 set=S_B baseline=sieve_index q11 status=1 hot_ms=294.853 err=
+[setup_ours] K=10 setup_ms=12733.936 disk=101812646
+[stage03] db=tpch1 set=S_B baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_B baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_B baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_B baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_B baseline=ours q11 status=1 hot_ms=295.020 err=
+[index_infer] K=5 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_orderkey', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'region.r_name', 'region.r_regionkey']
+[setup_rls] K=5 setup_ms=21819.498 disk=281272320 indexes=['cf_rls_k5_customer_c_acctbal_1', 'cf_rls_k5_customer_c_custkey_2', 'cf_rls_k5_customer_c_mktsegment_3', 'cf_rls_k5_customer_c_nationkey_4', 'cf_rls_k5_lineitem_l_orderkey_5', 'cf_rls_k5_lineitem_l_returnflag_6', 'cf_rls_k5_lineitem_l_shipinstruct_7', 'cf_rls_k5_lineitem_l_shipmode_8', 'cf_rls_k5_nation_n_name_9', 'cf_rls_k5_nation_n_nationkey_10', 'cf_rls_k5_nation_n_regionkey_11', 'cf_rls_k5_orders_o_custkey_12', 'cf_rls_k5_orders_o_orderkey_13', 'cf_rls_k5_orders_o_orderpriority_14', 'cf_rls_k5_orders_o_orderstatus_15', 'cf_rls_k5_region_r_name_16', 'cf_rls_k5_region_r_regionkey_17']
+[stage03] db=tpch1 set=S_C baseline=rls_index q1 status=1 hot_ms=15121.711 err=
+[stage03] db=tpch1 set=S_C baseline=rls_index q3 status=1 hot_ms=1838.002 err=
+[stage03] db=tpch1 set=S_C baseline=rls_index q6 status=1 hot_ms=7170.480 err=
+[stage03] db=tpch1 set=S_C baseline=rls_index q10 status=1 hot_ms=5211.903 err=
+[stage03] db=tpch1 set=S_C baseline=rls_index q11 status=1 hot_ms=293.348 err=
+[index_infer] K=5 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_orderkey', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'region.r_name', 'region.r_regionkey']
+[setup_rls] K=5 setup_ms=21869.653 disk=281272320 indexes=['cf_rls_k5_customer_c_acctbal_1', 'cf_rls_k5_customer_c_custkey_2', 'cf_rls_k5_customer_c_mktsegment_3', 'cf_rls_k5_customer_c_nationkey_4', 'cf_rls_k5_lineitem_l_orderkey_5', 'cf_rls_k5_lineitem_l_returnflag_6', 'cf_rls_k5_lineitem_l_shipinstruct_7', 'cf_rls_k5_lineitem_l_shipmode_8', 'cf_rls_k5_nation_n_name_9', 'cf_rls_k5_nation_n_nationkey_10', 'cf_rls_k5_nation_n_regionkey_11', 'cf_rls_k5_orders_o_custkey_12', 'cf_rls_k5_orders_o_orderkey_13', 'cf_rls_k5_orders_o_orderpriority_14', 'cf_rls_k5_orders_o_orderstatus_15', 'cf_rls_k5_region_r_name_16', 'cf_rls_k5_region_r_regionkey_17']
+[stage03] db=tpch1 set=S_C baseline=sieve_index q1 status=1 hot_ms=4609.741 err=
+[stage03] db=tpch1 set=S_C baseline=sieve_index q3 status=1 hot_ms=7110.355 err=
+[stage03] db=tpch1 set=S_C baseline=sieve_index q6 status=1 hot_ms=4307.880 err=
+[stage03] db=tpch1 set=S_C baseline=sieve_index q10 status=1 hot_ms=6789.177 err=
+[stage03] db=tpch1 set=S_C baseline=sieve_index q11 status=1 hot_ms=294.115 err=
+[setup_ours] K=5 setup_ms=8532.130 disk=110289106
+[stage03] db=tpch1 set=S_C baseline=ours q1 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_C baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_C baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_C baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_C baseline=ours q11 status=1 hot_ms=297.007 err=
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_discount', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_brand', 'part.p_partkey', 'part.p_size', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_nationkey', 'supplier.s_suppkey']
+[setup_rls] K=10 setup_ms=46406.367 disk=727015424 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_custkey_2', 'cf_rls_k10_customer_c_mktsegment_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_lineitem_l_discount_5', 'cf_rls_k10_lineitem_l_orderkey_6', 'cf_rls_k10_lineitem_l_partkey_7', 'cf_rls_k10_lineitem_l_quantity_8', 'cf_rls_k10_lineitem_l_returnflag_9', 'cf_rls_k10_lineitem_l_shipinstruct_10', 'cf_rls_k10_lineitem_l_shipmode_11', 'cf_rls_k10_lineitem_l_suppkey_12', 'cf_rls_k10_nation_n_name_13', 'cf_rls_k10_nation_n_nationkey_14', 'cf_rls_k10_nation_n_regionkey_15', 'cf_rls_k10_orders_o_custkey_16', 'cf_rls_k10_orders_o_orderkey_17', 'cf_rls_k10_orders_o_orderpriority_18', 'cf_rls_k10_orders_o_orderstatus_19', 'cf_rls_k10_orders_o_totalprice_20', 'cf_rls_k10_part_p_brand_21', 'cf_rls_k10_part_p_partkey_22', 'cf_rls_k10_part_p_size_23', 'cf_rls_k10_partsupp_ps_partkey_24', 'cf_rls_k10_partsupp_ps_suppkey_25', 'cf_rls_k10_partsupp_ps_supplycost_26', 'cf_rls_k10_region_r_name_27', 'cf_rls_k10_region_r_regionkey_28', 'cf_rls_k10_supplier_s_nationkey_29', 'cf_rls_k10_supplier_s_suppkey_30']
+[stage03] db=tpch1 set=S_D baseline=rls_index q1 status=1 hot_ms=34366.766 err=
+[stage03] db=tpch1 set=S_D baseline=rls_index q3 status=1 hot_ms=1837.878 err=
+[stage03] db=tpch1 set=S_D baseline=rls_index q6 status=1 hot_ms=19337.302 err=
+[stage03] db=tpch1 set=S_D baseline=rls_index q10 status=1 hot_ms=5544.107 err=
+[stage03] db=tpch1 set=S_D baseline=rls_index q11 status=1 hot_ms=30.716 err=
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_nationkey', 'lineitem.l_discount', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_brand', 'part.p_partkey', 'part.p_size', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_nationkey', 'supplier.s_suppkey']
+[setup_rls] K=10 setup_ms=46485.572 disk=727015424 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_custkey_2', 'cf_rls_k10_customer_c_mktsegment_3', 'cf_rls_k10_customer_c_nationkey_4', 'cf_rls_k10_lineitem_l_discount_5', 'cf_rls_k10_lineitem_l_orderkey_6', 'cf_rls_k10_lineitem_l_partkey_7', 'cf_rls_k10_lineitem_l_quantity_8', 'cf_rls_k10_lineitem_l_returnflag_9', 'cf_rls_k10_lineitem_l_shipinstruct_10', 'cf_rls_k10_lineitem_l_shipmode_11', 'cf_rls_k10_lineitem_l_suppkey_12', 'cf_rls_k10_nation_n_name_13', 'cf_rls_k10_nation_n_nationkey_14', 'cf_rls_k10_nation_n_regionkey_15', 'cf_rls_k10_orders_o_custkey_16', 'cf_rls_k10_orders_o_orderkey_17', 'cf_rls_k10_orders_o_orderpriority_18', 'cf_rls_k10_orders_o_orderstatus_19', 'cf_rls_k10_orders_o_totalprice_20', 'cf_rls_k10_part_p_brand_21', 'cf_rls_k10_part_p_partkey_22', 'cf_rls_k10_part_p_size_23', 'cf_rls_k10_partsupp_ps_partkey_24', 'cf_rls_k10_partsupp_ps_suppkey_25', 'cf_rls_k10_partsupp_ps_supplycost_26', 'cf_rls_k10_region_r_name_27', 'cf_rls_k10_region_r_regionkey_28', 'cf_rls_k10_supplier_s_nationkey_29', 'cf_rls_k10_supplier_s_suppkey_30']
+[stage03] db=tpch1 set=S_D baseline=sieve_index q1 status=1 hot_ms=4910.428 err=
+[stage03] db=tpch1 set=S_D baseline=sieve_index q3 status=1 hot_ms=7019.944 err=
+[stage03] db=tpch1 set=S_D baseline=sieve_index q6 status=1 hot_ms=4458.497 err=
+[stage03] db=tpch1 set=S_D baseline=sieve_index q10 status=1 hot_ms=6899.093 err=
+[stage03] db=tpch1 set=S_D baseline=sieve_index q11 status=1 hot_ms=30.672 err=
+[setup_ours] K=10 setup_ms=18436.373 disk=180629627
+[stage03] db=tpch1 set=S_D baseline=ours q1 status=1 hot_ms=5152.651 err=
+[stage03] db=tpch1 set=S_D baseline=ours q3 status=1 hot_ms=5181.691 err=
+[stage03] db=tpch1 set=S_D baseline=ours q6 status=1 hot_ms=4940.529 err=
+[stage03] db=tpch1 set=S_D baseline=ours q10 status=1 hot_ms=5002.721 err=
+[stage03] db=tpch1 set=S_D baseline=ours q11 status=1 hot_ms=31.071 err=
+[index_infer] K=5 specs=['lineitem.l_commitdate', 'lineitem.l_discount', 'lineitem.l_quantity', 'lineitem.l_receiptdate', 'lineitem.l_returnflag', 'lineitem.l_shipdate', 'lineitem.l_tax', 'partsupp.ps_availqty', 'partsupp.ps_supplycost', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=5 setup_ms=39320.632 disk=598646784 indexes=['cf_rls_k5_lineitem_l_commitdate_1', 'cf_rls_k5_lineitem_l_discount_2', 'cf_rls_k5_lineitem_l_quantity_3', 'cf_rls_k5_lineitem_l_receiptdate_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipdate_6', 'cf_rls_k5_lineitem_l_tax_7', 'cf_rls_k5_partsupp_ps_availqty_8', 'cf_rls_k5_partsupp_ps_supplycost_9', 'cf_rls_k5_supplier_s_acctbal_10', 'cf_rls_k5_supplier_s_nationkey_11']
+[stage03] db=tpch1 set=S_E baseline=rls_index q1 status=1 hot_ms=4759.274 err=
+[stage03] db=tpch1 set=S_E baseline=rls_index q3 status=1 hot_ms=1786.583 err=
+[stage03] db=tpch1 set=S_E baseline=rls_index q6 status=1 hot_ms=1235.521 err=
+[stage03] db=tpch1 set=S_E baseline=rls_index q10 status=1 hot_ms=1475.992 err=
+[stage03] db=tpch1 set=S_E baseline=rls_index q11 status=1 hot_ms=30.603 err=
+[index_infer] K=5 specs=['lineitem.l_commitdate', 'lineitem.l_discount', 'lineitem.l_quantity', 'lineitem.l_receiptdate', 'lineitem.l_returnflag', 'lineitem.l_shipdate', 'lineitem.l_tax', 'partsupp.ps_availqty', 'partsupp.ps_supplycost', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=5 setup_ms=39283.302 disk=598646784 indexes=['cf_rls_k5_lineitem_l_commitdate_1', 'cf_rls_k5_lineitem_l_discount_2', 'cf_rls_k5_lineitem_l_quantity_3', 'cf_rls_k5_lineitem_l_receiptdate_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipdate_6', 'cf_rls_k5_lineitem_l_tax_7', 'cf_rls_k5_partsupp_ps_availqty_8', 'cf_rls_k5_partsupp_ps_supplycost_9', 'cf_rls_k5_supplier_s_acctbal_10', 'cf_rls_k5_supplier_s_nationkey_11']
+[stage03] db=tpch1 set=S_E baseline=sieve_index q1 status=1 hot_ms=4548.499 err=
+[stage03] db=tpch1 set=S_E baseline=sieve_index q3 status=1 hot_ms=1626.933 err=
+[stage03] db=tpch1 set=S_E baseline=sieve_index q6 status=1 hot_ms=1144.852 err=
+[stage03] db=tpch1 set=S_E baseline=sieve_index q10 status=1 hot_ms=1530.470 err=
+[stage03] db=tpch1 set=S_E baseline=sieve_index q11 status=1 hot_ms=30.505 err=
+[setup_ours] K=5 setup_ms=7964.884 disk=98603082
+[stage03] db=tpch1 set=S_E baseline=ours q1 status=0 hot_ms=10725.112 err=rows
+[stage03] db=tpch1 set=S_E baseline=ours q3 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_E baseline=ours q6 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_E baseline=ours q10 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_E baseline=ours q11 status=0 hot_ms= err=db_error
+[stage03] db=tpch1 set=S_F baseline=rls_index q1 status=0 hot_ms= err=setup_error
+[stage03] db=tpch1 set=S_F baseline=rls_index q3 status=0 hot_ms= err=setup_error
+[stage03] db=tpch1 set=S_F baseline=rls_index q6 status=0 hot_ms= err=setup_error
+[stage03] db=tpch1 set=S_F baseline=rls_index q10 status=0 hot_ms= err=setup_error
+[stage03] db=tpch1 set=S_F baseline=rls_index q11 status=0 hot_ms= err=setup_error
+[index_infer] K=10 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_nationkey', 'lineitem.l_commitdate', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_receiptdate', 'lineitem.l_returnflag', 'lineitem.l_shipdate', 'lineitem.l_suppkey', 'lineitem.l_tax', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_totalprice', 'part.p_partkey', 'part.p_retailprice', 'part.p_size', 'partsupp.ps_availqty', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=10 setup_ms=58661.944 disk=1071308800 indexes=['cf_rls_k10_customer_c_acctbal_1', 'cf_rls_k10_customer_c_custkey_2', 'cf_rls_k10_customer_c_nationkey_3', 'cf_rls_k10_lineitem_l_commitdate_4', 'cf_rls_k10_lineitem_l_discount_5', 'cf_rls_k10_lineitem_l_extendedprice_6', 'cf_rls_k10_lineitem_l_orderkey_7', 'cf_rls_k10_lineitem_l_partkey_8', 'cf_rls_k10_lineitem_l_quantity_9', 'cf_rls_k10_lineitem_l_receiptdate_10', 'cf_rls_k10_lineitem_l_returnflag_11', 'cf_rls_k10_lineitem_l_shipdate_12', 'cf_rls_k10_lineitem_l_suppkey_13', 'cf_rls_k10_lineitem_l_tax_14', 'cf_rls_k10_nation_n_nationkey_15', 'cf_rls_k10_nation_n_regionkey_16', 'cf_rls_k10_orders_o_custkey_17', 'cf_rls_k10_orders_o_orderkey_18', 'cf_rls_k10_orders_o_totalprice_19', 'cf_rls_k10_part_p_partkey_20', 'cf_rls_k10_part_p_retailprice_21', 'cf_rls_k10_part_p_size_22', 'cf_rls_k10_partsupp_ps_availqty_23', 'cf_rls_k10_partsupp_ps_partkey_24', 'cf_rls_k10_partsupp_ps_suppkey_25', 'cf_rls_k10_partsupp_ps_supplycost_26', 'cf_rls_k10_supplier_s_acctbal_27', 'cf_rls_k10_supplier_s_nationkey_28']
+[stage03] db=tpch1 set=S_F baseline=sieve_index q1 status=1 hot_ms=4608.879 err=
+[stage03] db=tpch1 set=S_F baseline=sieve_index q3 status=1 hot_ms=30.524 err=
+[stage03] db=tpch1 set=S_F baseline=sieve_index q6 status=1 hot_ms=1174.534 err=
+[stage03] db=tpch1 set=S_F baseline=sieve_index q10 status=1 hot_ms=30.603 err=
+[stage03] db=tpch1 set=S_F baseline=sieve_index q11 status=1 hot_ms=30.567 err=
+[setup_ours] K=10 setup_ms=27925.213 disk=243479729
+[stage03] db=tpch1 set=S_F baseline=ours q1 status=1 hot_ms=11477.382 err=
+[stage03] db=tpch1 set=S_F baseline=ours q3 status=1 hot_ms=4007.777 err=
+[stage03] db=tpch1 set=S_F baseline=ours q6 status=1 hot_ms=3857.015 err=
+[stage03] db=tpch1 set=S_F baseline=ours q10 status=1 hot_ms=3766.271 err=
+[stage03] db=tpch1 set=S_F baseline=ours q11 status=1 hot_ms=2229.811 err=
+[index_infer] K=17 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_name', 'customer.c_nationkey', 'customer.c_phone', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_partkey', 'part.p_retailprice', 'part.p_size', 'partsupp.ps_availqty', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=17 setup_ms=58289.370 disk=968261632 indexes=['cf_rls_k17_customer_c_acctbal_1', 'cf_rls_k17_customer_c_custkey_2', 'cf_rls_k17_customer_c_mktsegment_3', 'cf_rls_k17_customer_c_name_4', 'cf_rls_k17_customer_c_nationkey_5', 'cf_rls_k17_customer_c_phone_6', 'cf_rls_k17_lineitem_l_discount_7', 'cf_rls_k17_lineitem_l_extendedprice_8', 'cf_rls_k17_lineitem_l_linestatus_9', 'cf_rls_k17_lineitem_l_orderkey_10', 'cf_rls_k17_lineitem_l_partkey_11', 'cf_rls_k17_lineitem_l_quantity_12', 'cf_rls_k17_lineitem_l_returnflag_13', 'cf_rls_k17_lineitem_l_shipinstruct_14', 'cf_rls_k17_lineitem_l_shipmode_15', 'cf_rls_k17_lineitem_l_suppkey_16', 'cf_rls_k17_nation_n_name_17', 'cf_rls_k17_nation_n_nationkey_18', 'cf_rls_k17_nation_n_regionkey_19', 'cf_rls_k17_orders_o_custkey_20', 'cf_rls_k17_orders_o_orderkey_21', 'cf_rls_k17_orders_o_orderpriority_22', 'cf_rls_k17_orders_o_orderstatus_23', 'cf_rls_k17_orders_o_totalprice_24', 'cf_rls_k17_part_p_partkey_25', 'cf_rls_k17_part_p_retailprice_26', 'cf_rls_k17_part_p_size_27', 'cf_rls_k17_partsupp_ps_availqty_28', 'cf_rls_k17_partsupp_ps_partkey_29', 'cf_rls_k17_partsupp_ps_suppkey_30', 'cf_rls_k17_partsupp_ps_supplycost_31', 'cf_rls_k17_region_r_name_32', 'cf_rls_k17_region_r_regionkey_33', 'cf_rls_k17_supplier_s_acctbal_34', 'cf_rls_k17_supplier_s_nationkey_35']
+[stage03] db=tpch1 set=S_G baseline=rls_index q1 status=1 hot_ms=46448.160 err=
+[stage03] db=tpch1 set=S_G baseline=rls_index q3 status=1 hot_ms=30.707 err=
+[stage03] db=tpch1 set=S_G baseline=rls_index q6 status=1 hot_ms=32232.049 err=
+[stage03] db=tpch1 set=S_G baseline=rls_index q10 status=1 hot_ms=30.450 err=
+[stage03] db=tpch1 set=S_G baseline=rls_index q11 status=1 hot_ms=30.505 err=
+[index_infer] K=17 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_name', 'customer.c_nationkey', 'customer.c_phone', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_partkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_suppkey', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'orders.o_totalprice', 'part.p_partkey', 'part.p_retailprice', 'part.p_size', 'partsupp.ps_availqty', 'partsupp.ps_partkey', 'partsupp.ps_suppkey', 'partsupp.ps_supplycost', 'region.r_name', 'region.r_regionkey', 'supplier.s_acctbal', 'supplier.s_nationkey']
+[setup_rls] K=17 setup_ms=58379.815 disk=968261632 indexes=['cf_rls_k17_customer_c_acctbal_1', 'cf_rls_k17_customer_c_custkey_2', 'cf_rls_k17_customer_c_mktsegment_3', 'cf_rls_k17_customer_c_name_4', 'cf_rls_k17_customer_c_nationkey_5', 'cf_rls_k17_customer_c_phone_6', 'cf_rls_k17_lineitem_l_discount_7', 'cf_rls_k17_lineitem_l_extendedprice_8', 'cf_rls_k17_lineitem_l_linestatus_9', 'cf_rls_k17_lineitem_l_orderkey_10', 'cf_rls_k17_lineitem_l_partkey_11', 'cf_rls_k17_lineitem_l_quantity_12', 'cf_rls_k17_lineitem_l_returnflag_13', 'cf_rls_k17_lineitem_l_shipinstruct_14', 'cf_rls_k17_lineitem_l_shipmode_15', 'cf_rls_k17_lineitem_l_suppkey_16', 'cf_rls_k17_nation_n_name_17', 'cf_rls_k17_nation_n_nationkey_18', 'cf_rls_k17_nation_n_regionkey_19', 'cf_rls_k17_orders_o_custkey_20', 'cf_rls_k17_orders_o_orderkey_21', 'cf_rls_k17_orders_o_orderpriority_22', 'cf_rls_k17_orders_o_orderstatus_23', 'cf_rls_k17_orders_o_totalprice_24', 'cf_rls_k17_part_p_partkey_25', 'cf_rls_k17_part_p_retailprice_26', 'cf_rls_k17_part_p_size_27', 'cf_rls_k17_partsupp_ps_availqty_28', 'cf_rls_k17_partsupp_ps_partkey_29', 'cf_rls_k17_partsupp_ps_suppkey_30', 'cf_rls_k17_partsupp_ps_supplycost_31', 'cf_rls_k17_region_r_name_32', 'cf_rls_k17_region_r_regionkey_33', 'cf_rls_k17_supplier_s_acctbal_34', 'cf_rls_k17_supplier_s_nationkey_35']
+[stage03] db=tpch1 set=S_G baseline=sieve_index q1 status=1 hot_ms=28945.121 err=
+[stage03] db=tpch1 set=S_G baseline=sieve_index q3 status=1 hot_ms=30.785 err=
+[stage03] db=tpch1 set=S_G baseline=sieve_index q6 status=1 hot_ms=18764.804 err=
+[stage03] db=tpch1 set=S_G baseline=sieve_index q10 status=1 hot_ms=30.409 err=
+[stage03] db=tpch1 set=S_G baseline=sieve_index q11 status=1 hot_ms=30.628 err=
+[setup_ours] K=17 setup_ms=27271.618 disk=226961590
+[stage03] db=tpch1 set=S_G baseline=ours q1 status=1 hot_ms=16748.135 err=
+[stage03] db=tpch1 set=S_G baseline=ours q3 status=1 hot_ms=16628.104 err=
+[stage03] db=tpch1 set=S_G baseline=ours q6 status=1 hot_ms=16748.455 err=
+[stage03] db=tpch1 set=S_G baseline=ours q10 status=1 hot_ms=15815.199 err=
+[stage03] db=tpch1 set=S_G baseline=ours q11 status=1 hot_ms=12681.618 err=
+[done] wrote /home/nghosh/setu/logs/gate_tpch0_1_tpch1_summary_stage03.md

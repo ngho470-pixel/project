@@ -1,0 +1,13 @@
+db,policy_code,policy_target,policy_notes,query_id,enabled_policy_ids,ours_rows,ours_hash,gt_rows,gt_hash,status,reason,pf2_terms_supported,pf2_terms_single_hub,pf2_terms_two_hop,pf2_terms_tree,pf2_tree_domains,pf2_tree_tables,pf2_tree_edges,pf2_project_bin_rids_total,proj_sig_count,proj_mask_or_ops,proj_rid_iters
+tpch1,P_A,lineitem,2-hop chain lineitem->orders->customer (PF-V2.3 regression),1,1,4,aafd7ce71114558e95a2de75e99bbb5e,4,aafd7ce71114558e95a2de75e99bbb5e,PASS,,1,0,1,0,0,0,0,1189837,0,0,0
+tpch1,P_A,lineitem,2-hop chain lineitem->orders->customer (PF-V2.3 regression),6,1,1,6a7300bb9d9966aa2be6bfeda89127a7,1,6a7300bb9d9966aa2be6bfeda89127a7,PASS,,1,0,1,0,0,0,0,1189837,0,0,0
+tpch1,P_B,lineitem,2-hop chain with multiple local predicates across A/B,1,3,3,95ffea12ea899ff86c4076478cbecf54,3,95ffea12ea899ff86c4076478cbecf54,PASS,,1,0,1,0,0,0,0,576456,0,0,0
+tpch1,P_B,lineitem,2-hop chain with multiple local predicates across A/B,6,3,1,6a7300bb9d9966aa2be6bfeda89127a7,1,6a7300bb9d9966aa2be6bfeda89127a7,PASS,,1,0,1,0,0,0,0,576456,0,0,0
+tpch1,P_C,orders,2-hop chain orders->customer->nation with ordered local witness predicate,3,5,389,574799e782ba5a62ad282481ef4b90ee,389,574799e782ba5a62ad282481ef4b90ee,PASS,,1,0,1,0,0,0,0,54155,0,0,0
+tpch1,P_C,orders,2-hop chain orders->customer->nation with ordered local witness predicate,10,5,1343,d295c798d51c42420d3a3813dfe715c1,1343,d295c798d51c42420d3a3813dfe715c1,PASS,,1,0,1,0,0,0,0,54155,0,0,0
+tpch1,P_D,supplier,2-hop chain supplier->nation->region,5,7,0,d41d8cd98f00b204e9800998ecf8427e,0,d41d8cd98f00b204e9800998ecf8427e,PASS,,1,0,1,0,0,0,0,1987,0,0,0
+tpch1,P_D,supplier,2-hop chain supplier->nation->region,8,7,2,f0591e25d45a363f1862870e41e58a12,2,f0591e25d45a363f1862870e41e58a12,PASS,,1,0,1,0,0,0,0,1987,0,0,0
+tpch1,P_E,lineitem,3-hop chain lineitem->orders->customer->nation (new PF-V2.4 tree),1,9,4,efe8af7513db11ef621e445ac0fff318,4,efe8af7513db11ef621e445ac0fff318,PASS,,1,0,0,1,3,4,6,239064,0,0,0
+tpch1,P_E,lineitem,3-hop chain lineitem->orders->customer->nation (new PF-V2.4 tree),6,9,1,0d0efcaf5d930800acadda9f2c0e487a,1,0d0efcaf5d930800acadda9f2c0e487a,PASS,,1,0,0,1,3,4,6,239064,0,0,0
+tpch1,P_F,region,"branching tree region<-nation->(customer,supplier) (new PF-V2.4 tree)",5,11,5,9a87af99579a43ca5e7a241d426d03c5,5,9a87af99579a43ca5e7a241d426d03c5,PASS,,1,0,0,1,2,4,5,5,0,0,0
+tpch1,P_F,region,"branching tree region<-nation->(customer,supplier) (new PF-V2.4 tree)",8,11,2,40750f34bb9af5af9e2d8201d1101ed5,2,40750f34bb9af5af9e2d8201d1101ed5,PASS,,1,0,0,1,2,4,5,5,0,0,0

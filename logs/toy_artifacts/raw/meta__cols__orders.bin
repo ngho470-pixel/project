@@ -1,0 +1,3 @@
+orders.o_custkey
+orders.o_orderkey
+orders.o_orderstatus

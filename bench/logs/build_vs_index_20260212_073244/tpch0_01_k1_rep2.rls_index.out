@@ -1,0 +1,34 @@
+Pager usage is off.
+SET
+__BACKEND_PID__ 393680
+__PG_SETTINGS__
+64MB
+2
+on
+__END_PG_SETTINGS__
+psql:bench/bench_rls_index_build.sql:17: NOTICE:  schema "pg_temp" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+INSERT 0 2
+__DROP_INDEXES_BEGIN__
+DO
+psql:bench/bench_rls_index_build.sql:38: NOTICE:  index "idx_orders_o_custkey" does not exist, skipping
+DROP INDEX
+psql:bench/bench_rls_index_build.sql:39: NOTICE:  index "idx_customer_c_custkey" does not exist, skipping
+DROP INDEX
+psql:bench/bench_rls_index_build.sql:40: NOTICE:  index "idx_lineitem_l_orderkey" does not exist, skipping
+DROP INDEX
+psql:bench/bench_rls_index_build.sql:41: NOTICE:  index "idx_customer_c_custkey_mktsegment" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:1: NOTICE:  index "cf_rls_k1_lineitem_l_linestatus_1" does not exist, skipping
+DROP INDEX
+psql:bench/rls_indexes_drop.sql:2: NOTICE:  index "cf_rls_k1_lineitem_l_returnflag_2" does not exist, skipping
+DROP INDEX
+__DROP_INDEXES_END__
+__RLS_INDEX_BUILD_BEGIN__
+CREATE INDEX
+CREATE INDEX
+__RLS_INDEX_BUILD_END__ 2026-02-12 07:32:45.458048+05:30 2026-02-12 07:32:45.516292+05:30
+__RLS_INDEX_TOTAL_BYTES__
+868352
+__END_RLS_INDEX_TOTAL_BYTES__

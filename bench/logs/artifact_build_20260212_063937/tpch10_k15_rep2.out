@@ -1,0 +1,46 @@
+Pager usage is off.
+SET
+psql:bench/bench_artifact_build.sql:11: NOTICE:  relation "files" already exists, skipping
+CREATE TABLE
+DO
+CHECKPOINT
+LOAD
+DROP FUNCTION
+CREATE FUNCTION
+psql:bench/bench_artifact_build.sql:43: NOTICE:  relation "files" already exists, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  relation "files_name_uidx" already exists, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_jc_0" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_jc_1" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_jc_2" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_jc_3" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_0" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_1" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_2" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_3" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_4" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_5" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_6" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_7" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_8" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_9" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_10" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_11" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_12" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_13" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_14" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_15" does not exist, skipping
+psql:bench/bench_artifact_build.sql:43: NOTICE:  table "tmp_dict_16" does not exist, skipping
+
+CHECKPOINT
+psql:bench/bench_artifact_build.sql:48: NOTICE:  table "artifact_relstats" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+DO
+__ARTIFACT_TOTAL_BYTES__
+50372608
+__ARTIFACT_TOTAL_ROWS__
+68
+__ARTIFACT_TABLE_COUNT__
+1
+__ARTIFACT_TABLE_STATS__
+public|files|50372608|68

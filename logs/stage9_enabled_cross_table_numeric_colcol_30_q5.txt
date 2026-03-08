@@ -1,0 +1,1 @@
+30. supplier : supplier.s_nationkey = customer.c_nationkey AND (supplier.s_acctbal >= customer.c_acctbal)

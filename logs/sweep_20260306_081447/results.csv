@@ -1,0 +1,106 @@
+db,baseline,query_id,policy_set_name,policy_ids,num_policies,query_complexity,policy_complexity,cold_ms,hot_ms,correctness,baseline_rows,rls_index_rows,mem_overhead_kb,status,error_type,error_msg,pre_run_memory_building_ms
+postgres,rls_index,1,1-5,"1,2,3,4,5",5,4,30,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,3,1-5,"1,2,3,4,5",5,8,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,6,1-5,"1,2,3,4,5",5,6,30,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,10,1-5,"1,2,3,4,5",5,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,11,1-5,"1,2,3,4,5",5,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,sieve_index,1,1-5,"1,2,3,4,5",5,4,30,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,3,1-5,"1,2,3,4,5",5,8,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,6,1-5,"1,2,3,4,5",5,6,30,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,10,1-5,"1,2,3,4,5",5,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,11,1-5,"1,2,3,4,5",5,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,ours,1,1-5,"1,2,3,4,5",5,4,30,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,3,1-5,"1,2,3,4,5",5,8,0,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,6,1-5,"1,2,3,4,5",5,6,30,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,10,1-5,"1,2,3,4,5",5,9,0,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,11,1-5,"1,2,3,4,5",5,9,0,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,rls_index,1,1-10,"1,2,3,4,5,6,7,8,9,10",10,4,30,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,rls_index,3,1-10,"1,2,3,4,5,6,7,8,9,10",10,8,27,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,rls_index,6,1-10,"1,2,3,4,5,6,7,8,9,10",10,6,30,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,rls_index,10,1-10,"1,2,3,4,5,6,7,8,9,10",10,9,27,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,rls_index,11,1-10,"1,2,3,4,5,6,7,8,9,10",10,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,sieve_index,1,1-10,"1,2,3,4,5,6,7,8,9,10",10,4,30,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,sieve_index,3,1-10,"1,2,3,4,5,6,7,8,9,10",10,8,27,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,sieve_index,6,1-10,"1,2,3,4,5,6,7,8,9,10",10,6,30,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,sieve_index,10,1-10,"1,2,3,4,5,6,7,8,9,10",10,9,27,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,sieve_index,11,1-10,"1,2,3,4,5,6,7,8,9,10",10,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,ours,1,1-10,"1,2,3,4,5,6,7,8,9,10",10,4,30,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,3,1-10,"1,2,3,4,5,6,7,8,9,10",10,8,27,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,6,1-10,"1,2,3,4,5,6,7,8,9,10",10,6,30,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,10,1-10,"1,2,3,4,5,6,7,8,9,10",10,9,27,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,11,1-10,"1,2,3,4,5,6,7,8,9,10",10,9,0,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,rls_index,1,11-15,"11,12,13,14,15",5,4,11,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,3,11-15,"11,12,13,14,15",5,8,23,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,6,11-15,"11,12,13,14,15",5,6,11,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,10,11-15,"11,12,13,14,15",5,9,23,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,11,11-15,"11,12,13,14,15",5,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,sieve_index,1,11-15,"11,12,13,14,15",5,4,11,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,3,11-15,"11,12,13,14,15",5,8,23,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,6,11-15,"11,12,13,14,15",5,6,11,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,10,11-15,"11,12,13,14,15",5,9,23,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,11,11-15,"11,12,13,14,15",5,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,ours,1,11-15,"11,12,13,14,15",5,4,11,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,ours,3,11-15,"11,12,13,14,15",5,8,23,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,ours,6,11-15,"11,12,13,14,15",5,6,11,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,ours,10,11-15,"11,12,13,14,15",5,9,23,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,ours,11,11-15,"11,12,13,14,15",5,9,0,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,rls_index,1,11-20,"11,12,13,14,15,16,17,18,19,20",10,4,55,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,3,11-20,"11,12,13,14,15,16,17,18,19,20",10,8,58,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,6,11-20,"11,12,13,14,15,16,17,18,19,20",10,6,55,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,10,11-20,"11,12,13,14,15,16,17,18,19,20",10,9,58,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,11,11-20,"11,12,13,14,15,16,17,18,19,20",10,9,34,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,sieve_index,1,11-20,"11,12,13,14,15,16,17,18,19,20",10,4,55,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,3,11-20,"11,12,13,14,15,16,17,18,19,20",10,8,58,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,6,11-20,"11,12,13,14,15,16,17,18,19,20",10,6,55,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,10,11-20,"11,12,13,14,15,16,17,18,19,20",10,9,58,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,11,11-20,"11,12,13,14,15,16,17,18,19,20",10,9,34,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,ours,1,11-20,"11,12,13,14,15,16,17,18,19,20",10,4,55,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,ours,3,11-20,"11,12,13,14,15,16,17,18,19,20",10,8,58,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,ours,6,11-20,"11,12,13,14,15,16,17,18,19,20",10,6,55,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,ours,10,11-20,"11,12,13,14,15,16,17,18,19,20",10,9,58,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,ours,11,11-20,"11,12,13,14,15,16,17,18,19,20",10,9,34,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for orders.o_custkey,0.000
+postgres,rls_index,1,21-25,"21,22,23,24,25",5,4,6,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,3,21-25,"21,22,23,24,25",5,8,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,6,21-25,"21,22,23,24,25",5,6,6,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,10,21-25,"21,22,23,24,25",5,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,11,21-25,"21,22,23,24,25",5,9,2,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,sieve_index,1,21-25,"21,22,23,24,25",5,4,6,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,3,21-25,"21,22,23,24,25",5,8,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,6,21-25,"21,22,23,24,25",5,6,6,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,10,21-25,"21,22,23,24,25",5,9,0,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,11,21-25,"21,22,23,24,25",5,9,2,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,ours,1,21-25,"21,22,23,24,25",5,4,6,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,3,21-25,"21,22,23,24,25",5,8,0,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,6,21-25,"21,22,23,24,25",5,6,6,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,10,21-25,"21,22,23,24,25",5,9,0,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,11,21-25,"21,22,23,24,25",5,9,2,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,rls_index,1,21-30,"21,22,23,24,25,26,27,28,29,30",10,4,13,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,3,21-30,"21,22,23,24,25,26,27,28,29,30",10,8,8,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,6,21-30,"21,22,23,24,25,26,27,28,29,30",10,6,13,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,10,21-30,"21,22,23,24,25,26,27,28,29,30",10,9,8,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,rls_index,11,21-30,"21,22,23,24,25,26,27,28,29,30",10,9,10,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000
+postgres,sieve_index,1,21-30,"21,22,23,24,25,26,27,28,29,30",10,4,13,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,3,21-30,"21,22,23,24,25,26,27,28,29,30",10,8,8,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,6,21-30,"21,22,23,24,25,26,27,28,29,30",10,6,13,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,10,21-30,"21,22,23,24,25,26,27,28,29,30",10,9,8,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,sieve_index,11,21-30,"21,22,23,24,25,26,27,28,29,30",10,9,10,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist LINE 1: ...em WITH (security_barrier = true) AS SELECT * FROM lineitem;                                                               ^",0.000
+postgres,ours,1,21-30,"21,22,23,24,25,26,27,28,29,30",10,4,13,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,3,21-30,"21,22,23,24,25,26,27,28,29,30",10,8,8,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,6,21-30,"21,22,23,24,25,26,27,28,29,30",10,6,13,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,10,21-30,"21,22,23,24,25,26,27,28,29,30",10,9,8,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,ours,11,21-30,"21,22,23,24,25,26,27,28,29,30",10,9,10,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_returnflag,0.000
+postgres,rls_index,1,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,4,29,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,rls_index,3,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,8,58,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,rls_index,6,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,6,29,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,rls_index,10,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,9,58,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,rls_index,11,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,9,8,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist",0.000
+postgres,sieve_index,1,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,4,29,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,sieve_index,3,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,8,58,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,sieve_index,6,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,6,29,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,sieve_index,10,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,9,58,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,sieve_index,11,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,9,8,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""customer"" does not exist LINE 1: ...er WITH (security_barrier = true) AS SELECT * FROM customer;                                                               ^",0.000
+postgres,ours,1,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,4,29,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_shipmode,0.000
+postgres,ours,3,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,8,58,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_shipmode,0.000
+postgres,ours,6,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,6,29,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_shipmode,0.000
+postgres,ours,10,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,9,58,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_shipmode,0.000
+postgres,ours,11,5-15_U_25-30,"5,6,7,8,9,10,11,12,13,14,15,25,26,27,28,29,30",17,9,8,,,UNKNOWN,,,,0,setup_error,ERROR:  unable to resolve type OID for lineitem.l_shipmode,0.000

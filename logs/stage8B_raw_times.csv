@@ -1,0 +1,3 @@
+row_type,db,K,policy_ids,baseline,query_id,setup_ms,disk_overhead_bytes,cold_ms,cold_peak_rss_kb,hot1_ms,hot1_peak_rss_kb,hot2_ms,hot2_peak_rss_kb,hot3_ms,hot3_peak_rss_kb,hot4_ms,hot4_peak_rss_kb,hot5_ms,hot5_peak_rss_kb,hot_avg_ms,hot_avg_peak_rss_kb,status,error_type,error_msg
+setup,tpch1,10,"11,12,13,14,15,16,17,18,19,20",ours,__setup__,18142.659,180628195,,,,,,,,,,,,,,,ok,,
+query,tpch1,10,"11,12,13,14,15,16,17,18,19,20",ours,1,,,44790.311,2667380,43945.664,2854492,43555.234,2925296,43734.165,2925952,,,,,43745.021,2901913,ok,,

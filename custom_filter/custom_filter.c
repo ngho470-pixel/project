@@ -67,8 +67,17 @@ typedef enum CfScanMode
 {
     CF_SCAN_MODE_FILTER = 0,
     CF_SCAN_MODE_TID = 1,
-    CF_SCAN_MODE_EMPTY = 2
+    CF_SCAN_MODE_EMPTY = 2,
+    CF_SCAN_MODE_ALL = 3
 } CfScanMode;
+
+typedef enum PolicyModeHint
+{
+    POLICY_MODE_HINT_FILTER = 0,
+    POLICY_MODE_HINT_TID = 1,
+    POLICY_MODE_HINT_EMPTY = 2,
+    POLICY_MODE_HINT_ALL = 3
+} PolicyModeHint;
 
 typedef struct PolicyTableAllowC {
     const char *table;
@@ -77,11 +86,14 @@ typedef struct PolicyTableAllowC {
     uint32 blocks;
     uint32 total_blocks;
     uint32 n_rows;
+    uint64 allowed_rows;
     uint32 allowed_sids;
     uint32 total_sids;
     double hub_prop_ms;
     double sat_ms;
     double sid_build_ms;
+    int mode_hint;
+    const char *mode_reason;
 } PolicyTableAllowC;
 
 typedef struct PolicyAllowListC {
@@ -171,6 +183,32 @@ typedef struct PolicyRunProfileC {
     uint64 tid_tuples_fetched;
     double tid_fetch_ms;
     double tid_qual_ms;
+    double build_hubs_ms;
+    double composite_stamp_ms;
+    double build_context_ms;
+    double signature_build_ms;
+    double sat_ms;
+    double project_allowset_ms;
+    double prop_build_arcs_ms;
+    double prop_ac_ms;
+    double prop_scc_ms;
+    double prop_bin_catalog_ms;
+    double prop_witness_ms;
+    double prop_cmp_ms;
+    double semantic_dedup_ms;
+    double candidate_prune_ms;
+    double sig_const_fold_ms;
+    uint64 allow_cache_hit;
+    uint64 allow_cache_miss;
+    double allow_cache_build_ms;
+    uint64 bin_build_rows_scanned;
+    uint64 bin_count_final;
+    double bin_build_avg_probe_len;
+    uint64 bin_build_max_probe_len;
+    uint64 bin_build_rehash_count;
+    uint64 bin_build_hub_count;
+    uint64 bin_build_local_atom_count;
+    uint64 bin_build_extra_count;
 } PolicyRunProfileC;
 
 typedef struct PolicyRunHandle PolicyRunHandle;
@@ -291,18 +329,6 @@ cf_lookup_block_words(const uint64 *words,
             elog(NOTICE, "CF_SUBPLAN " fmt, ##__VA_ARGS__); \
     } while (0)
 
-static uint32
-cf_popcount_allow(const uint8 *bits, uint32 n_rows)
-{
-    if (!bits) return 0;
-    uint32 cnt = 0;
-    for (uint32 r = 0; r < n_rows; r++) {
-        if (bits[r >> 3] & (uint8)(1u << (r & 7)))
-            cnt++;
-    }
-    return cnt;
-}
-
 static uint64
 cf_popcount_block_words(const uint64 *words, uint32 blocks)
 {
@@ -380,169 +406,8 @@ cf_contract_assert_chunk(const char *label, const char *relname, void *ptr, Memo
                         relname ? relname : "<global>")));
 }
 
-static bool
-cf_atom_equal(const PolicyAtomC *a, const PolicyAtomC *b)
-{
-    if (!a || !b) return false;
-    if (a->canon_key && b->canon_key)
-        return strcmp(a->canon_key, b->canon_key) == 0;
-    if (a->kind != b->kind) return false;
-    if (a->join_class_id != b->join_class_id) return false;
-    if ((a->lhs_schema_key && !b->lhs_schema_key) || (!a->lhs_schema_key && b->lhs_schema_key)) return false;
-    if ((a->rhs_schema_key && !b->rhs_schema_key) || (!a->rhs_schema_key && b->rhs_schema_key)) return false;
-    if (a->lhs_schema_key && b->lhs_schema_key && strcmp(a->lhs_schema_key, b->lhs_schema_key) != 0) return false;
-    if (a->rhs_schema_key && b->rhs_schema_key && strcmp(a->rhs_schema_key, b->rhs_schema_key) != 0) return false;
-    if (a->op != b->op) return false;
-    if (a->const_count != b->const_count) return false;
-    for (int i = 0; i < a->const_count; i++) {
-        const char *av = a->const_values ? a->const_values[i] : NULL;
-        const char *bv = b->const_values ? b->const_values[i] : NULL;
-        if ((av && !bv) || (!av && bv)) return false;
-        if (av && bv && strcmp(av, bv) != 0) return false;
-    }
-    return true;
-}
-
-static void
-cf_log_atom(const char *prefix, const PolicyAtomC *a)
-{
-    if (!a) return;
-    StringInfoData buf;
-    initStringInfo(&buf);
-    appendStringInfo(&buf, "%s id=%d kind=%d lhs=%s rhs=%s op=%d jc=%d",
-                     prefix,
-                     a->atom_id,
-                     a->kind,
-                     a->lhs_schema_key ? a->lhs_schema_key : "<null>",
-                     a->rhs_schema_key ? a->rhs_schema_key : "<null>",
-                     a->op,
-                     a->join_class_id);
-    if (a->canon_key)
-        appendStringInfo(&buf, " key=%s", a->canon_key);
-    if (a->const_count > 0) {
-        appendStringInfoString(&buf, " vals=[");
-        for (int i = 0; i < a->const_count; i++) {
-            if (i > 0) appendStringInfoString(&buf, ",");
-            appendStringInfoString(&buf, a->const_values[i] ? a->const_values[i] : "");
-        }
-        appendStringInfoString(&buf, "]");
-    }
-    CF_TRACE_LOG( "%s", buf.data);
-}
-
-static char *
-cf_rewrite_ast_global(const char *ast, const int *map, int map_len, int global_max)
-{
-    if (!ast || !map || map_len <= 0) return ast ? pstrdup(ast) : NULL;
-    StringInfoData out;
-    initStringInfo(&out);
-    const char *p = ast;
-    while (*p) {
-        if (*p == 'y') {
-            const char *q = p + 1;
-            int id = 0;
-            while (*q >= '0' && *q <= '9') {
-                id = id * 10 + (*q - '0');
-                q++;
-            }
-            if (q > p + 1) {
-                if (id <= 0 || id >= map_len)
-                    ereport(ERROR,
-                            (errmsg("custom_filter: ast var y%d out of local range 1..%d",
-                                    id, map_len - 1)));
-                int gid = map[id];
-                if (gid <= 0 || gid > global_max)
-                    ereport(ERROR,
-                            (errmsg("custom_filter: ast var y%d maps to invalid global y%d (max=%d)",
-                                    id, gid, global_max)));
-                appendStringInfo(&out, "y%d", gid);
-                p = q;
-                continue;
-            }
-        }
-        appendStringInfoChar(&out, *p);
-        p++;
-    }
-    return out.data;
-}
-
-static void
-cf_log_mapping_error(const char *target, int bundle_idx,
-                     const PolicyBundleC *b,
-                     const PolicyEvalResultC *eval_res,
-                     const int *local_to_global,
-                     const char *ast_global,
-                     const char *reason)
-{
-    CF_TRACE_LOG( "policy_contract: mapping_error target=%s bundle_index=%d reason=%s",
-         target ? target : "<null>", bundle_idx, reason ? reason : "<unknown>");
-    if (b) {
-        for (int j = 0; j < b->atom_count; j++) {
-            const PolicyAtomC *ba = &b->atoms[j];
-            cf_log_atom("policy_contract: local_atom", ba);
-            if (local_to_global && ba->atom_id > 0 && ba->atom_id < b->atom_count + 1) {
-                CF_TRACE_LOG( "policy_contract: local_map y%d -> global_y%d",
-                     ba->atom_id, local_to_global[ba->atom_id]);
-            }
-        }
-        if (b->ast && b->ast[0])
-            CF_TRACE_LOG( "policy_contract: bundle_ast target=%s ast=%s",
-                 target ? target : "<null>", b->ast);
-    }
-    if (eval_res && eval_res->atom_count > 0) {
-        for (int g = 0; g < eval_res->atom_count; g++) {
-            const PolicyAtomC *ga = &eval_res->atoms[g];
-            cf_log_atom("policy_contract: global_atom", ga);
-        }
-    }
-    if (ast_global)
-        CF_TRACE_LOG( "policy_contract: bundle_ast_global target=%s ast=%s",
-             target ? target : "<null>", ast_global);
-}
-
-static void
-cf_validate_ast_vars(const char *ast, const int *map, int map_len, int global_max,
-                     const PolicyBundleC *b, const PolicyEvalResultC *eval_res,
-                     int bundle_idx)
-{
-    if (!ast || !map || map_len <= 0) return;
-    const char *p = ast;
-    while (*p) {
-        if (*p == 'y') {
-            const char *q = p + 1;
-            int id = 0;
-            while (*q >= '0' && *q <= '9') {
-                id = id * 10 + (*q - '0');
-                q++;
-            }
-            if (q > p + 1) {
-                if (id <= 0 || id >= map_len) {
-                    cf_log_mapping_error(b ? b->target_table : NULL, bundle_idx,
-                                         b, eval_res, map, NULL, "ast var out of local range");
-                    ereport(ERROR,
-                            (errmsg("custom_filter: ast var y%d out of local range 1..%d",
-                                    id, map_len - 1)));
-                }
-                int gid = map[id];
-                if (gid <= 0 || gid > global_max) {
-                    cf_log_mapping_error(b ? b->target_table : NULL, bundle_idx,
-                                         b, eval_res, map, NULL, "ast var maps to invalid global");
-                    ereport(ERROR,
-                            (errmsg("custom_filter: ast var y%d maps to invalid global y%d (max=%d)",
-                                    id, gid, global_max)));
-                }
-                p = q;
-                continue;
-            }
-        }
-        p++;
-    }
-}
-
-
 bool cf_enabled = false;
 static int cf_debug_mode = 0;
-static bool cf_contract_mode = false;
 static bool cf_debug_ids = false;
 static char *cf_policy_path = NULL;
 static int cf_profile_k = 0;
@@ -566,7 +431,7 @@ cf_debug_enabled(void)
 bool
 cf_contract_enabled(void)
 {
-    return cf_contract_mode || cf_debug_mode == 1;
+    return cf_debug_mode == 1;
 }
 
 
@@ -599,7 +464,6 @@ bool cf_child_is_scan(PlanState *node);
 TupleTableSlot *cf_return_tuple(CustomScanState *node);
 void cf_accum_validation_time(struct CfExec *st, instr_time *start_time);
 
-static const char *cf_path_type_name(Path *path);
 static const char *cf_debug_mode_name(int mode);
 
 static void
@@ -744,15 +608,6 @@ _PG_init(void)
                              &cf_debug_mode,
                              0,
                              debug_mode_options,
-                             PGC_SUSET,
-                             0,
-                             NULL, NULL, NULL);
-
-    DefineCustomBoolVariable("custom_filter.contract_mode",
-                             "",
-                             NULL,
-                             &cf_contract_mode,
-                             false,
                              PGC_SUSET,
                              0,
                              NULL, NULL, NULL);
@@ -1092,44 +947,6 @@ cf_rel_pathlist_hook(PlannerInfo *root, RelOptInfo *rel,
 }
 
 static const char *
-cf_path_type_name(Path *path)
-{
-    if (!path)
-        return "<null>";
-    switch (path->pathtype)
-    {
-        case T_SeqScan:
-            return "SeqScan";
-        case T_SampleScan:
-            return "SampleScan";
-        case T_IndexScan:
-            return "IndexScan";
-        case T_IndexOnlyScan:
-            return "IndexOnlyScan";
-        case T_BitmapHeapPath:
-            return "BitmapHeapScan";
-        case T_TidPath:
-            return "TidScan";
-        case T_TidRangePath:
-            return "TidRangeScan";
-        case T_ForeignPath:
-            return "ForeignScan";
-        case T_FunctionScan:
-            return "FunctionScan";
-        case T_TableFuncScan:
-            return "TableFuncScan";
-        case T_ValuesScan:
-            return "ValuesScan";
-        case T_CteScan:
-            return "CteScan";
-        case T_WorkTableScan:
-            return "WorkTableScan";
-        default:
-            return "OtherPath";
-    }
-}
-
-static const char *
 cf_debug_mode_name(int mode)
 {
     switch (mode)
@@ -1295,6 +1112,8 @@ typedef struct CfExec
     uint32 tid_iter_bit_min;
     uint64 tid_blocks_visited;
     uint64 tid_tuples_fetched;
+    uint64 tid_offsets_checked;
+    uint64 tid_offsets_passed;
     double tid_fetch_ms;
     double tid_qual_ms;
     bool empty_short_circuit_recorded;
@@ -1320,7 +1139,10 @@ typedef struct TableFilterState
     double policy_sat_ms;
     double policy_sid_build_ms;
     double allowed_density;
+    int mode_hint;
+    char mode_reason[64];
     bool allow_is_empty;
+    bool allow_is_all;
     uint64 seen;
     uint64 passed;
     uint64 misses;
@@ -1451,8 +1273,11 @@ typedef struct PolicyQueryState
     uint64 scan_mode_tid_tables;
     uint64 scan_mode_filter_tables;
     uint64 scan_mode_empty_tables;
+    uint64 scan_mode_all_tables;
     uint64 tid_blocks_visited;
     uint64 tid_tuples_fetched;
+    uint64 tid_offsets_checked;
+    uint64 tid_offsets_passed;
     double tid_fetch_ms;
     double tid_qual_ms;
     double tid_heap_fetch_ms;
@@ -1467,6 +1292,7 @@ typedef struct PolicyQueryState
     uint64 query_short_circuit_hits;
     uint64 scan_reuse_hits;
     uint64 scan_reuse_misses;
+    double scan_reuse_ms_saved;
     Oid *scan_reuse_relids;
     int scan_reuse_relids_count;
     int scan_reuse_relids_cap;
@@ -1646,27 +1472,6 @@ typedef struct ArtifactNameIndexEntry
     int idx;
 } ArtifactNameIndexEntry;
 
-static bool
-cf_find_ctid_rows(LoadedArtifact *arts, int art_count, const char *table, uint32 *out_rows)
-{
-    if (!arts || art_count <= 0 || !table || !out_rows)
-        return false;
-    size_t tlen = strlen(table);
-    for (int i = 0; i < art_count; i++) {
-        if (!arts[i].name || !arts[i].data)
-            continue;
-        size_t nlen = strlen(arts[i].name);
-        if (nlen == tlen + 5 && memcmp(arts[i].name, table, tlen) == 0 &&
-            strcmp(arts[i].name + tlen, "_ctid") == 0) {
-            size_t bytes = (size_t) VARSIZE_ANY_EXHDR(arts[i].data);
-            uint32 nrows = (uint32)(bytes / (sizeof(uint32) * 2));
-            *out_rows = nrows;
-            return true;
-        }
-    }
-    return false;
-}
-
 static MemoryContext cf_query_cxt = NULL;
 static PolicyQueryState *cf_query_state = NULL;
 static PlannedStmt *cf_query_plannedstmt = NULL;
@@ -1763,17 +1568,6 @@ cf_debug_log_scan_ids(const char *event, CfExec *st, CustomScanState *node)
                      (void *) st->filter,
                      (void *) (st->filter ? st->filter->block_words : NULL),
                      st->filter ? 1 : 0);
-}
-
-static bool
-cf_query_context_related(MemoryContext lhs, MemoryContext rhs)
-{
-    if (!lhs || !rhs)
-        return false;
-    if (lhs == rhs)
-        return true;
-    return cf_memory_context_contains(lhs, rhs) ||
-           cf_memory_context_contains(rhs, lhs);
 }
 
 static PolicyQueryState *
@@ -1935,8 +1729,11 @@ cf_reset_query_exec_metrics(PolicyQueryState *qs)
     qs->scan_mode_tid_tables = 0;
     qs->scan_mode_filter_tables = 0;
     qs->scan_mode_empty_tables = 0;
+    qs->scan_mode_all_tables = 0;
     qs->tid_blocks_visited = 0;
     qs->tid_tuples_fetched = 0;
+    qs->tid_offsets_checked = 0;
+    qs->tid_offsets_passed = 0;
     qs->tid_fetch_ms = 0.0;
     qs->tid_qual_ms = 0.0;
     qs->tid_heap_fetch_ms = 0.0;
@@ -1944,6 +1741,7 @@ cf_reset_query_exec_metrics(PolicyQueryState *qs)
     qs->tid_visibility_ms = 0.0;
     qs->scan_reuse_hits = 0;
     qs->scan_reuse_misses = 0;
+    qs->scan_reuse_ms_saved = 0.0;
     qs->scan_reuse_relids_count = 0;
     qs->empty_short_circuit_hits = 0;
     qs->policy_hub_prop_ms_total = 0.0;
@@ -2000,209 +1798,8 @@ cf_log_query_metrics(PolicyQueryState *qs)
 {
     if (!qs)
         return;
-    elog(NOTICE,
-         "policy_profile: eval_ms=%.3f artifact_load_ms=%.3f artifact_parse_ms=%.3f atoms_ms=%.3f propagate_ms=%.3f project_ms=%.3f "
-         "project_mask_ms=%.3f project_row_ms=%.3f project_mask_bytes=%zu project_n_join_evals_max=%d project_clause_words_max=%d clause_plan_count_max=%d "
-         "prop_join_scans_total=%llu unique_join_struct_sigs_max=%d prop_table_scans=%s signature_cache_hits=%llu signature_cache_misses=%llu term_code_scans=%llu target_full_row_scans=%llu "
-         "target_rid_bitmap_bytes=%zu signature_cache_bytes=%zu active_sig_dense_count=%llu active_sig_sparse_count=%llu active_sig_density_sum=%.6f "
-         "domain_set_dense_count=%llu domain_set_sparse_count=%llu domain_set_density_sum=%.6f block_words_blocks_allocated=%llu block_words_total_blocks=%llu block_words_dense_bytes=%zu block_words_nblocks=%llu block_words_nwords_per_block=%llu "
-         "proj_sig_count=%llu proj_sig_total=%llu proj_sig_new=%llu proj_sig_skipped=%llu proj_mask_or_ops=%llu proj_rid_iters=%llu proj_rid_iters_scan_enforcement=%llu proj_rid_iters_dependency=%llu "
-         "canon_term_map_cache_hits=%llu canon_term_map_cache_misses=%llu canon_term_map_build_ms=%.3f canon_term_map_bytes=%zu "
-         "restrict_key_index_build_ms=%.3f restrict_key_index_entries=%llu restrict_key_index_bytes=%zu restrict_key_prune_ms=%.3f "
-         "sigmask_cache_hits=%llu sigmask_cache_misses=%llu sigmask_build_ms=%.3f sigmask_bytes=%zu "
-         "bytes_sig_ctid_masks=%zu bytes_block_words=%zu bytes_artifact_buffers_retained=%zu bytes_decoded_buffers_retained=%zu "
-         "qual_atoms_total=%llu qual_atoms_applied=%llu qual_pruned_sigs=%llu qual_prune_ms=%.3f "
-         "restrict_sig_tables=%llu restrict_sig_schema_cols_total=%llu restrict_sig_bytes_total=%zu restrict_sig_apply_ms=%.3f restrict_term_apply_ms=%.3f restrict_term_sigs_kept=%llu restrict_term_sigs_dropped=%llu "
-         "stamp_ms=%.3f bin_ms=%.3f local_sat_ms=%.3f fill_ms=%.3f prop_ms=%.3f prop_iters=%d "
-         "decode_ms=%.3f policy_total_ms=%.3f ctid_map_ms=%.3f filter_ms=%.3f "
-         "custom_scan_total_ms=%.3f custom_scan_overhead_ms=%.3f "
-         "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f child_next_calls_total=%llu "
-         "tid_heap_fetch_ms=%.3f tid_slot_store_ms=%.3f tid_visibility_ms=%.3f "
-         "blocks_seen=%llu blocks_skipped=%llu block_skip_hit_rate=%.6f "
-         "scan_mode_tid_tables=%llu scan_mode_filter_tables=%llu scan_mode_empty_tables=%llu "
-         "scan_reuse_hits=%llu scan_reuse_misses=%llu "
-         "empty_short_circuit_tables=%llu empty_short_circuit_hits=%llu empty_short_circuit_ms=%.3f "
-         "policy_hub_prop_ms_total=%.3f policy_sat_ms_total=%.3f policy_sid_build_ms_total=%.3f policy_allowed_sids_total=%llu policy_total_sids_total=%llu "
-         "query_short_circuit_empty=%d query_short_circuit_reason=%s query_short_circuit_ms=%.3f query_short_circuit_hits=%llu "
-         "tid_blocks_visited=%llu tid_tuples_fetched=%llu tid_fetch_ms=%.3f tid_qual_ms=%.3f "
-         "tid_count=%llu tid_fetch_calls=%llu tid_heap_pages_touched=%llu "
-         "n_scanned_tables=%d n_policy_targets=%d n_filters=%d "
-         "bytes_artifacts_loaded=%zu bytes_allow=%zu bytes_ctid=%zu bytes_blk_index=%zu "
-         "rows_seen=%llu rows_passed=%llu ctid_misses=%llu "
-         "rss_kb_before_eval=%ld rss_kb_after_eval=%ld rss_kb_after_load=%ld "
-         "rss_kb_after_engine=%ld rss_kb_after_ctid=%ld rss_kb_end=%ld peak_rss_kb_end=%ld",
-         qs->eval_ms,
-         qs->artifact_load_ms,
-         qs->artifact_parse_ms,
-         qs->atoms_ms,
-         qs->propagate_ms,
-         qs->project_ms,
-         qs->project_mask_ms,
-         qs->project_row_ms,
-         qs->project_mask_bytes,
-         qs->project_n_join_evals_max,
-         qs->project_clause_words_max,
-         qs->clause_plan_count_max,
-         (unsigned long long) qs->prop_join_scans_total,
-         qs->unique_join_struct_sigs_max,
-         (qs->prop_table_scans && qs->prop_table_scans[0]) ? qs->prop_table_scans : "none",
-         (unsigned long long) qs->signature_cache_hits,
-         (unsigned long long) qs->signature_cache_misses,
-         (unsigned long long) qs->term_code_scans,
-         (unsigned long long) qs->target_full_row_scans,
-         qs->target_rid_bitmap_bytes,
-         qs->signature_cache_bytes,
-         (unsigned long long) qs->active_sig_dense_count,
-         (unsigned long long) qs->active_sig_sparse_count,
-         qs->active_sig_density_sum,
-         (unsigned long long) qs->domain_set_dense_count,
-         (unsigned long long) qs->domain_set_sparse_count,
-         qs->domain_set_density_sum,
-         (unsigned long long) qs->block_words_blocks_allocated,
-         (unsigned long long) qs->block_words_total_blocks,
-         qs->block_words_dense_bytes,
-         (unsigned long long) qs->block_words_nblocks,
-         (unsigned long long) qs->block_words_nwords_per_block,
-         (unsigned long long) qs->proj_sig_count,
-         (unsigned long long) qs->proj_sig_total,
-         (unsigned long long) qs->proj_sig_new,
-         (unsigned long long) qs->proj_sig_skipped,
-         (unsigned long long) qs->proj_mask_or_ops,
-         (unsigned long long) qs->proj_rid_iters,
-         (unsigned long long) qs->proj_rid_iters_scan_enforcement,
-         (unsigned long long) qs->proj_rid_iters_dependency,
-         (unsigned long long) qs->canon_term_map_cache_hits,
-         (unsigned long long) qs->canon_term_map_cache_misses,
-         qs->canon_term_map_build_ms,
-         qs->canon_term_map_bytes,
-         qs->restrict_key_index_build_ms,
-         (unsigned long long) qs->restrict_key_index_entries,
-         qs->restrict_key_index_bytes,
-         qs->restrict_key_prune_ms,
-         (unsigned long long) qs->sigmask_cache_hits,
-         (unsigned long long) qs->sigmask_cache_misses,
-         qs->sigmask_build_ms,
-         qs->sigmask_bytes,
-         qs->bytes_sig_ctid_masks,
-         qs->bytes_block_words,
-         qs->bytes_artifact_buffers_retained,
-         qs->bytes_decoded_buffers_retained,
-         (unsigned long long) qs->qual_atoms_total,
-         (unsigned long long) qs->qual_atoms_applied,
-         (unsigned long long) qs->qual_pruned_sigs,
-         qs->qual_prune_ms,
-         (unsigned long long) qs->restrict_sig_tables,
-         (unsigned long long) qs->restrict_sig_schema_cols_total,
-         qs->restrict_sig_bytes_total,
-         qs->restrict_sig_apply_ms,
-         qs->restrict_term_apply_ms,
-         (unsigned long long) qs->restrict_term_sigs_kept,
-         (unsigned long long) qs->restrict_term_sigs_dropped,
-         qs->stamp_ms,
-         qs->bin_ms,
-         qs->local_sat_ms,
-         qs->fill_ms,
-         qs->prop_ms,
-         qs->prop_iters,
-         qs->decode_ms,
-         qs->policy_total_ms,
-         qs->ctid_map_ms,
-         qs->filter_ms,
-         qs->custom_scan_total_ms,
-         qs->custom_scan_overhead_ms,
-         qs->child_exec_ms,
-         qs->ctid_extract_ms,
-         qs->ctid_to_rid_ms,
-         qs->allow_check_ms,
-         qs->projection_ms,
-         (unsigned long long) qs->child_next_calls_total,
-         qs->tid_heap_fetch_ms,
-         qs->tid_slot_store_ms,
-         qs->tid_visibility_ms,
-         (unsigned long long) qs->blocks_seen,
-         (unsigned long long) qs->blocks_skipped,
-         (qs->blocks_seen > 0 ? ((double) qs->blocks_skipped / (double) qs->blocks_seen) : 0.0),
-         (unsigned long long) qs->scan_mode_tid_tables,
-         (unsigned long long) qs->scan_mode_filter_tables,
-         (unsigned long long) qs->scan_mode_empty_tables,
-         (unsigned long long) qs->scan_reuse_hits,
-         (unsigned long long) qs->scan_reuse_misses,
-         (unsigned long long) qs->empty_short_circuit_tables,
-         (unsigned long long) qs->empty_short_circuit_hits,
-         qs->empty_short_circuit_ms,
-         qs->policy_hub_prop_ms_total,
-         qs->policy_sat_ms_total,
-         qs->policy_sid_build_ms_total,
-         (unsigned long long) qs->policy_allowed_sids_total,
-         (unsigned long long) qs->policy_total_sids_total,
-         qs->query_short_circuit_empty ? 1 : 0,
-         (qs->query_short_circuit_reason[0] ? qs->query_short_circuit_reason : "none"),
-         qs->query_short_circuit_ms,
-         (unsigned long long) qs->query_short_circuit_hits,
-         (unsigned long long) qs->tid_blocks_visited,
-         (unsigned long long) qs->tid_tuples_fetched,
-         qs->tid_fetch_ms,
-         qs->tid_qual_ms,
-         (unsigned long long) qs->tid_tuples_fetched,
-         (unsigned long long) qs->tid_tuples_fetched,
-         (unsigned long long) qs->tid_blocks_visited,
-         qs->n_scanned_tables,
-         qs->n_policy_targets,
-         qs->n_filters,
-         qs->bytes_artifacts_loaded,
-         qs->bytes_allow,
-         qs->bytes_ctid,
-         qs->bytes_blk_index,
-         (unsigned long long) qs->rows_seen,
-         (unsigned long long) qs->rows_passed,
-         (unsigned long long) qs->ctid_misses,
-         qs->rss_kb_before_eval,
-         qs->rss_kb_after_eval,
-         qs->rss_kb_after_load,
-         qs->rss_kb_after_engine,
-         qs->rss_kb_after_ctid,
-         qs->rss_kb_end,
-         qs->peak_rss_kb_end);
-
-    /*
-     * Stage03 compact aliases for gate parsing without depending on the long
-     * legacy payload schema.
-     */
-    elog(NOTICE,
-         "policy_profile_exec_stage03: policy_eval_ms_total=%.3f artifact_load_ms=%.3f artifact_bytes_read=%zu "
-         "allow_build_ms=%.3f executor_init_ms_ours=%.3f custom_scan_total_ms=%.3f custom_scan_overhead_ms=%.3f "
-         "child_exec_ms=%.3f ctid_extract_ms=%.3f ctid_to_rid_ms=%.3f allow_check_ms=%.3f projection_ms=%.3f "
-         "tid_fetch_ms=%.3f tid_heap_fetch_ms=%.3f tid_slot_store_ms=%.3f tid_visibility_ms=%.3f "
-         "scan_reuse_hits=%llu scan_reuse_misses=%llu empty_short_circuit_hits=%llu "
-         "policy_hub_prop_ms_total=%.3f policy_sat_ms_total=%.3f policy_sid_build_ms_total=%.3f "
-         "tid_pages_read_ms=%.3f tid_tuple_extract_ms=%.3f "
-         "tid_blocks_touched=%llu tid_offsets_total=%llu",
-         qs->policy_total_ms,
-         qs->artifact_load_ms,
-         qs->bytes_artifacts_loaded,
-         qs->allow_build_ms,
-         qs->executor_init_ms_ours,
-         qs->custom_scan_total_ms,
-         qs->custom_scan_overhead_ms,
-         qs->child_exec_ms,
-         qs->ctid_extract_ms,
-         qs->ctid_to_rid_ms,
-         qs->allow_check_ms,
-         qs->projection_ms,
-         qs->tid_fetch_ms,
-         qs->tid_heap_fetch_ms,
-         qs->tid_slot_store_ms,
-         qs->tid_visibility_ms,
-         (unsigned long long) qs->scan_reuse_hits,
-         (unsigned long long) qs->scan_reuse_misses,
-         (unsigned long long) qs->empty_short_circuit_hits,
-         qs->policy_hub_prop_ms_total,
-         qs->policy_sat_ms_total,
-         qs->policy_sid_build_ms_total,
-         qs->tid_heap_fetch_ms,
-         qs->tid_slot_store_ms,
-         (unsigned long long) qs->tid_blocks_visited,
-         (unsigned long long) qs->tid_tuples_fetched);
+    elog(NOTICE, "policy_profile: scan_filter_ms=%.3f filter_ms=%.3f", qs->filter_ms, qs->filter_ms);
+    elog(NOTICE, "policy_profile_exec_stage03: scan_filter_ms=%.3f filter_ms=%.3f", qs->filter_ms, qs->filter_ms);
 }
 
 static void
@@ -2431,6 +2028,8 @@ cf_record_scan_reuse(PolicyQueryState *qs, Oid relid)
         if (qs->scan_reuse_relids[i] == relid)
         {
             qs->scan_reuse_hits++;
+            if (qs->n_filters > 0 && qs->allow_build_ms > 0.0)
+                qs->scan_reuse_ms_saved += (qs->allow_build_ms / (double) qs->n_filters);
             return;
         }
     }
@@ -2887,10 +2486,12 @@ cf_build_query_state(EState *estate, const char *query_str)
         in.target_asts = eval_res->target_asts;
         in.target_perm_asts = eval_res->target_perm_asts;
         in.target_rest_asts = eval_res->target_rest_asts;
+        in.target_ast_tok_len = eval_res->target_ast_tok_len;
+        in.target_ast_toks = eval_res->target_ast_toks;
+        in.target_ast_tok_offsets = eval_res->target_ast_tok_offsets;
+        in.target_ast_tok_counts = eval_res->target_ast_tok_counts;
         in.atom_count = eval_res->atom_count;
         in.atoms = eval_res->atoms;
-        in.bundle_count = eval_res->bundle_count;
-        in.bundles = eval_res->bundles;
         in.scan_qual_atom_count = scan_qual_atom_count;
         in.scan_qual_atoms = scan_qual_atoms;
         CF_TRACE_LOG( "custom_filter: calling policy_run once target_count=%d atom_count=%d",
@@ -2905,95 +2506,12 @@ cf_build_query_state(EState *estate, const char *query_str)
                             in.target_count, in.atom_count)));
         const PolicyRunProfileC *pp = policy_run_profile(run_handle);
         if (pp) {
-            qs->artifact_parse_ms += pp->artifact_parse_ms;
-            qs->atoms_ms += pp->atoms_ms;
-            qs->propagate_ms += pp->propagate_ms;
-            qs->project_ms += pp->project_ms;
-            qs->project_mask_ms += pp->project_mask_ms;
-            qs->project_row_ms += pp->project_row_ms;
-            qs->project_mask_bytes += pp->project_mask_bytes;
-            if (pp->project_n_join_evals_max > qs->project_n_join_evals_max)
-                qs->project_n_join_evals_max = pp->project_n_join_evals_max;
-            if (pp->project_clause_words_max > qs->project_clause_words_max)
-                qs->project_clause_words_max = pp->project_clause_words_max;
-            if (pp->clause_plan_count_max > qs->clause_plan_count_max)
-                qs->clause_plan_count_max = pp->clause_plan_count_max;
-            qs->prop_join_scans_total += pp->prop_join_scans_total;
-            if (pp->unique_join_struct_sigs_max > qs->unique_join_struct_sigs_max)
-                qs->unique_join_struct_sigs_max = pp->unique_join_struct_sigs_max;
-            qs->signature_cache_hits += pp->signature_cache_hits;
-            qs->signature_cache_misses += pp->signature_cache_misses;
-            qs->term_code_scans += pp->term_code_scans;
-            qs->target_full_row_scans += pp->target_full_row_scans;
-            qs->target_rid_bitmap_bytes += pp->target_rid_bitmap_bytes;
-            qs->signature_cache_bytes += pp->signature_cache_bytes;
-            qs->active_sig_dense_count += pp->active_sig_dense_count;
-            qs->active_sig_sparse_count += pp->active_sig_sparse_count;
-            qs->active_sig_density_sum += pp->active_sig_density_sum;
-            qs->domain_set_dense_count += pp->domain_set_dense_count;
-            qs->domain_set_sparse_count += pp->domain_set_sparse_count;
-            qs->domain_set_density_sum += pp->domain_set_density_sum;
-            qs->block_words_blocks_allocated += pp->block_words_blocks_allocated;
-            qs->block_words_total_blocks += pp->block_words_total_blocks;
-            qs->block_words_dense_bytes += pp->block_words_dense_bytes;
-            qs->block_words_nblocks += pp->block_words_nblocks;
-            if (pp->block_words_nwords_per_block > qs->block_words_nwords_per_block)
-                qs->block_words_nwords_per_block = pp->block_words_nwords_per_block;
-            qs->proj_sig_count += pp->proj_sig_count;
-            qs->proj_sig_total += pp->proj_sig_total;
-            qs->proj_sig_new += pp->proj_sig_new;
-            qs->proj_sig_skipped += pp->proj_sig_skipped;
-            qs->proj_mask_or_ops += pp->proj_mask_or_ops;
-            qs->proj_rid_iters += pp->proj_rid_iters;
-            qs->proj_rid_iters_scan_enforcement += pp->proj_rid_iters_scan_enforcement;
-            qs->proj_rid_iters_dependency += pp->proj_rid_iters_dependency;
-            qs->canon_term_map_cache_hits += pp->canon_term_map_cache_hits;
-            qs->canon_term_map_cache_misses += pp->canon_term_map_cache_misses;
-            qs->canon_term_map_build_ms += pp->canon_term_map_build_ms;
-            qs->canon_term_map_bytes += pp->canon_term_map_bytes;
-            qs->restrict_key_index_build_ms += pp->restrict_key_index_build_ms;
-            qs->restrict_key_index_entries += pp->restrict_key_index_entries;
-            qs->restrict_key_index_bytes += pp->restrict_key_index_bytes;
-            qs->restrict_key_prune_ms += pp->restrict_key_prune_ms;
-            qs->sigmask_cache_hits += pp->sigmask_cache_hits;
-            qs->sigmask_cache_misses += pp->sigmask_cache_misses;
-            qs->sigmask_build_ms += pp->sigmask_build_ms;
-            qs->sigmask_bytes += pp->sigmask_bytes;
-            qs->bytes_sig_ctid_masks += pp->bytes_sig_ctid_masks;
-            qs->bytes_block_words += pp->bytes_block_words;
-            qs->bytes_artifact_buffers_retained += pp->bytes_artifact_buffers_retained;
-            qs->bytes_decoded_buffers_retained += pp->bytes_decoded_buffers_retained;
-            qs->qual_atoms_total += pp->qual_atoms_total;
-            qs->qual_atoms_applied += pp->qual_atoms_applied;
-            qs->qual_pruned_sigs += pp->qual_pruned_sigs;
-            qs->qual_prune_ms += pp->qual_prune_ms;
-            qs->restrict_sig_tables += pp->restrict_sig_tables;
-            qs->restrict_sig_schema_cols_total += pp->restrict_sig_schema_cols_total;
-            qs->restrict_sig_bytes_total += pp->restrict_sig_bytes_total;
-            qs->restrict_sig_apply_ms += pp->restrict_sig_apply_ms;
-            qs->restrict_term_apply_ms += pp->restrict_term_apply_ms;
-            qs->restrict_term_sigs_kept += pp->restrict_term_sigs_kept;
-            qs->restrict_term_sigs_dropped += pp->restrict_term_sigs_dropped;
-            if (pp->prop_table_scans && pp->prop_table_scans[0]) {
-                if (!qs->prop_table_scans) {
-                    qs->prop_table_scans = MemoryContextStrdup(qctx, pp->prop_table_scans);
-                } else {
-                    size_t old_len = strlen(qs->prop_table_scans);
-                    size_t add_len = strlen(pp->prop_table_scans);
-                    char *merged = (char *) MemoryContextAlloc(qctx, old_len + 1 + add_len + 1);
-                    memcpy(merged, qs->prop_table_scans, old_len);
-                    merged[old_len] = ';';
-                    memcpy(merged + old_len + 1, pp->prop_table_scans, add_len);
-                    merged[old_len + 1 + add_len] = '\0';
-                    qs->prop_table_scans = merged;
-                }
-            }
-            qs->stamp_ms += pp->stamp_ms;
-            qs->bin_ms += pp->bin_ms;
-            qs->local_sat_ms += pp->local_sat_ms;
-            qs->fill_ms += pp->fill_ms;
-            qs->prop_ms += pp->prop_ms;
-            qs->prop_iters += pp->prop_iters;
+            qs->atoms_ms += (pp->build_hubs_ms > 0.0 ? pp->build_hubs_ms : pp->atoms_ms);
+            qs->stamp_ms += (pp->composite_stamp_ms > 0.0 ? pp->composite_stamp_ms : pp->stamp_ms);
+            qs->propagate_ms += (pp->build_context_ms > 0.0 ? pp->build_context_ms : pp->propagate_ms);
+            qs->project_ms += (pp->project_allowset_ms > 0.0 ? pp->project_allowset_ms : pp->project_ms);
+            qs->bin_ms += (pp->signature_build_ms > 0.0 ? pp->signature_build_ms : pp->bin_ms);
+            qs->local_sat_ms += (pp->sat_ms > 0.0 ? pp->sat_ms : pp->local_sat_ms);
             qs->decode_ms += pp->decode_ms;
             qs->policy_total_ms += pp->policy_total_ms;
         }
@@ -3107,14 +2625,22 @@ cf_build_query_state(EState *estate, const char *query_str)
                 memcpy(copy_ids, it->block_ids, tf->block_ids_nbytes);
             tf->block_words = copy_words;
             tf->block_ids = copy_ids;
-            tf->allowed_rows = (tf->block_words && tf->blocks > 0) ? cf_popcount_block_words(tf->block_words, tf->blocks) : 0;
+            tf->allowed_rows = it->allowed_rows;
+            if (tf->allowed_rows == 0 && tf->block_words && tf->blocks > 0)
+                tf->allowed_rows = cf_popcount_block_words(tf->block_words, tf->blocks);
             tf->allowed_sids = it->allowed_sids;
             tf->total_sids = it->total_sids;
             tf->policy_hub_prop_ms = it->hub_prop_ms;
             tf->policy_sat_ms = it->sat_ms;
             tf->policy_sid_build_ms = it->sid_build_ms;
+            tf->mode_hint = it->mode_hint;
+            tf->mode_reason[0] = '\0';
+            if (it->mode_reason && it->mode_reason[0])
+                strlcpy(tf->mode_reason, it->mode_reason, sizeof(tf->mode_reason));
             tf->allowed_density = (tf->n_rows > 0) ? ((double) tf->allowed_rows / (double) tf->n_rows) : 0.0;
             tf->allow_is_empty = (tf->allowed_rows == 0);
+            tf->allow_is_all = (tf->n_rows > 0 && tf->allowed_rows >= tf->n_rows) ||
+                               (tf->mode_hint == POLICY_MODE_HINT_ALL);
             qs->policy_hub_prop_ms_total += tf->policy_hub_prop_ms;
             qs->policy_sat_ms_total += tf->policy_sat_ms;
             qs->policy_sid_build_ms_total += tf->policy_sid_build_ms;
@@ -3552,6 +3078,8 @@ cf_scan_mode_name(CfScanMode m)
     {
         case CF_SCAN_MODE_EMPTY:
             return "EMPTY";
+        case CF_SCAN_MODE_ALL:
+            return "ALL";
         case CF_SCAN_MODE_TID:
             return "TID";
         case CF_SCAN_MODE_FILTER:
@@ -3592,11 +3120,28 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
         else
             page_density = 0.0;
 
-        if (tf->allow_is_empty || tf->allowed_rows == 0 || tf->blocks == 0 || !tf->block_words || tf->block_words_nbytes == 0)
+        if (tf->allow_is_all || tf->mode_hint == POLICY_MODE_HINT_ALL)
+        {
+            new_mode = CF_SCAN_MODE_ALL;
+            density = 1.0;
+            reason = (tf->mode_reason[0] ? tf->mode_reason : "all_allow_set");
+        }
+        else if (tf->allow_is_empty || tf->mode_hint == POLICY_MODE_HINT_EMPTY || tf->allowed_rows == 0)
         {
             new_mode = CF_SCAN_MODE_EMPTY;
             density = 0.0;
-            reason = "empty_allow_set";
+            reason = (tf->mode_reason[0] ? tf->mode_reason : "empty_allow_set");
+        }
+        else if (tf->blocks == 0 || !tf->block_words || tf->block_words_nbytes == 0)
+        {
+            new_mode = CF_SCAN_MODE_EMPTY;
+            density = 0.0;
+            reason = "missing_allow_bitmap";
+        }
+        else if (tf->mode_hint == POLICY_MODE_HINT_FILTER)
+        {
+            new_mode = CF_SCAN_MODE_FILTER;
+            reason = (tf->mode_reason[0] ? tf->mode_reason : "mode_hint_filter");
         }
         else if (!cf_tidscan_seqscan)
         {
@@ -3620,8 +3165,16 @@ cf_update_scan_mode(CfExec *st, CustomScanState *node, TableFilterState *tf)
              * Strict class-engine routing: enforce via allowed CTID locations
              * directly, regardless of density. This avoids full FILTER scans.
              */
-            new_mode = CF_SCAN_MODE_TID;
-            reason = "bitmap_tid_enforced";
+            if (tf->mode_hint == POLICY_MODE_HINT_TID || tf->mode_hint == POLICY_MODE_HINT_FILTER)
+            {
+                new_mode = (tf->mode_hint == POLICY_MODE_HINT_FILTER) ? CF_SCAN_MODE_FILTER : CF_SCAN_MODE_TID;
+                reason = (tf->mode_reason[0] ? tf->mode_reason : "mode_hint");
+            }
+            else
+            {
+                new_mode = CF_SCAN_MODE_TID;
+                reason = "bitmap_tid_enforced";
+            }
         }
     }
 
@@ -3737,6 +3290,8 @@ cf_exec_seqscan_tid_mode(CustomScanState *node, CfExec *st, TableFilterState *tf
         if (!cf_tid_iter_next(st, tf, &tid))
             return ExecClearTuple(node->ss.ss_ScanTupleSlot);
 
+        st->tid_offsets_checked++;
+
         INSTR_TIME_SET_CURRENT(fetch_start);
         ExecClearTuple(scan_slot);
         if (!table_tuple_fetch_row_version(ss->ss_currentRelation, &tid, snap, scan_slot))
@@ -3795,6 +3350,7 @@ cf_exec_seqscan_tid_mode(CustomScanState *node, CfExec *st, TableFilterState *tf
         }
 
         st->tuples_passed++;
+        st->tid_offsets_passed++;
         if (tf)
             tf->passed++;
         return slot;
@@ -4977,6 +4533,8 @@ cf_create_state(CustomScan *cscan)
     st->tid_iter_bit_min = 0;
     st->tid_blocks_visited = 0;
     st->tid_tuples_fetched = 0;
+    st->tid_offsets_checked = 0;
+    st->tid_offsets_passed = 0;
     st->tid_fetch_ms = 0.0;
     st->tid_qual_ms = 0.0;
     st->empty_short_circuit_recorded = false;
@@ -5213,6 +4771,40 @@ cf_exec(CustomScanState *node)
                 st->projection_ms += proj_ms;
                 st->tid_slot_store_ms += proj_ms;
             }
+            cf_accum_validation_time(st, &validation_start);
+            return ret;
+        }
+    }
+
+    if (tf && st->scan_mode == CF_SCAN_MODE_ALL)
+    {
+        for (;;)
+        {
+            instr_time child_start, child_end;
+            INSTR_TIME_SET_CURRENT(child_start);
+            st->child_next_calls++;
+            TupleTableSlot *slot = ExecProcNode(child);
+            INSTR_TIME_SET_CURRENT(child_end);
+            st->child_exec_ms += INSTR_TIME_GET_MILLISEC(child_end) - INSTR_TIME_GET_MILLISEC(child_start);
+
+            if (TupIsNull(slot))
+            {
+                cf_accum_validation_time(st, &validation_start);
+                return ExecClearTuple(node->ss.ss_ScanTupleSlot);
+            }
+
+            st->tuples_seen++;
+            if (tf)
+                tf->seen++;
+            st->tuples_passed++;
+            if (tf)
+                tf->passed++;
+
+            instr_time proj_start, proj_end;
+            INSTR_TIME_SET_CURRENT(proj_start);
+            TupleTableSlot *ret = cf_store_slot(node, slot);
+            INSTR_TIME_SET_CURRENT(proj_end);
+            st->projection_ms += INSTR_TIME_GET_MILLISEC(proj_end) - INSTR_TIME_GET_MILLISEC(proj_start);
             cf_accum_validation_time(st, &validation_start);
             return ret;
         }
@@ -5532,6 +5124,8 @@ cf_end(CustomScanState *node)
         {
             if (st->scan_mode == CF_SCAN_MODE_EMPTY)
                 cf_query_state->scan_mode_empty_tables++;
+            else if (st->scan_mode == CF_SCAN_MODE_ALL)
+                cf_query_state->scan_mode_all_tables++;
             else if (st->scan_mode == CF_SCAN_MODE_TID)
                 cf_query_state->scan_mode_tid_tables++;
             else
@@ -5539,6 +5133,8 @@ cf_end(CustomScanState *node)
         }
         cf_query_state->tid_blocks_visited += st->tid_blocks_visited;
         cf_query_state->tid_tuples_fetched += st->tid_tuples_fetched;
+        cf_query_state->tid_offsets_checked += st->tid_offsets_checked;
+        cf_query_state->tid_offsets_passed += st->tid_offsets_passed;
         cf_query_state->tid_fetch_ms += st->tid_fetch_ms;
         cf_query_state->tid_qual_ms += st->tid_qual_ms;
         cf_query_state->tid_heap_fetch_ms += st->tid_heap_fetch_ms;

@@ -1,0 +1,4 @@
+status=1 error=
+policy_profile_query: artifact_parse_ms=11.974 decode_ms=146.381 build_hubs_ms=44.699 composite_stamp_ms=0.000 build_context_ms=0.002 signature_build_ms=600.550 sat_ms=240.451 project_allowset_ms=21.332 hub_ms=56.673 stamp_ms=0.000 propagate_ms=0.002 bin_ms=21.332 sig_ms=600.550
+policy_profile: scan_filter_ms=0.000 filter_ms=0.000
+

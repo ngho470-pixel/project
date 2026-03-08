@@ -19,6 +19,17 @@ typedef enum {
     POLICY_OP_NE = 6
 } PolicyConstOpC;
 
+typedef enum {
+    POLICY_AST_TOK_VAR = 1,
+    POLICY_AST_TOK_AND = 2,
+    POLICY_AST_TOK_OR = 3
+} PolicyAstTokKindC;
+
+typedef struct PolicyAstTokC {
+    int kind;   /* PolicyAstTokKindC */
+    int value;  /* VAR -> atom_id, AND/OR -> 0 */
+} PolicyAstTokC;
+
 typedef struct PolicyAtomC {
     int atom_id;                 /* y1..yk */
     int kind;                    /* PolicyAtomKindC */
@@ -30,8 +41,6 @@ typedef struct PolicyAtomC {
     int const_count;
     char **const_values;         /* unquoted literal strings */
 } PolicyAtomC;
-
-typedef struct PolicyBundleC PolicyBundleC;
 
 typedef enum {
     POLICY_SCAN_QUAL_COL_CONST = 1,
@@ -53,22 +62,15 @@ typedef struct PolicyEngineInputC {
     char **target_asts;
     char **target_perm_asts;
     char **target_rest_asts;
+    int target_ast_tok_len;
+    PolicyAstTokC *target_ast_toks;
+    int *target_ast_tok_offsets;
+    int *target_ast_tok_counts;
     int atom_count;
     PolicyAtomC *atoms;
-    int bundle_count;
-    PolicyBundleC *bundles;
     int scan_qual_atom_count;
     PolicyScanQualAtomC *scan_qual_atoms;
 } PolicyEngineInputC;
-
-struct PolicyBundleC {
-    char *target_table;
-    char *ast;
-    int policy_id;
-    int permissive; /* 1=permissive, 0=restrictive */
-    int atom_count;
-    PolicyAtomC *atoms;
-};
 
 typedef struct PolicyEvalResultC {
     int needed_count;
@@ -78,14 +80,16 @@ typedef struct PolicyEvalResultC {
     char **target_asts;
     char **target_perm_asts;
     char **target_rest_asts;
+    int target_ast_tok_len;
+    PolicyAstTokC *target_ast_toks;
+    int *target_ast_tok_offsets;
+    int *target_ast_tok_counts;
     int *target_joinclass_counts;
     int *target_joinclass_offsets;
     int *target_joinclass_ids;
     int target_joinclass_ids_len;
     int atom_count;
     PolicyAtomC *atoms;
-    int bundle_count;
-    PolicyBundleC *bundles;
     int ast_node_count;
     void **ast_nodes;
     int closure_count;

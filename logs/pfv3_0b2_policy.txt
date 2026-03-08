@@ -1,0 +1,4 @@
+1. lineitem: lineitem.l_shipmode = 'AIR' AND lineitem.l_discount <= 0.05
+3. lineitem: lineitem.l_orderkey = orders.o_orderkey AND orders.o_orderstatus = 'F'
+5. lineitem: lineitem.l_orderkey = orders.o_orderkey AND orders.o_custkey = customer.c_custkey AND customer.c_mktsegment = 'AUTOMOBILE'
+7. lineitem: lineitem.l_partkey = partsupp.ps_partkey AND lineitem.l_suppkey = partsupp.ps_suppkey AND partsupp.ps_supplycost > 500

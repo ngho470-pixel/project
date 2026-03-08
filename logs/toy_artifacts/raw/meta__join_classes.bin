@@ -1,0 +1,4 @@
+class=0 cols=customer.c_custkey,orders.o_custkey
+class=1 cols=customer.c_mktsegment
+class=2 cols=lineitem.l_orderkey,orders.o_orderkey
+class=3 cols=orders.o_orderstatus

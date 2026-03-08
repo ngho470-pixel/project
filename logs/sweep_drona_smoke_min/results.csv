@@ -1,0 +1,6 @@
+db,baseline,query_id,policy_set_name,policy_ids,num_policies,query_complexity,policy_complexity,cold_ms,hot_ms,correctness,mem_overhead_kb,status,error_type,error_msg,pre_run_memory_building_ms
+tpch1,no_policy,1,1-5,"1,2,3,4,5",5,4,30,6106.053,6076.169,FALSE,0,1,mismatch,rows/hash mismatch vs rls_index,0.000
+tpch1,rls_index,1,1-5,"1,2,3,4,5",5,4,30,1898.436,1777.595,TRUE,45751,1,,,49806.444
+tpch1,ours,1,1-5,"1,2,3,4,5",5,4,30,19578.832,19397.372,TRUE,381021,1,,,32761.809
+tpch1,sieve,1,1-5,"1,2,3,4,5",5,4,30,,,UNKNOWN,,0,prepare_error,[Errno 2] No such file or directory: 'java',0.000
+tpch1,sieve_index,1,1-5,"1,2,3,4,5",5,4,30,,,UNKNOWN,,0,prepare_error,[Errno 2] No such file or directory: 'java',50069.379

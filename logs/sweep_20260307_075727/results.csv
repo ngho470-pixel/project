@@ -1,0 +1,11 @@
+db,baseline,query_id,policy_set_name,policy_ids,num_policies,query_complexity,policy_complexity,cold_ms,hot_ms,correctness,baseline_rows,rls_index_rows,mem_overhead_kb,status,error_type,error_msg,pre_run_memory_building_ms
+tpch0_1,rls_index,1,S_A,"1,2,3,4,5",5,4,30,121.500,120.870,TRUE,2,2,,1,,,4233.354
+tpch0_1,rls_index,3,S_A,"1,2,3,4,5",5,8,0,91.089,60.558,TRUE,311,311,,1,,,4233.354
+tpch0_1,rls_index,6,S_A,"1,2,3,4,5",5,6,30,60.840,60.524,TRUE,1,1,,1,,,4233.354
+tpch0_1,rls_index,11,S_A,"1,2,3,4,5",5,9,0,60.827,30.470,TRUE,2753,2753,,1,,,4233.354
+tpch0_1,rls_index,22,S_A,"1,2,3,4,5",5,9,0,60.778,30.421,TRUE,7,7,,1,,,4233.354
+tpch0_1,sieve_index,1,S_A,"1,2,3,4,5",5,4,30,633.198,608.770,TRUE,2,2,,1,,,4244.611
+tpch0_1,sieve_index,3,S_A,"1,2,3,4,5",5,8,0,422.210,422.041,TRUE,311,311,,1,,,4244.611
+tpch0_1,sieve_index,6,S_A,"1,2,3,4,5",5,6,30,91.114,66.569,TRUE,1,1,,1,,,4244.611
+tpch0_1,sieve_index,11,S_A,"1,2,3,4,5",5,9,0,61.007,30.479,TRUE,2753,2753,,1,,,4244.611
+tpch0_1,sieve_index,22,S_A,"1,2,3,4,5",5,9,0,60.844,30.437,TRUE,7,7,,1,,,4244.611

@@ -1,0 +1,5 @@
+baseline,query_id,status,cold_ms,hot_ms,hot_peak_rss_kb,count,count_err,error_type,error_msg,policy_profile_lines,policy_ms,executor_ms,scan_mode
+rls_index,1,1,121.53183482587337,120.96798000857234,131700,2,,,,0,,,
+rls_index,3,1,90.87095782160759,60.72797626256943,145884,311,,,,0,,,
+ours,1,1,9940.558426082134,9820.05256274715,200516,2,,,,1,,,
+ours,3,1,9940.551001112908,9819.571351166815,208264,311,,,,1,,,

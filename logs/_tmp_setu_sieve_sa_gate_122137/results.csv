@@ -1,0 +1,2 @@
+db,baseline,query_id,policy_set_name,policy_ids,num_policies,query_complexity,policy_complexity,cold_ms,hot_ms,correctness,baseline_rows,rls_index_rows,mem_overhead_kb,status,error_type,error_msg,pre_run_memory_building_ms
+postgres,sieve_index,6,S_A,"1,2,3,4,5",5,6,30,,,UNKNOWN,,,,0,setup_error,"ERROR:  relation ""lineitem"" does not exist",0.000

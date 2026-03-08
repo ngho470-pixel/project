@@ -1,0 +1,16 @@
+db,policy_set,query_id,rls_status,rls_err,rls_rows,sieve_status,sieve_err,sieve_rows,match
+tpch0_1,S_A,1,1,,2,1,,2,TRUE
+tpch0_1,S_A,3,1,,311,1,,311,TRUE
+tpch0_1,S_A,6,1,,1,1,,1,TRUE
+tpch0_1,S_A,11,1,,2753,1,,2753,TRUE
+tpch0_1,S_A,22,1,,7,1,,7,TRUE
+tpch0_1,S_C,1,1,,4,1,,4,TRUE
+tpch0_1,S_C,3,1,,39,1,,39,TRUE
+tpch0_1,S_C,6,1,,1,1,,1,TRUE
+tpch0_1,S_C,11,1,,2753,1,,2753,TRUE
+tpch0_1,S_C,22,1,,7,1,,7,TRUE
+tpch0_1,S_E,1,1,,4,1,,4,TRUE
+tpch0_1,S_E,3,1,,1061,1,,1061,TRUE
+tpch0_1,S_E,6,1,,1,1,,1,TRUE
+tpch0_1,S_E,11,1,,0,1,,0,TRUE
+tpch0_1,S_E,22,1,,7,1,,7,TRUE

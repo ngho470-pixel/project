@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/home/nghosh/setu/scripts/gate_stage03.py", line 17, in <module>
+    import fast_sweep_profile_60s as h
+  File "/home/nghosh/setu/fast_sweep_profile_60s.py", line 21, in <module>
+    import psycopg2
+ModuleNotFoundError: No module named 'psycopg2'

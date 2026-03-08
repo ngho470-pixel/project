@@ -1,0 +1,5 @@
+db,baseline,query_id,policy_set_name,policy_ids,num_policies,query_complexity,policy_complexity,cold_ms,hot_ms,correctness,mem_overhead_kb,status,error_type,error_msg,pre_run_memory_building_ms
+tpch0_1,rls_index,1,11-20,"11,12,13,14,15,16,17,18,19,20",10,4,55,4790.141,4671.502,TRUE,,1,,,3973.162
+tpch0_1,sieve_index,1,11-20,"11,12,13,14,15,16,17,18,19,20",10,4,55,,,UNKNOWN,,0,setup_error,"ERROR:  syntax error at or near ""lineitem"" LINE 1: ...HERE (((EXISTS (SELECT 1 FROM cf_sv_orders orders lineitem.l...                                                              ^",0.000
+tpch0_1,rls_index,1,21-30,"21,22,23,24,25,26,27,28,29,30",10,4,13,1898.407,1807.653,TRUE,,1,,,4952.729
+tpch0_1,sieve_index,1,21-30,"21,22,23,24,25,26,27,28,29,30",10,4,13,,,UNKNOWN,,0,setup_error,"ERROR:  syntax error at or near ""lineitem"" LINE 1: ...x)) OR (EXISTS (SELECT 1 FROM cf_sv_orders orders lineitem.l...                                                              ^",0.000

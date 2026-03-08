@@ -1,0 +1,69 @@
+[layer_probe] run_id=layer_probe_k5_15_q1_3_6_13_22_20260214_081528 run_dir=/tmp/z3_lab/project/logs/layer_probe_k5_15_q1_3_6_13_22_20260214_081528
+[layer_probe] dbs=['tpch0_1', 'tpch1', 'tpch10'] Ks=[5, 15] pool=1-20 statement_timeout_ms=1800000
+[layer_probe] queries=['1', '3', '6', '13', '22']
+[db] start db=tpch0_1
+[clean_state] tag=clean_start db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[policy_set] db=tpch0_1 K=5 enabled_ids=[1, 2, 3, 4, 5]
+[clean_state] tag=clean_before_k K=5 db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[setup_ours] K=5 setup_ms=5134.897 artifact_bytes_db=8900652 artifact_bytes_disk=9306112
+[progress] db=tpch0_1 K=5 baseline=ours query=1
+[progress] db=tpch0_1 K=5 baseline=ours query=3
+[progress] db=tpch0_1 K=5 baseline=ours query=6
+[progress] db=tpch0_1 K=5 baseline=ours query=13
+[progress] db=tpch0_1 K=5 baseline=ours query=22
+[clean_state] tag=after_ours_drop K=5 db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[policy_set] db=tpch0_1 K=15 enabled_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+[clean_state] tag=clean_before_k K=15 db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[setup_ours] K=15 setup_ms=6257.145 artifact_bytes_db=12636550 artifact_bytes_disk=13189120
+[progress] db=tpch0_1 K=15 baseline=ours query=1
+[progress] db=tpch0_1 K=15 baseline=ours query=3
+[progress] db=tpch0_1 K=15 baseline=ours query=6
+[progress] db=tpch0_1 K=15 baseline=ours query=13
+[progress] db=tpch0_1 K=15 baseline=ours query=22
+[clean_state] tag=after_ours_drop K=15 db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[db] done db=tpch0_1
+[db] start db=tpch1
+[clean_state] tag=clean_start db=tpch1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[policy_set] db=tpch1 K=5 enabled_ids=[1, 2, 3, 4, 5]
+[clean_state] tag=clean_before_k K=5 db=tpch1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[setup_ours] K=5 setup_ms=47465.811 artifact_bytes_db=91302745 artifact_bytes_disk=94797824
+[progress] db=tpch1 K=5 baseline=ours query=1
+[progress] db=tpch1 K=5 baseline=ours query=3
+[progress] db=tpch1 K=5 baseline=ours query=6
+[progress] db=tpch1 K=5 baseline=ours query=13
+[progress] db=tpch1 K=5 baseline=ours query=22
+[clean_state] tag=after_ours_drop K=5 db=tpch1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[policy_set] db=tpch1 K=15 enabled_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+[clean_state] tag=clean_before_k K=15 db=tpch1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[setup_ours] K=15 setup_ms=61275.463 artifact_bytes_db=128614976 artifact_bytes_disk=133513216
+[progress] db=tpch1 K=15 baseline=ours query=1
+[progress] db=tpch1 K=15 baseline=ours query=3
+[progress] db=tpch1 K=15 baseline=ours query=6
+[progress] db=tpch1 K=15 baseline=ours query=13
+[progress] db=tpch1 K=15 baseline=ours query=22
+[clean_state] tag=after_ours_drop K=15 db=tpch1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[db] done db=tpch1
+[db] start db=tpch10
+[clean_state] tag=clean_start db=tpch10 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[policy_set] db=tpch10 K=5 enabled_ids=[1, 2, 3, 4, 5]
+[clean_state] tag=clean_before_k K=5 db=tpch10 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[setup_ours] K=5 setup_ms=428572.018 artifact_bytes_db=891244842 artifact_bytes_disk=924835840
+[progress] db=tpch10 K=5 baseline=ours query=1
+[progress] db=tpch10 K=5 baseline=ours query=3
+[progress] db=tpch10 K=5 baseline=ours query=6
+[progress] db=tpch10 K=5 baseline=ours query=13
+[progress] db=tpch10 K=5 baseline=ours query=22
+[clean_state] tag=after_ours_drop K=5 db=tpch10 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[policy_set] db=tpch10 K=15 enabled_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+[clean_state] tag=clean_before_k K=15 db=tpch10 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[setup_ours] K=15 setup_ms=585211.405 artifact_bytes_db=1261257021 artifact_bytes_disk=1308786688
+[progress] db=tpch10 K=15 baseline=ours query=1
+[progress] db=tpch10 K=15 baseline=ours query=3
+[progress] db=tpch10 K=15 baseline=ours query=6
+[progress] db=tpch10 K=15 baseline=ours query=13
+[progress] db=tpch10 K=15 baseline=ours query=22
+[clean_state] tag=after_ours_drop K=15 db=tpch10 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[db] done db=tpch10
+[done] run_dir=/tmp/z3_lab/project/logs/layer_probe_k5_15_q1_3_6_13_22_20260214_081528
+[done] layer_probe_csv=/tmp/z3_lab/project/logs/layer_probe_k5_15_q1_3_6_13_22_20260214_081528/layer_probe.csv
+[done] layer_probe_summary=/tmp/z3_lab/project/logs/layer_probe_k5_15_q1_3_6_13_22_20260214_081528/layer_probe_summary.md

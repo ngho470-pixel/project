@@ -1,0 +1,5 @@
+db,policy_id,policy_target,query_id,status,correctness,reason,route_main,route_summary,route_reject_reason,ours_rows,ours_hash,gt_rows,gt_hash,policy_total_ms,pf2_terms_supported,pf2_terms_failed_shape,class_terms_ok,class_terms_reject,class_route_single_hub,class_route_two_hop,class_route_tree,class_route_cycle_rect,class_route_td_cycle,class_route_reject,class_td_terms_supported,class_td_width_max,class_td_fail_width,proj_sig_count,proj_mask_or_ops,proj_rid_iters,hygiene_ok,hygiene_diag
+tpch1,1,lineitem,1,ERROR,ERROR,"ERROR:  policy: cvc5 CNF init failed: Invalid kind 'AND', expected Terms with kind AND must have at least 2 children and at most 67108863 children (the one under construction has 1); ERROR:  policy: cvc5 CNF init failed: Invalid kind 'AND', expected Terms with kind AND must have at least 2 children and at most 67108863 children (the one under construction has 1)",,,,,,3,734fbc0d832cca9145f1130f7ba6d4d6,,,,,,,,,,,,,,,,,,1,"[pg_hygiene] connecting db=tpch1
+[pg_hygiene] before active_sessions=0 managed_locks=0
+[pg_hygiene] clean
+[pg_hygiene] no non-idle backends remaining"

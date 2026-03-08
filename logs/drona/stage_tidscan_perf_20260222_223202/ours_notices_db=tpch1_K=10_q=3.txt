@@ -1,0 +1,802 @@
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' AND:and IDENT:customer.c_acctbal OP:> NUMBER:0 RPAREN:) OR:or LPAREN:( LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'1-URGENT' OR:or IDENT:orders.o_orderpriority OP:= STRING:'2-HIGH' RPAREN:) AND:and IDENT:customer.c_mktsegment OP:= STRING:'BUILDING' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and LPAREN:( LPAREN:( IDENT:nation.n_name OP:= STRING:'GERMANY' RPAREN:) OR:or LPAREN:( IDENT:nation.n_name OP:= STRING:'FRANCE' RPAREN:) OR:or LPAREN:( IDENT:nation.n_name OP:= STRING:'BRAZIL' RPAREN:) OR:or LPAREN:( IDENT:nation.n_name OP:= STRING:'CANADA' RPAREN:) RPAREN:) AND:and IDENT:customer.c_acctbal OP:> NUMBER:0
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'O' RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'1-URGENT' RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'2-HIGH' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'MAIL' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'SHIP' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:lineitem.l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) RPAREN:) OR:or LPAREN:( LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'TRUCK' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'RAIL' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_returnflag OP:= STRING:'A' RPAREN:) RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'BUILDING' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:orders.o_totalprice OP:> NUMBER:50000 RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:lineitem.l_discount OP:<= NUMBER:0.07 RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'AMERICA' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'1-URGENT' OR:or IDENT:orders.o_orderpriority OP:= STRING:'2-HIGH' RPAREN:) AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:20 RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'O' AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_suppkey OP:= IDENT:supplier.s_suppkey AND:and IDENT:supplier.s_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_discount OP:<= NUMBER:0.05 AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:25 RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_discount OP:<= NUMBER:0.07 AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_partkey OP:= IDENT:part.p_partkey AND:and IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#12' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#23' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#34' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#45' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:part.p_size OP:= NUMBER:10 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:15 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:20 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:5 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:7 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:9 RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:orders.o_totalprice OP:> NUMBER:30000 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=partsupp tokens=IDENT:partsupp.ps_suppkey OP:= IDENT:supplier.s_suppkey AND:and IDENT:supplier.s_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and IDENT:partsupp.ps_partkey OP:= IDENT:part.p_partkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( LPAREN:( LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#12' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#23' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:part.p_size OP:= NUMBER:10 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:15 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:20 RPAREN:) RPAREN:) RPAREN:) OR:or LPAREN:( LPAREN:( LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#34' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#45' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:part.p_size OP:= NUMBER:5 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:7 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:9 RPAREN:) RPAREN:) RPAREN:) RPAREN:) AND:and IDENT:partsupp.ps_supplycost OP:> NUMBER:100
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=0 restrictive_total=0 targets=0 targets_perm0=0
+NOTICE:  policy_eval: closure_count=0
+NOTICE:  custom_filter: query_targets = [d]
+NOTICE:  policy_profile: eval_ms=0.782 artifact_load_ms=0.000 artifact_parse_ms=0.000 atoms_ms=0.000 propagate_ms=0.000 project_ms=0.000 project_mask_ms=0.000 project_row_ms=0.000 project_mask_bytes=0 project_n_join_evals_max=0 project_clause_words_max=0 clause_plan_count_max=0 prop_join_scans_total=0 unique_join_struct_sigs_max=0 prop_table_scans=none signature_cache_hits=0 signature_cache_misses=0 term_code_scans=0 target_full_row_scans=0 target_rid_bitmap_bytes=0 signature_cache_bytes=0 active_sig_dense_count=0 active_sig_sparse_count=0 active_sig_density_sum=0.000000 domain_set_dense_count=0 domain_set_sparse_count=0 domain_set_density_sum=0.000000 block_words_blocks_allocated=0 block_words_total_blocks=0 proj_sig_count=0 proj_mask_or_ops=0 proj_rid_iters=0 bytes_sig_ctid_masks=0 bytes_block_words=0 bytes_artifact_buffers_retained=0 bytes_decoded_buffers_retained=0 stamp_ms=0.000 bin_ms=0.000 local_sat_ms=0.000 fill_ms=0.000 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=0.000 ctid_map_ms=0.000 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 blocks_seen=0 blocks_skipped=0 block_skip_hit_rate=0.000000 scan_mode_tid_tables=0 scan_mode_filter_tables=0 tid_blocks_visited=0 tid_tuples_fetched=0 tid_fetch_ms=0.000 tid_qual_ms=0.000 n_scanned_tables=0 n_policy_targets=0 n_filters=0 bytes_artifacts_loaded=0 bytes_allow=0 bytes_ctid=0 bytes_blk_index=0 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=24300 rss_kb_after_eval=24300 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=24300 peak_rss_kb_end=24300
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' AND:and IDENT:customer.c_acctbal OP:> NUMBER:0 RPAREN:) OR:or LPAREN:( LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'1-URGENT' OR:or IDENT:orders.o_orderpriority OP:= STRING:'2-HIGH' RPAREN:) AND:and IDENT:customer.c_mktsegment OP:= STRING:'BUILDING' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and LPAREN:( LPAREN:( IDENT:nation.n_name OP:= STRING:'GERMANY' RPAREN:) OR:or LPAREN:( IDENT:nation.n_name OP:= STRING:'FRANCE' RPAREN:) OR:or LPAREN:( IDENT:nation.n_name OP:= STRING:'BRAZIL' RPAREN:) OR:or LPAREN:( IDENT:nation.n_name OP:= STRING:'CANADA' RPAREN:) RPAREN:) AND:and IDENT:customer.c_acctbal OP:> NUMBER:0
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'O' RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'1-URGENT' RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'2-HIGH' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'MAIL' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'SHIP' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:lineitem.l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) RPAREN:) OR:or LPAREN:( LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'TRUCK' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'RAIL' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_returnflag OP:= STRING:'A' RPAREN:) RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'BUILDING' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:orders.o_totalprice OP:> NUMBER:50000 RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:lineitem.l_discount OP:<= NUMBER:0.07 RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'AMERICA' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'1-URGENT' OR:or IDENT:orders.o_orderpriority OP:= STRING:'2-HIGH' RPAREN:) AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:20 RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'O' AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_suppkey OP:= IDENT:supplier.s_suppkey AND:and IDENT:supplier.s_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_discount OP:<= NUMBER:0.05 AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:25 RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_discount OP:<= NUMBER:0.07 AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_partkey OP:= IDENT:part.p_partkey AND:and IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#12' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#23' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#34' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#45' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:part.p_size OP:= NUMBER:10 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:15 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:20 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:5 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:7 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:9 RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:orders.o_totalprice OP:> NUMBER:30000 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=partsupp tokens=IDENT:partsupp.ps_suppkey OP:= IDENT:supplier.s_suppkey AND:and IDENT:supplier.s_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and IDENT:partsupp.ps_partkey OP:= IDENT:part.p_partkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( LPAREN:( LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#12' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#23' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:part.p_size OP:= NUMBER:10 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:15 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:20 RPAREN:) RPAREN:) RPAREN:) OR:or LPAREN:( LPAREN:( LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#34' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#45' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:part.p_size OP:= NUMBER:5 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:7 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:9 RPAREN:) RPAREN:) RPAREN:) RPAREN:) AND:and IDENT:partsupp.ps_supplycost OP:> NUMBER:100
+NOTICE:  CF_POLICY_AST target=lineitem perm=3 rest=2 y0=0 ast=(y42 and (y23 or y21 or y22) and ((y13 or y15) and y12 or (y16 or y14) and (y11 or y10)) or y42 and y40 and y41 and y46 and (y37 or y39) and ((y21 or y22) and y8 or y24 and y7) or y43 and y42 and y40 and (y27 or y28 or y29 or y30) and (y31 or y32 or y33 or y34 or y35 or y36) and (y23 or y25)) and y42 and y40 and (y2 or y3) and (y23 or y26) and y6 and y44 and y45 and y46 and (y39 or y38) and (y5 and y9 or y6 and y7)
+NOTICE:  CF_POLICY_AST target=orders perm=2 rest=2 y0=0 ast=(y40 and (y2 or y4) or y40 and y41 and (y20 or y19 or y17 or y18) and y1) and y40 and (y23 and y1 or (y21 or y22) and y3) and y40 and y41 and y46 and (y39 or y38) and (y24 or y23)
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=5 restrictive_total=4 targets=2 targets_perm0=0
+NOTICE:  policy_eval: target=lineitem join_classes=[1, 3, 5, 6, 11, 13]
+NOTICE:  policy_eval: target=orders join_classes=[1, 3, 13]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD') ast=y40 and (y2 or y4)
+NOTICE:  policy_eval: policy[2] target=orders expr=orders.o_custkey = customer.c_custkey AND ((orders.o_orderstatus = 'F' AND customer.c_acctbal > 0) OR ((orders.o_orderpriority = '1-URGENT' OR orders.o_orderpriority = '2-HIGH') AND customer.c_mktsegment = 'BUILDING')) ast=y40 and (y23 and y1 or (y21 or y22) and y3)
+NOTICE:  policy_eval: policy[3] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND ((nation.n_name = 'GERMANY') OR (nation.n_name = 'FRANCE') OR (nation.n_name = 'BRAZIL') OR (nation.n_name = 'CANADA')) AND customer.c_acctbal > 0 ast=y40 and y41 and (y20 or y19 or y17 or y18) and y1
+NOTICE:  policy_eval: policy[4] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND ((region.r_name = 'EUROPE') OR (region.r_name = 'ASIA')) AND ((orders.o_orderstatus = 'O') OR (orders.o_orderstatus = 'F')) ast=y40 and y41 and y46 and (y39 or y38) and (y24 or y23)
+NOTICE:  policy_eval: policy[5] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND ((orders.o_orderstatus = 'F') OR (orders.o_orderpriority = '1-URGENT') OR (orders.o_orderpriority = '2-HIGH')) AND ((((lineitem.l_shipmode = 'MAIL') OR (lineitem.l_shipmode = 'SHIP')) AND (lineitem.l_shipinstruct = 'DELIVER IN PERSON')) OR (((lineitem.l_shipmode = 'TRUCK') OR (lineitem.l_shipmode = 'RAIL')) AND ((lineitem.l_returnflag = 'R') OR (lineitem.l_returnflag = 'A')))) ast=y42 and (y23 or y21 or y22) and ((y13 or y15) and y12 or (y16 or y14) and (y11 or y10))
+NOTICE:  policy_eval: policy[6] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'BUILDING') AND ((orders.o_orderstatus = 'F') OR (orders.o_totalprice > 50000)) AND (lineitem.l_discount <= 0.07) ast=y42 and y40 and (y2 or y3) and (y23 or y26) and y6
+NOTICE:  policy_eval: policy[7] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND ((region.r_name = 'AMERICA') OR (region.r_name = 'EUROPE')) AND (((orders.o_orderpriority = '1-URGENT' OR orders.o_orderpriority = '2-HIGH') AND lineitem.l_quantity <= 20) OR (orders.o_orderstatus = 'O' AND lineitem.l_quantity <= 10)) ast=y42 and y40 and y41 and y46 and (y37 or y39) and ((y21 or y22) and y8 or y24 and y7)
+NOTICE:  policy_eval: policy[8] target=lineitem expr=lineitem.l_suppkey = supplier.s_suppkey AND supplier.s_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND ((region.r_name = 'EUROPE') OR (region.r_name = 'ASIA')) AND ((lineitem.l_discount <= 0.05 AND lineitem.l_quantity <= 25) OR (lineitem.l_discount <= 0.07 AND lineitem.l_quantity <= 10)) ast=y44 and y45 and y46 and (y39 or y38) and (y5 and y9 or y6 and y7)
+NOTICE:  policy_eval: policy[9] target=lineitem expr=lineitem.l_partkey = part.p_partkey AND lineitem.l_orderkey = orders.o_orderkey AND orders.o_custkey = customer.c_custkey AND ((part.p_brand = 'Brand#12') OR (part.p_brand = 'Brand#23') OR (part.p_brand = 'Brand#34') OR (part.p_brand = 'Brand#45')) AND ((part.p_size = 10) OR (part.p_size = 15) OR (part.p_size = 20) OR (part.p_size = 5) OR (part.p_size = 7) OR (part.p_size = 9)) AND ((orders.o_orderstatus = 'F') OR (orders.o_totalprice > 30000)) ast=y43 and y42 and y40 and (y27 or y28 or y29 or y30) and (y31 or y32 or y33 or y34 or y35 or y36) and (y23 or y25)
+NOTICE:  policy_eval: atom y1 = const:customer.c_acctbal|>|0
+NOTICE:  policy_eval: atom y2 = const:customer.c_mktsegment|=|AUTOMOBILE
+NOTICE:  policy_eval: atom y3 = const:customer.c_mktsegment|=|BUILDING
+NOTICE:  policy_eval: atom y4 = const:customer.c_mktsegment|=|HOUSEHOLD
+NOTICE:  policy_eval: atom y5 = const:lineitem.l_discount|<=|0.05
+NOTICE:  policy_eval: atom y6 = const:lineitem.l_discount|<=|0.07
+NOTICE:  policy_eval: atom y7 = const:lineitem.l_quantity|<=|10
+NOTICE:  policy_eval: atom y8 = const:lineitem.l_quantity|<=|20
+NOTICE:  policy_eval: atom y9 = const:lineitem.l_quantity|<=|25
+NOTICE:  policy_eval: atom y10 = const:lineitem.l_returnflag|=|A
+NOTICE:  policy_eval: atom y11 = const:lineitem.l_returnflag|=|R
+NOTICE:  policy_eval: atom y12 = const:lineitem.l_shipinstruct|=|DELIVER IN PERSON
+NOTICE:  policy_eval: atom y13 = const:lineitem.l_shipmode|=|MAIL
+NOTICE:  policy_eval: atom y14 = const:lineitem.l_shipmode|=|RAIL
+NOTICE:  policy_eval: atom y15 = const:lineitem.l_shipmode|=|SHIP
+NOTICE:  policy_eval: atom y16 = const:lineitem.l_shipmode|=|TRUCK
+NOTICE:  policy_eval: atom y17 = const:nation.n_name|=|BRAZIL
+NOTICE:  policy_eval: atom y18 = const:nation.n_name|=|CANADA
+NOTICE:  policy_eval: atom y19 = const:nation.n_name|=|FRANCE
+NOTICE:  policy_eval: atom y20 = const:nation.n_name|=|GERMANY
+NOTICE:  policy_eval: atom y21 = const:orders.o_orderpriority|=|1-URGENT
+NOTICE:  policy_eval: atom y22 = const:orders.o_orderpriority|=|2-HIGH
+NOTICE:  policy_eval: atom y23 = const:orders.o_orderstatus|=|F
+NOTICE:  policy_eval: atom y24 = const:orders.o_orderstatus|=|O
+NOTICE:  policy_eval: atom y25 = const:orders.o_totalprice|>|30000
+NOTICE:  policy_eval: atom y26 = const:orders.o_totalprice|>|50000
+NOTICE:  policy_eval: atom y27 = const:part.p_brand|=|Brand#12
+NOTICE:  policy_eval: atom y28 = const:part.p_brand|=|Brand#23
+NOTICE:  policy_eval: atom y29 = const:part.p_brand|=|Brand#34
+NOTICE:  policy_eval: atom y30 = const:part.p_brand|=|Brand#45
+NOTICE:  policy_eval: atom y31 = const:part.p_size|=|10
+NOTICE:  policy_eval: atom y32 = const:part.p_size|=|15
+NOTICE:  policy_eval: atom y33 = const:part.p_size|=|20
+NOTICE:  policy_eval: atom y34 = const:part.p_size|=|5
+NOTICE:  policy_eval: atom y35 = const:part.p_size|=|7
+NOTICE:  policy_eval: atom y36 = const:part.p_size|=|9
+NOTICE:  policy_eval: atom y37 = const:region.r_name|=|AMERICA
+NOTICE:  policy_eval: atom y38 = const:region.r_name|=|ASIA
+NOTICE:  policy_eval: atom y39 = const:region.r_name|=|EUROPE
+NOTICE:  policy_eval: atom y40 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: atom y41 = join:customer.c_nationkey=nation.n_nationkey
+NOTICE:  policy_eval: atom y42 = join:lineitem.l_orderkey=orders.o_orderkey
+NOTICE:  policy_eval: atom y43 = join:lineitem.l_partkey=part.p_partkey
+NOTICE:  policy_eval: atom y44 = join:lineitem.l_suppkey=supplier.s_suppkey
+NOTICE:  policy_eval: atom y45 = join:nation.n_nationkey=supplier.s_nationkey
+NOTICE:  policy_eval: atom y46 = join:nation.n_regionkey=region.r_regionkey
+NOTICE:  policy_eval: combined_ast target=lineitem ast=(y42 and (y23 or y21 or y22) and ((y13 or y15) and y12 or (y16 or y14) and (y11 or y10)) or y42 and y40 and y41 and y46 and (y37 or y39) and ((y21 or y22) and y8 or y24 and y7) or y43 and y42 and y40 and (y27 or y28 or y29 or y30) and (y31 or y32 or y33 or y34 or y35 or y36) and (y23 or y25)) and y42 and y40 and (y2 or y3) and (y23 or y26) and y6 and y44 and y45 and y46 and (y39 or y38) and (y5 and y9 or y6 and y7) perm_ast=y42 and (y23 or y21 or y22) and ((y13 or y15) and y12 or (y16 or y14) and (y11 or y10)) or y42 and y40 and y41 and y46 and (y37 or y39) and ((y21 or y22) and y8 or y24 and y7) or y43 and y42 and y40 and (y27 or y28 or y29 or y30) and (y31 or y32 or y33 or y34 or y35 or y36) and (y23 or y25) rest_ast=y42 and y40 and (y2 or y3) and (y23 or y26) and y6 and y44 and y45 and y46 and (y39 or y38) and (y5 and y9 or y6 and y7)
+NOTICE:  policy_eval: combined_ast target=orders ast=(y40 and (y2 or y4) or y40 and y41 and (y20 or y19 or y17 or y18) and y1) and y40 and (y23 and y1 or (y21 or y22) and y3) and y40 and y41 and y46 and (y39 or y38) and (y24 or y23) perm_ast=y40 and (y2 or y4) or y40 and y41 and (y20 or y19 or y17 or y18) and y1 rest_ast=y40 and (y23 and y1 or (y21 or y22) and y3) and y40 and y41 and y46 and (y39 or y38) and (y24 or y23)
+NOTICE:  policy_eval: closure_count=7
+NOTICE:  custom_filter: wrap rel=orders oid=16441 paths=1
+NOTICE:  custom_filter: wrap rel=lineitem oid=16444 paths=1
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' AND:and IDENT:customer.c_acctbal OP:> NUMBER:0 RPAREN:) OR:or LPAREN:( LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'1-URGENT' OR:or IDENT:orders.o_orderpriority OP:= STRING:'2-HIGH' RPAREN:) AND:and IDENT:customer.c_mktsegment OP:= STRING:'BUILDING' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and LPAREN:( LPAREN:( IDENT:nation.n_name OP:= STRING:'GERMANY' RPAREN:) OR:or LPAREN:( IDENT:nation.n_name OP:= STRING:'FRANCE' RPAREN:) OR:or LPAREN:( IDENT:nation.n_name OP:= STRING:'BRAZIL' RPAREN:) OR:or LPAREN:( IDENT:nation.n_name OP:= STRING:'CANADA' RPAREN:) RPAREN:) AND:and IDENT:customer.c_acctbal OP:> NUMBER:0
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'O' RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'1-URGENT' RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'2-HIGH' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'MAIL' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'SHIP' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:lineitem.l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) RPAREN:) OR:or LPAREN:( LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'TRUCK' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:= STRING:'RAIL' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_returnflag OP:= STRING:'A' RPAREN:) RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'BUILDING' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:orders.o_totalprice OP:> NUMBER:50000 RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:lineitem.l_discount OP:<= NUMBER:0.07 RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'AMERICA' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( LPAREN:( IDENT:orders.o_orderpriority OP:= STRING:'1-URGENT' OR:or IDENT:orders.o_orderpriority OP:= STRING:'2-HIGH' RPAREN:) AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:20 RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'O' AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_suppkey OP:= IDENT:supplier.s_suppkey AND:and IDENT:supplier.s_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_discount OP:<= NUMBER:0.05 AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:25 RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_discount OP:<= NUMBER:0.07 AND:and IDENT:lineitem.l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_partkey OP:= IDENT:part.p_partkey AND:and IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#12' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#23' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#34' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#45' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:part.p_size OP:= NUMBER:10 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:15 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:20 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:5 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:7 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:9 RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:orders.o_totalprice OP:> NUMBER:30000 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=partsupp tokens=IDENT:partsupp.ps_suppkey OP:= IDENT:supplier.s_suppkey AND:and IDENT:supplier.s_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and IDENT:partsupp.ps_partkey OP:= IDENT:part.p_partkey AND:and LPAREN:( LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' RPAREN:) OR:or LPAREN:( IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( LPAREN:( LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#12' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#23' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:part.p_size OP:= NUMBER:10 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:15 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:20 RPAREN:) RPAREN:) RPAREN:) OR:or LPAREN:( LPAREN:( LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#34' RPAREN:) OR:or LPAREN:( IDENT:part.p_brand OP:= STRING:'Brand#45' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:part.p_size OP:= NUMBER:5 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:7 RPAREN:) OR:or LPAREN:( IDENT:part.p_size OP:= NUMBER:9 RPAREN:) RPAREN:) RPAREN:) RPAREN:) AND:and IDENT:partsupp.ps_supplycost OP:> NUMBER:100
+NOTICE:  CF_POLICY_AST target=lineitem perm=3 rest=2 y0=0 ast=(y42 and (y23 or y21 or y22) and ((y13 or y15) and y12 or (y16 or y14) and (y11 or y10)) or y42 and y40 and y41 and y46 and (y37 or y39) and ((y21 or y22) and y8 or y24 and y7) or y43 and y42 and y40 and (y27 or y28 or y29 or y30) and (y31 or y32 or y33 or y34 or y35 or y36) and (y23 or y25)) and y42 and y40 and (y2 or y3) and (y23 or y26) and y6 and y44 and y45 and y46 and (y39 or y38) and (y5 and y9 or y6 and y7)
+NOTICE:  CF_POLICY_AST target=orders perm=2 rest=2 y0=0 ast=(y40 and (y2 or y4) or y40 and y41 and (y20 or y19 or y17 or y18) and y1) and y40 and (y23 and y1 or (y21 or y22) and y3) and y40 and y41 and y46 and (y39 or y38) and (y24 or y23)
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=5 restrictive_total=4 targets=2 targets_perm0=0
+NOTICE:  policy_eval: target=lineitem join_classes=[1, 3, 5, 6, 11, 13]
+NOTICE:  policy_eval: target=orders join_classes=[1, 3, 13]
+NOTICE:  policy_eval: policy[1] target=orders expr=orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD') ast=y40 and (y2 or y4)
+NOTICE:  policy_eval: policy[2] target=orders expr=orders.o_custkey = customer.c_custkey AND ((orders.o_orderstatus = 'F' AND customer.c_acctbal > 0) OR ((orders.o_orderpriority = '1-URGENT' OR orders.o_orderpriority = '2-HIGH') AND customer.c_mktsegment = 'BUILDING')) ast=y40 and (y23 and y1 or (y21 or y22) and y3)
+NOTICE:  policy_eval: policy[3] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND ((nation.n_name = 'GERMANY') OR (nation.n_name = 'FRANCE') OR (nation.n_name = 'BRAZIL') OR (nation.n_name = 'CANADA')) AND customer.c_acctbal > 0 ast=y40 and y41 and (y20 or y19 or y17 or y18) and y1
+NOTICE:  policy_eval: policy[4] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND ((region.r_name = 'EUROPE') OR (region.r_name = 'ASIA')) AND ((orders.o_orderstatus = 'O') OR (orders.o_orderstatus = 'F')) ast=y40 and y41 and y46 and (y39 or y38) and (y24 or y23)
+NOTICE:  policy_eval: policy[5] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND ((orders.o_orderstatus = 'F') OR (orders.o_orderpriority = '1-URGENT') OR (orders.o_orderpriority = '2-HIGH')) AND ((((lineitem.l_shipmode = 'MAIL') OR (lineitem.l_shipmode = 'SHIP')) AND (lineitem.l_shipinstruct = 'DELIVER IN PERSON')) OR (((lineitem.l_shipmode = 'TRUCK') OR (lineitem.l_shipmode = 'RAIL')) AND ((lineitem.l_returnflag = 'R') OR (lineitem.l_returnflag = 'A')))) ast=y42 and (y23 or y21 or y22) and ((y13 or y15) and y12 or (y16 or y14) and (y11 or y10))
+NOTICE:  policy_eval: policy[6] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'BUILDING') AND ((orders.o_orderstatus = 'F') OR (orders.o_totalprice > 50000)) AND (lineitem.l_discount <= 0.07) ast=y42 and y40 and (y2 or y3) and (y23 or y26) and y6
+NOTICE:  policy_eval: policy[7] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND ((region.r_name = 'AMERICA') OR (region.r_name = 'EUROPE')) AND (((orders.o_orderpriority = '1-URGENT' OR orders.o_orderpriority = '2-HIGH') AND lineitem.l_quantity <= 20) OR (orders.o_orderstatus = 'O' AND lineitem.l_quantity <= 10)) ast=y42 and y40 and y41 and y46 and (y37 or y39) and ((y21 or y22) and y8 or y24 and y7)
+NOTICE:  policy_eval: policy[8] target=lineitem expr=lineitem.l_suppkey = supplier.s_suppkey AND supplier.s_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND ((region.r_name = 'EUROPE') OR (region.r_name = 'ASIA')) AND ((lineitem.l_discount <= 0.05 AND lineitem.l_quantity <= 25) OR (lineitem.l_discount <= 0.07 AND lineitem.l_quantity <= 10)) ast=y44 and y45 and y46 and (y39 or y38) and (y5 and y9 or y6 and y7)
+NOTICE:  policy_eval: policy[9] target=lineitem expr=lineitem.l_partkey = part.p_partkey AND lineitem.l_orderkey = orders.o_orderkey AND orders.o_custkey = customer.c_custkey AND ((part.p_brand = 'Brand#12') OR (part.p_brand = 'Brand#23') OR (part.p_brand = 'Brand#34') OR (part.p_brand = 'Brand#45')) AND ((part.p_size = 10) OR (part.p_size = 15) OR (part.p_size = 20) OR (part.p_size = 5) OR (part.p_size = 7) OR (part.p_size = 9)) AND ((orders.o_orderstatus = 'F') OR (orders.o_totalprice > 30000)) ast=y43 and y42 and y40 and (y27 or y28 or y29 or y30) and (y31 or y32 or y33 or y34 or y35 or y36) and (y23 or y25)
+NOTICE:  policy_eval: atom y1 = const:customer.c_acctbal|>|0
+NOTICE:  policy_eval: atom y2 = const:customer.c_mktsegment|=|AUTOMOBILE
+NOTICE:  policy_eval: atom y3 = const:customer.c_mktsegment|=|BUILDING
+NOTICE:  policy_eval: atom y4 = const:customer.c_mktsegment|=|HOUSEHOLD
+NOTICE:  policy_eval: atom y5 = const:lineitem.l_discount|<=|0.05
+NOTICE:  policy_eval: atom y6 = const:lineitem.l_discount|<=|0.07
+NOTICE:  policy_eval: atom y7 = const:lineitem.l_quantity|<=|10
+NOTICE:  policy_eval: atom y8 = const:lineitem.l_quantity|<=|20
+NOTICE:  policy_eval: atom y9 = const:lineitem.l_quantity|<=|25
+NOTICE:  policy_eval: atom y10 = const:lineitem.l_returnflag|=|A
+NOTICE:  policy_eval: atom y11 = const:lineitem.l_returnflag|=|R
+NOTICE:  policy_eval: atom y12 = const:lineitem.l_shipinstruct|=|DELIVER IN PERSON
+NOTICE:  policy_eval: atom y13 = const:lineitem.l_shipmode|=|MAIL
+NOTICE:  policy_eval: atom y14 = const:lineitem.l_shipmode|=|RAIL
+NOTICE:  policy_eval: atom y15 = const:lineitem.l_shipmode|=|SHIP
+NOTICE:  policy_eval: atom y16 = const:lineitem.l_shipmode|=|TRUCK
+NOTICE:  policy_eval: atom y17 = const:nation.n_name|=|BRAZIL
+NOTICE:  policy_eval: atom y18 = const:nation.n_name|=|CANADA
+NOTICE:  policy_eval: atom y19 = const:nation.n_name|=|FRANCE
+NOTICE:  policy_eval: atom y20 = const:nation.n_name|=|GERMANY
+NOTICE:  policy_eval: atom y21 = const:orders.o_orderpriority|=|1-URGENT
+NOTICE:  policy_eval: atom y22 = const:orders.o_orderpriority|=|2-HIGH
+NOTICE:  policy_eval: atom y23 = const:orders.o_orderstatus|=|F
+NOTICE:  policy_eval: atom y24 = const:orders.o_orderstatus|=|O
+NOTICE:  policy_eval: atom y25 = const:orders.o_totalprice|>|30000
+NOTICE:  policy_eval: atom y26 = const:orders.o_totalprice|>|50000
+NOTICE:  policy_eval: atom y27 = const:part.p_brand|=|Brand#12
+NOTICE:  policy_eval: atom y28 = const:part.p_brand|=|Brand#23
+NOTICE:  policy_eval: atom y29 = const:part.p_brand|=|Brand#34
+NOTICE:  policy_eval: atom y30 = const:part.p_brand|=|Brand#45
+NOTICE:  policy_eval: atom y31 = const:part.p_size|=|10
+NOTICE:  policy_eval: atom y32 = const:part.p_size|=|15
+NOTICE:  policy_eval: atom y33 = const:part.p_size|=|20
+NOTICE:  policy_eval: atom y34 = const:part.p_size|=|5
+NOTICE:  policy_eval: atom y35 = const:part.p_size|=|7
+NOTICE:  policy_eval: atom y36 = const:part.p_size|=|9
+NOTICE:  policy_eval: atom y37 = const:region.r_name|=|AMERICA
+NOTICE:  policy_eval: atom y38 = const:region.r_name|=|ASIA
+NOTICE:  policy_eval: atom y39 = const:region.r_name|=|EUROPE
+NOTICE:  policy_eval: atom y40 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: atom y41 = join:customer.c_nationkey=nation.n_nationkey
+NOTICE:  policy_eval: atom y42 = join:lineitem.l_orderkey=orders.o_orderkey
+NOTICE:  policy_eval: atom y43 = join:lineitem.l_partkey=part.p_partkey
+NOTICE:  policy_eval: atom y44 = join:lineitem.l_suppkey=supplier.s_suppkey
+NOTICE:  policy_eval: atom y45 = join:nation.n_nationkey=supplier.s_nationkey
+NOTICE:  policy_eval: atom y46 = join:nation.n_regionkey=region.r_regionkey
+NOTICE:  policy_eval: combined_ast target=lineitem ast=(y42 and (y23 or y21 or y22) and ((y13 or y15) and y12 or (y16 or y14) and (y11 or y10)) or y42 and y40 and y41 and y46 and (y37 or y39) and ((y21 or y22) and y8 or y24 and y7) or y43 and y42 and y40 and (y27 or y28 or y29 or y30) and (y31 or y32 or y33 or y34 or y35 or y36) and (y23 or y25)) and y42 and y40 and (y2 or y3) and (y23 or y26) and y6 and y44 and y45 and y46 and (y39 or y38) and (y5 and y9 or y6 and y7) perm_ast=y42 and (y23 or y21 or y22) and ((y13 or y15) and y12 or (y16 or y14) and (y11 or y10)) or y42 and y40 and y41 and y46 and (y37 or y39) and ((y21 or y22) and y8 or y24 and y7) or y43 and y42 and y40 and (y27 or y28 or y29 or y30) and (y31 or y32 or y33 or y34 or y35 or y36) and (y23 or y25) rest_ast=y42 and y40 and (y2 or y3) and (y23 or y26) and y6 and y44 and y45 and y46 and (y39 or y38) and (y5 and y9 or y6 and y7)
+NOTICE:  policy_eval: combined_ast target=orders ast=(y40 and (y2 or y4) or y40 and y41 and (y20 or y19 or y17 or y18) and y1) and y40 and (y23 and y1 or (y21 or y22) and y3) and y40 and y41 and y46 and (y39 or y38) and (y24 or y23) perm_ast=y40 and (y2 or y4) or y40 and y41 and (y20 or y19 or y17 or y18) and y1 rest_ast=y40 and (y23 and y1 or (y21 or y22) and y3) and y40 and y41 and y46 and (y39 or y38) and (y24 or y23)
+NOTICE:  policy_eval: closure_count=7
+NOTICE:  custom_filter: needed_files = [customer_code_base, customer_ctid, dict/domain/0, dict/domain/10, dict/domain/12, dict/domain/14, dict/domain/15, dict/domain/16, dict/domain/17, dict/domain/18, dict/domain/2, dict/domain/20, dict/domain/4, dict/domain/7, dict/domain/8, dict/domain/9, lineitem_code_base, lineitem_ctid, meta/col_domain, meta/cols/customer, meta/cols/lineitem, meta/cols/nation, meta/cols/orders, meta/cols/part, meta/cols/region, meta/cols/supplier, meta/dict_sorted/domain/0, meta/dict_sorted/domain/10, meta/dict_sorted/domain/12, meta/dict_sorted/domain/14, meta/dict_sorted/domain/15, meta/dict_sorted/domain/16, meta/dict_sorted/domain/17, meta/dict_sorted/domain/18, meta/dict_sorted/domain/2, meta/dict_sorted/domain/20, meta/dict_sorted/domain/4, meta/dict_sorted/domain/7, meta/dict_sorted/domain/8, meta/dict_sorted/domain/9, meta/dict_type/domain/0, meta/dict_type/domain/10, meta/dict_type/domain/12, meta/dict_type/domain/14, meta/dict_type/domain/15, meta/dict_type/domain/16, meta/dict_type/domain/17, meta/dict_type/domain/18, meta/dict_type/domain/2, meta/dict_type/domain/20, meta/dict_type/domain/4, meta/dict_type/domain/7, meta/dict_type/domain/8, meta/dict_type/domain/9, meta/join_classes, nation_code_base, nation_ctid, orders_code_base, orders_ctid, part_code_base, part_ctid, region_code_base, region_ctid, supplier_code_base, supplier_ctid]
+NOTICE:  custom_filter: policy_targets = [lineitem, orders]
+NOTICE:  policy_eval: target_tables=[lineitem, orders]
+NOTICE:  policy_eval: combined_ast target=lineitem ast=(y42 and (y23 or y21 or y22) and ((y13 or y15) and y12 or (y16 or y14) and (y11 or y10)) or y42 and y40 and y41 and y46 and (y37 or y39) and ((y21 or y22) and y8 or y24 and y7) or y43 and y42 and y40 and (y27 or y28 or y29 or y30) and (y31 or y32 or y33 or y34 or y35 or y36) and (y23 or y25)) and y42 and y40 and (y2 or y3) and (y23 or y26) and y6 and y44 and y45 and y46 and (y39 or y38) and (y5 and y9 or y6 and y7)
+NOTICE:  policy_eval: combined_ast target=orders ast=(y40 and (y2 or y4) or y40 and y41 and (y20 or y19 or y17 or y18) and y1) and y40 and (y23 and y1 or (y21 or y22) and y3) and y40 and y41 and y46 and (y39 or y38) and (y24 or y23)
+NOTICE:  custom_filter: query_targets = [customer]
+NOTICE:  custom_filter: scanned_tables = [lineitem, orders, customer]
+NOTICE:  custom_filter: table=lineitem filter=on
+NOTICE:  custom_filter: table=orders filter=on
+NOTICE:  custom_filter: table=customer filter=off
+NOTICE:  custom_filter: artifact_load_ms=212.584
+NOTICE:  custom_filter: calling policy_run once target_count=2 atom_count=46
+NOTICE:  policy: atom_parse_ms=0.046
+NOTICE:  policy: load_ms=1669.184
+NOTICE:  policy: sat_model target=orders selectors=[-41]
+NOTICE:  policy: sat_model target=orders selectors=[41]
+NOTICE:  policy: sat_model target=orders selectors=[-43,45,47]
+NOTICE:  policy: sat_model target=orders selectors=[-47,-43,45]
+NOTICE:  policy: sat_model target=orders selectors=[-45,-43,47]
+NOTICE:  policy: sat_model target=orders selectors=[-47,-45,-43]
+NOTICE:  policy: sat_model target=orders selectors=[43,45,47]
+NOTICE:  policy: sat_model target=orders selectors=[-47,43,45]
+NOTICE:  policy: sat_model target=orders selectors=[-45,43,47]
+NOTICE:  policy: sat_model target=orders selectors=[-47,-45,43]
+NOTICE:  policy: sat_model target=orders selectors=[-45,-42]
+NOTICE:  policy: sat_model target=orders selectors=[-45,42]
+NOTICE:  policy: sat_model target=orders selectors=[-42,45]
+NOTICE:  policy: sat_model target=orders selectors=[42,45]
+NOTICE:  policy: sat_model target=orders selectors=[-52,-49]
+NOTICE:  policy: sat_model target=orders selectors=[-49,52]
+NOTICE:  policy: sat_model target=orders selectors=[-52,49]
+NOTICE:  policy: sat_model target=orders selectors=[49,52]
+NOTICE:  policy: allow_orders count=142142/1500000
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-51,-48,-43,45]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-51,-48,-43,45,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-48,-43,45,51]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-48,-43,45,51,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-51,-48,-43,45,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-51,-48,-43,45,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-48,-43,45,51,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-48,-43,45,51,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-51,-43,45,48]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-51,-43,45,48,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-43,45,48,51]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-43,45,48,51,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-51,-43,45,48,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-51,-43,45,48,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-43,45,48,51,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-43,45,48,51,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-51,-48,-45,-43]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-51,-48,-45,-43,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-48,-45,-43,51]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-48,-45,-43,51,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-51,-48,-45,-43,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-51,-48,-45,-43,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-48,-45,-43,51,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-48,-45,-43,51,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-51,-45,-43,48]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-51,-45,-43,48,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-45,-43,48,51]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-45,-43,48,51,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-51,-45,-43,48,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-51,-45,-43,48,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-45,-43,48,51,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-45,-43,48,51,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-51,-48,43,45]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-51,-48,43,45,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-48,43,45,51]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-48,43,45,51,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-51,-48,43,45,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-51,-48,43,45,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-48,43,45,51,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-48,43,45,51,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-51,43,45,48]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-51,43,45,48,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,43,45,48,51]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,43,45,48,51,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-51,43,45,48,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-51,43,45,48,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,43,45,48,51,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[43,45,48,51,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-51,-48,-45,43]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-51,-48,-45,43,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-48,-45,43,51]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-48,-45,43,51,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-51,-48,-45,43,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-51,-48,-45,43,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-48,-45,43,51,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-48,-45,43,51,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-51,-45,43,48]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-51,-45,43,48,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-53,-45,43,48,51]
+NOTICE:  policy: sat_model target=lineitem selectors=[-56,-45,43,48,51,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-51,-45,43,48,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-51,-45,43,48,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-45,43,48,51,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-45,43,48,51,53,56]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,-50]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-50,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-50,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-50,53,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,50]
+NOTICE:  policy: theory_lemma_conflict target=lineitem selectors=3
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,50,57]
+NOTICE:  policy: theory_lemma_conflict target=lineitem selectors=3
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,50,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[50,53,57]
+NOTICE:  policy: theory_lemma_conflict target=lineitem selectors=3
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-53,-46,48,50,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-46,48,50,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-53,-46,48,50,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-53,-46,48,50,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-53,-46,48,50,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-53,-46,48,50,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-53,-46,48,50,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-53,-46,48,50,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-53,-46,48,50,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,-46,48,50,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-53,-46,48,50,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-53,-46,48,50,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-53,-46,48,50,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-53,-46,48,50,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-53,-46,48,50,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-53,-46,48,50,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-53,-46,48,50,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-53,-46,48,50,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-53,-46,48,50,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-53,-46,48,50,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-53,-46,48,50,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-53,-46,48,50,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-53,-46,48,50,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-53,-46,48,50,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-53,-46,48,50,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-53,-46,48,50,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-53,-46,48,50,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-53,-46,48,50,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-53,-46,48,50,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-53,-46,48,50,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-53,-46,48,50]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-53,-46,48,50,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-46,48,50,53,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-46,48,50,53,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-46,48,50,53,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-46,48,50,53,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-46,48,50,53,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-46,48,50,53,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-46,48,50,53,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-46,48,50,53,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-46,48,50,53,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-46,48,50,53,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-46,48,50,53,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-46,48,50,53,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-46,48,50,53,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-46,48,50,53,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-46,48,50,53,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-46,48,50,53,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-46,48,50,53,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-46,48,50,53,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-46,48,50,53,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-46,48,50,53,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-46,48,50,53,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-46,48,50,53,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-46,48,50,53,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-46,48,50,53,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-46,48,50,53,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-46,48,50,53,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-46,48,50,53,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-46,48,50,53,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-46,48,50,53,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-46,48,50,53,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-46,48,50,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-46,48,50,53,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-53,-50,-46,48,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-50,-46,48,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-53,-50,-46,48,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-53,-50,-46,48,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-53,-50,-46,48,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-53,-50,-46,48,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-53,-50,-46,48,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-53,-50,-46,48,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-53,-50,-46,48,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,-50,-46,48,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-53,-50,-46,48,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-53,-50,-46,48,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-53,-50,-46,48,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-53,-50,-46,48,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-53,-50,-46,48,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-53,-50,-46,48,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-53,-50,-46,48,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-53,-50,-46,48,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-53,-50,-46,48,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-53,-50,-46,48,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-53,-50,-46,48,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-53,-50,-46,48,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-53,-50,-46,48,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-53,-50,-46,48,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-53,-50,-46,48,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-53,-50,-46,48,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-53,-50,-46,48,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-53,-50,-46,48,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-53,-50,-46,48,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-53,-50,-46,48,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-53,-50,-46,48]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-53,-50,-46,48,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-50,-46,48,53,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-50,-46,48,53,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-50,-46,48,53,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-50,-46,48,53,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-50,-46,48,53,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-50,-46,48,53,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-50,-46,48,53,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-50,-46,48,53,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-50,-46,48,53,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-50,-46,48,53,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-50,-46,48,53,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-50,-46,48,53,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-50,-46,48,53,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-50,-46,48,53,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-50,-46,48,53,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-50,-46,48,53,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-50,-46,48,53,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-50,-46,48,53,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-50,-46,48,53,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-50,-46,48,53,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-50,-46,48,53,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-50,-46,48,53,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-50,-46,48,53,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-50,-46,48,53,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-50,-46,48,53,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-50,-46,48,53,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-50,-46,48,53,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-50,-46,48,53,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-50,-46,48,53,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-50,-46,48,53,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-50,-46,48,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-50,-46,48,53,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-53,-48,-46,50,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-48,-46,50,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-53,-48,-46,50,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-53,-48,-46,50,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-53,-48,-46,50,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-53,-48,-46,50,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-53,-48,-46,50,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-53,-48,-46,50,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-53,-48,-46,50,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,-48,-46,50,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-53,-48,-46,50,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-53,-48,-46,50,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-53,-48,-46,50,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-53,-48,-46,50,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-53,-48,-46,50,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-53,-48,-46,50,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-53,-48,-46,50,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-53,-48,-46,50,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-53,-48,-46,50,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-53,-48,-46,50,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-53,-48,-46,50,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-53,-48,-46,50,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-53,-48,-46,50,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-53,-48,-46,50,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-53,-48,-46,50,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-53,-48,-46,50,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-53,-48,-46,50,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-53,-48,-46,50,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-53,-48,-46,50,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-53,-48,-46,50,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-53,-48,-46,50]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-53,-48,-46,50,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-48,-46,50,53,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-48,-46,50,53,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-48,-46,50,53,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-48,-46,50,53,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-48,-46,50,53,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-48,-46,50,53,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-48,-46,50,53,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-48,-46,50,53,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-48,-46,50,53,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-48,-46,50,53,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-48,-46,50,53,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-48,-46,50,53,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-48,-46,50,53,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-48,-46,50,53,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-48,-46,50,53,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-48,-46,50,53,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-48,-46,50,53,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-48,-46,50,53,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-48,-46,50,53,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-48,-46,50,53,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-48,-46,50,53,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-48,-46,50,53,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-48,-46,50,53,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-48,-46,50,53,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-48,-46,50,53,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-48,-46,50,53,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-48,-46,50,53,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-48,-46,50,53,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-48,-46,50,53,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-48,-46,50,53,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-48,-46,50,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-48,-46,50,53,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-53,-50,-48,-46,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-50,-48,-46,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-53,-50,-48,-46,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-53,-50,-48,-46,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-53,-50,-48,-46,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-53,-50,-48,-46,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-53,-50,-48,-46,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-53,-50,-48,-46,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-53,-50,-48,-46,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,-50,-48,-46,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-53,-50,-48,-46,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-53,-50,-48,-46,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-53,-50,-48,-46,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-53,-50,-48,-46,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-53,-50,-48,-46,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-53,-50,-48,-46,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-53,-50,-48,-46,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-53,-50,-48,-46,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-53,-50,-48,-46,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-53,-50,-48,-46,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-53,-50,-48,-46,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-53,-50,-48,-46,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-53,-50,-48,-46,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-53,-50,-48,-46,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-53,-50,-48,-46,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-53,-50,-48,-46,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-53,-50,-48,-46,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-53,-50,-48,-46,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-53,-50,-48,-46,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-53,-50,-48,-46,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-53,-50,-48,-46]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-53,-50,-48,-46,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-50,-48,-46,53,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-50,-48,-46,53,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-50,-48,-46,53,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-50,-48,-46,53,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-50,-48,-46,53,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-50,-48,-46,53,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-50,-48,-46,53,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-50,-48,-46,53,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-50,-48,-46,53,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-50,-48,-46,53,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-50,-48,-46,53,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-50,-48,-46,53,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-50,-48,-46,53,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-50,-48,-46,53,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-50,-48,-46,53,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-50,-48,-46,53,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-50,-48,-46,53,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-50,-48,-46,53,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-50,-48,-46,53,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-50,-48,-46,53,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-50,-48,-46,53,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-50,-48,-46,53,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-50,-48,-46,53,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-50,-48,-46,53,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-50,-48,-46,53,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-50,-48,-46,53,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-50,-48,-46,53,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-50,-48,-46,53,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-50,-48,-46,53,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-50,-48,-46,53,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-50,-48,-46,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-50,-48,-46,53,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-53,46,48,50,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,46,48,50,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-53,46,48,50,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-53,46,48,50,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-53,46,48,50,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-53,46,48,50,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-53,46,48,50,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-53,46,48,50,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-53,46,48,50,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,46,48,50,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-53,46,48,50,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-53,46,48,50,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-53,46,48,50,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-53,46,48,50,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-53,46,48,50,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-53,46,48,50,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-53,46,48,50,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-53,46,48,50,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-53,46,48,50,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-53,46,48,50,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-53,46,48,50,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-53,46,48,50,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-53,46,48,50,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-53,46,48,50,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-53,46,48,50,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-53,46,48,50,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-53,46,48,50,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-53,46,48,50,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-53,46,48,50,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-53,46,48,50,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-53,46,48,50]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-53,46,48,50,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,46,48,50,53,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[46,48,50,53,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,46,48,50,53,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,46,48,50,53,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,46,48,50,53,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,46,48,50,53,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,46,48,50,53,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,46,48,50,53,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,46,48,50,53,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,46,48,50,53,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,46,48,50,53,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,46,48,50,53,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,46,48,50,53,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,46,48,50,53,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,46,48,50,53,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,46,48,50,53,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,46,48,50,53,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,46,48,50,53,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,46,48,50,53,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,46,48,50,53,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,46,48,50,53,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,46,48,50,53,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,46,48,50,53,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,46,48,50,53,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,46,48,50,53,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,46,48,50,53,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,46,48,50,53,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,46,48,50,53,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,46,48,50,53,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,46,48,50,53,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,46,48,50,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,46,48,50,53,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-53,-50,46,48,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-50,46,48,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-53,-50,46,48,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-53,-50,46,48,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-53,-50,46,48,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-53,-50,46,48,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-53,-50,46,48,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-53,-50,46,48,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-53,-50,46,48,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,-50,46,48,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-53,-50,46,48,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-53,-50,46,48,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-53,-50,46,48,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-53,-50,46,48,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-53,-50,46,48,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-53,-50,46,48,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-53,-50,46,48,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-53,-50,46,48,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-53,-50,46,48,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-53,-50,46,48,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-53,-50,46,48,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-53,-50,46,48,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-53,-50,46,48,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-53,-50,46,48,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-53,-50,46,48,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-53,-50,46,48,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-53,-50,46,48,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-53,-50,46,48,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-53,-50,46,48,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-53,-50,46,48,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-53,-50,46,48]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-53,-50,46,48,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-50,46,48,53,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-50,46,48,53,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-50,46,48,53,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-50,46,48,53,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-50,46,48,53,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-50,46,48,53,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-50,46,48,53,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-50,46,48,53,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-50,46,48,53,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-50,46,48,53,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-50,46,48,53,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-50,46,48,53,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-50,46,48,53,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-50,46,48,53,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-50,46,48,53,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-50,46,48,53,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-50,46,48,53,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-50,46,48,53,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-50,46,48,53,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-50,46,48,53,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-50,46,48,53,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-50,46,48,53,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-50,46,48,53,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-50,46,48,53,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-50,46,48,53,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-50,46,48,53,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-50,46,48,53,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-50,46,48,53,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-50,46,48,53,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-50,46,48,53,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-50,46,48,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-50,46,48,53,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-53,-48,46,50,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-48,46,50,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-53,-48,46,50,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-53,-48,46,50,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-53,-48,46,50,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-53,-48,46,50,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-53,-48,46,50,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-53,-48,46,50,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-53,-48,46,50,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,-48,46,50,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-53,-48,46,50,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-53,-48,46,50,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-53,-48,46,50,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-53,-48,46,50,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-53,-48,46,50,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-53,-48,46,50,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-53,-48,46,50,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-53,-48,46,50,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-53,-48,46,50,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-53,-48,46,50,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-53,-48,46,50,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-53,-48,46,50,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-53,-48,46,50,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-53,-48,46,50,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-53,-48,46,50,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-53,-48,46,50,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-53,-48,46,50,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-53,-48,46,50,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-53,-48,46,50,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-53,-48,46,50,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-53,-48,46,50]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-53,-48,46,50,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-48,46,50,53,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-48,46,50,53,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-48,46,50,53,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-48,46,50,53,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-48,46,50,53,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-48,46,50,53,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-48,46,50,53,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-48,46,50,53,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-48,46,50,53,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-48,46,50,53,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-48,46,50,53,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-48,46,50,53,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-48,46,50,53,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-48,46,50,53,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-48,46,50,53,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-48,46,50,53,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-48,46,50,53,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-48,46,50,53,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-48,46,50,53,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-48,46,50,53,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-48,46,50,53,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-48,46,50,53,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-48,46,50,53,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-48,46,50,53,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-48,46,50,53,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-48,46,50,53,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-48,46,50,53,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-48,46,50,53,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-48,46,50,53,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-48,46,50,53,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-48,46,50,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-48,46,50,53,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-53,-50,-48,46,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-53,-50,-48,46,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-53,-50,-48,46,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-53,-50,-48,46,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-53,-50,-48,46,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-53,-50,-48,46,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-53,-50,-48,46,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-53,-50,-48,46,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-53,-50,-48,46,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-53,-50,-48,46,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-53,-50,-48,46,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-53,-50,-48,46,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-53,-50,-48,46,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-53,-50,-48,46,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-53,-50,-48,46,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-53,-50,-48,46,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-53,-50,-48,46,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-53,-50,-48,46,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-53,-50,-48,46,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-53,-50,-48,46,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-53,-50,-48,46,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-53,-50,-48,46,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-53,-50,-48,46,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-53,-50,-48,46,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-53,-50,-48,46,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-53,-50,-48,46,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-53,-50,-48,46,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-53,-50,-48,46,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-53,-50,-48,46,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-53,-50,-48,46,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-53,-50,-48,46]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-53,-50,-48,46,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-50,-48,46,53,55,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-50,-48,46,53,55,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-50,-48,46,53,55,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-50,-48,46,53,55,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-50,-48,46,53,55,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-50,-48,46,53,55,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-50,-48,46,53,55,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-50,-48,46,53,55,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-50,-48,46,53,55,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-50,-48,46,53,55,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-50,-48,46,53,55,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-50,-48,46,53,55,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-50,-48,46,53,55,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-50,-48,46,53,55,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-50,-48,46,53,55]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-50,-48,46,53,55,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-55,-50,-48,46,53,57,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-55,-50,-48,46,53,57,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-55,-50,-48,46,53,57,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-55,-50,-48,46,53,57,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-55,-50,-48,46,53,57,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-55,-50,-48,46,53,57,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-55,-50,-48,46,53,57]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-55,-50,-48,46,53,57,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-57,-55,-50,-48,46,53,59,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-57,-55,-50,-48,46,53,59,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-57,-55,-50,-48,46,53,59]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-57,-55,-50,-48,46,53,59,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-59,-57,-55,-50,-48,46,53,61]
+NOTICE:  policy: sat_model target=lineitem selectors=[-59,-57,-55,-50,-48,46,53,61,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-64,-61,-59,-57,-55,-50,-48,46,53]
+NOTICE:  policy: sat_model target=lineitem selectors=[-61,-59,-57,-55,-50,-48,46,53,64]
+NOTICE:  policy: sat_model target=lineitem selectors=[-47,-44]
+NOTICE:  policy: sat_model target=lineitem selectors=[-44,47]
+NOTICE:  policy: sat_model target=lineitem selectors=[-47,44]
+NOTICE:  policy: sat_model target=lineitem selectors=[44,47]
+NOTICE:  policy: sat_model target=lineitem selectors=[-54,-49]
+NOTICE:  policy: sat_model target=lineitem selectors=[-49,54]
+NOTICE:  policy: sat_model target=lineitem selectors=[-54,49]
+NOTICE:  policy: sat_model target=lineitem selectors=[49,54]
+NOTICE:  policy: allow_lineitem count=16846/6001215
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=44760.306 load_ms=1669.184 local_ms=0.000 prop_ms=1377.710 decode_ms=5.783 sat_calls=619 cache_hits=0 closure_tables=0 filtered_targets=2 clause_plan_count_max=40 prop_join_scans_total=1028 unique_join_struct_sigs_max=7 signature_cache_hits=285 signature_cache_misses=24 term_code_scans=24 target_full_row_scans=0 target_rid_bitmap_bytes=187500 signature_cache_bytes=1516543204 active_sig_dense_count=19 active_sig_sparse_count=71 active_sig_density_sum=1.657776 domain_set_dense_count=417 domain_set_sparse_count=57 domain_set_density_sum=101.324580 block_words_blocks_allocated=39820 block_words_total_blocks=138680 proj_sig_count=1243695 proj_mask_or_ops=1636829 proj_rid_iters=2190665 bytes_sig_ctid_masks=763383336 bytes_block_words=2707760 bytes_artifact_buffers_retained=0 bytes_decoded_buffers_retained=0 witness_activesig_tables=309 witness_sig_count_total=564451240 support_recompute_ms=9255.731 sig_prune_ms=77.030 pair_bundle_count=219 pair_bundle_build_ms=530.250 pair_bundle_prune_ms=599.420 pair_bundle_keys_total=3330598 pair_bundle_pruned_sigs_total=1884515 pair_bundle_iters=186
+NOTICE:  custom_filter: allow_orders count=142142/1500000
+NOTICE:  custom_filter: allow_lineitem count=16846/6001215
+NOTICE:  custom_filter: allow_orders blocks_alloc=26057 total_blocks=26125 words_bytes=1667648 ids_bytes=104228
+NOTICE:  custom_filter: allow_lineitem blocks_alloc=13763 total_blocks=112555 words_bytes=880832 ids_bytes=55052
+NOTICE:  custom_filter: retain total allow=2707760B ctid=0B blk_index=0B
+NOTICE:  custom_filter exec: rel=lineitem oid=16444 seen=16846 passed=2352 misses=0 mode=trace
+NOTICE:  custom_filter: row validation time = 56.504 ms
+NOTICE:  custom_filter exec: rel=orders oid=16441 seen=731071 passed=136600 misses=0 mode=trace
+NOTICE:  custom_filter: row validation time = 353.048 ms
+NOTICE:  policy_profile: eval_ms=1.407 artifact_load_ms=212.584 artifact_parse_ms=1669.184 atoms_ms=0.167 propagate_ms=1377.710 project_ms=42940.940 project_mask_ms=0.000 project_row_ms=42932.511 project_mask_bytes=0 project_n_join_evals_max=48 project_clause_words_max=1 clause_plan_count_max=40 prop_join_scans_total=1028 unique_join_struct_sigs_max=7 prop_table_scans=orders:337|customer:195|part:192|lineitem:160|nation:72|region:56|supplier:16 signature_cache_hits=285 signature_cache_misses=24 term_code_scans=24 target_full_row_scans=0 target_rid_bitmap_bytes=187500 signature_cache_bytes=1516543204 active_sig_dense_count=19 active_sig_sparse_count=71 active_sig_density_sum=1.657776 domain_set_dense_count=417 domain_set_sparse_count=57 domain_set_density_sum=101.324580 block_words_blocks_allocated=39820 block_words_total_blocks=138680 proj_sig_count=1243695 proj_mask_or_ops=1636829 proj_rid_iters=2190665 bytes_sig_ctid_masks=763383336 bytes_block_words=2707760 bytes_artifact_buffers_retained=0 bytes_decoded_buffers_retained=0 stamp_ms=0.000 bin_ms=0.000 local_sat_ms=0.000 fill_ms=0.000 prop_ms=1377.710 prop_iters=193 decode_ms=5.783 policy_total_ms=44760.306 ctid_map_ms=0.000 filter_ms=409.552 child_exec_ms=176.861 ctid_extract_ms=60.612 ctid_to_rid_ms=0.000 allow_check_ms=18.344 projection_ms=12.045 blocks_seen=26125 blocks_skipped=68 block_skip_hit_rate=0.002603 scan_mode_tid_tables=1 scan_mode_filter_tables=1 tid_blocks_visited=13763 tid_tuples_fetched=16846 tid_fetch_ms=36.781 tid_qual_ms=17.810 n_scanned_tables=3 n_policy_targets=2 n_filters=2 bytes_artifacts_loaded=82749634 bytes_allow=2707760 bytes_ctid=0 bytes_blk_index=0 rows_seen=747917 rows_passed=138952 ctid_misses=0 rss_kb_before_eval=72020 rss_kb_after_eval=72020 rss_kb_after_load=212712 rss_kb_after_engine=2087296 rss_kb_after_ctid=2087296 rss_kb_end=2113312 peak_rss_kb_end=2666128

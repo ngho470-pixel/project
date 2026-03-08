@@ -181,6 +181,46 @@ def run_count_hash(
             conn.close()
 
 
+def run_canonical_rows(
+    db: str,
+    role: str,
+    query_id: str,
+    query_sql: str,
+    statement_timeout_ms: int,
+    session_setup: Optional[Callable] = None,
+) -> Tuple[Optional[int], Optional[List[str]], str]:
+    _ = query_id
+    conn = None
+    try:
+        conn = h.connect(db, role)
+        with conn.cursor() as cur:
+            h.apply_timing_session_settings(cur, statement_timeout_ms)
+            if session_setup is not None:
+                session_setup(cur)
+                h.apply_no_parallel_settings(cur)
+                cur.execute("SET statement_timeout = %s;", [int(statement_timeout_ms)])
+
+            base_sql = h.final_select_statement(query_sql)
+            if base_sql is None:
+                return None, None, "cannot canonicalize non-SELECT query"
+
+            wrapped = (
+                "WITH __q AS ("
+                + base_sql
+                + ") SELECT row_to_json(__q)::text FROM __q ORDER BY 1"
+            )
+            cur.execute(wrapped)
+            rows = cur.fetchall()
+            out_rows = [str(r[0]) for r in rows]
+            return int(len(out_rows)), out_rows, ""
+    except Exception as exc:  # noqa: BLE001
+        msg = (getattr(exc, "pgerror", None) or str(exc)).replace("\n", " ").strip()
+        return None, None, msg[:500]
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def run_count_only(
     db: str,
     role: str,
@@ -265,7 +305,10 @@ def parallelism_off_verified(explain_output: str) -> bool:
 def verify_no_parallel_settings(cur) -> Tuple[bool, dict]:
     expected = {
         "max_parallel_workers_per_gather": "0",
+        "max_parallel_maintenance_workers": "0",
         "max_parallel_workers": "0",
+        "min_parallel_table_scan_size": "1tb",
+        "min_parallel_index_scan_size": "1tb",
         "parallel_leader_participation": "off",
         "enable_parallel_append": "off",
         "enable_parallel_hash": "off",

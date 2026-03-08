@@ -1,0 +1,31 @@
+row_type,db,K,policy_ids,baseline,query_id,setup_ms,disk_overhead_bytes,cold_ms,cold_peak_rss_kb,hot1_ms,hot1_peak_rss_kb,hot2_ms,hot2_peak_rss_kb,hot3_ms,hot3_peak_rss_kb,hot4_ms,hot4_peak_rss_kb,hot5_ms,hot5_peak_rss_kb,hot_avg_ms,hot_avg_peak_rss_kb,status,error_type,error_msg
+setup,tpch0_1,1,1,ours,__setup__,704.204,10810396,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,1,1,rls_with_index,__setup__,478.984,8372224,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,1,1,ours,1,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,1,1,rls_with_index,1,,,392.304,117164,361.907,117676,361.658,117676,,,,,,,361.783,117676,ok,,
+query,tpch0_1,1,1,ours,3,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,1,1,rls_with_index,3,,,120.816,128860,120.828,142104,120.697,142032,,,,,,,120.762,142068,ok,,
+query,tpch0_1,1,1,ours,6,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,1,1,rls_with_index,6,,,120.764,115536,90.536,117072,90.598,117072,,,,,,,90.567,117072,ok,,
+query,tpch0_1,1,1,ours,13,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,1,1,rls_with_index,13,,,90.737,43800,90.660,50880,90.530,50728,,,,,,,90.595,50804,ok,,
+setup,tpch0_1,5,"1,2,3,4,5",ours,__setup__,4011.047,26776011,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,5,"1,2,3,4,5",rls_with_index,__setup__,2632.792,75563008,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,5,"1,2,3,4,5",ours,1,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,5,"1,2,3,4,5",rls_with_index,1,,,120.872,107572,120.761,121192,120.686,120844,,,,,,,120.724,121018,ok,,
+query,tpch0_1,5,"1,2,3,4,5",ours,3,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,5,"1,2,3,4,5",rls_with_index,3,,,90.690,137556,60.539,143700,60.514,143448,,,,,,,60.527,143574,ok,,
+query,tpch0_1,5,"1,2,3,4,5",ours,6,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,5,"1,2,3,4,5",rls_with_index,6,,,60.562,78536,60.453,121288,60.464,120924,,,,,,,60.458,121106,ok,,
+query,tpch0_1,5,"1,2,3,4,5",ours,13,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,5,"1,2,3,4,5",rls_with_index,13,,,90.651,44764,90.553,50868,90.588,50812,,,,,,,90.571,50840,ok,,
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,__setup__,4157.391,30629904,,,,,,,,,,,,,,,ok,,
+setup,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,__setup__,2842.543,80003072,,,,,,,,,,,,,,,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,1,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,1,,,121.077,95384,120.737,118932,120.693,118604,,,,,,,120.715,118768,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,3,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,3,,,30.565,21724,30.362,26944,30.384,26944,,,,,,,30.373,26944,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,6,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,6,,,60.622,66804,60.455,120308,60.455,119980,,,,,,,60.455,120144,ok,,
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",ours,13,,,0.000,0,,,,,,,,,,,0.000,0,error,db_error,"ERROR:  could not load library ""/tmp/z3_lab/project/custom_filter/custom_filter.so"": libcvc5.so.1: cannot open shared object file: No such file or directory"
+query,tpch0_1,10,"1,2,3,4,5,10,11,12,13,14",rls_with_index,13,,,30.502,21724,30.371,23296,30.360,23296,,,,,,,30.365,23296,ok,,

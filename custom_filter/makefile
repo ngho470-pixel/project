@@ -13,6 +13,13 @@ INCLUDES := -I$(shell $(PG_CONFIG) --includedir-server) -I$(CURDIR)/../cvc5/incl
 LDFLAGS  := -Wl,--disable-new-dtags -Wl,-rpath,'$$ORIGIN/lib' -Wl,-z,origin
 
 CVC5_LIBS := $(CURDIR)/lib/libcvc5.so.1
+EXTRA_SOLVER_LIBS :=
+ifneq ($(wildcard $(CURDIR)/lib/libpoly.so.0),)
+EXTRA_SOLVER_LIBS += $(CURDIR)/lib/libpoly.so.0
+endif
+ifneq ($(wildcard $(CURDIR)/lib/libpolyxx.so.0),)
+EXTRA_SOLVER_LIBS += $(CURDIR)/lib/libpolyxx.so.0
+endif
 
 TARGET  := custom_filter.so
 OBJS    := custom_filter.o policy.o policy_evaluator.o
@@ -20,7 +27,7 @@ OBJS    := custom_filter.o policy.o policy_evaluator.o
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CXX) -shared -o $@ $^ $(LDFLAGS) $(CVC5_LIBS)
+	$(CXX) -shared -o $@ $^ $(LDFLAGS) $(CVC5_LIBS) -Wl,--no-as-needed $(EXTRA_SOLVER_LIBS) -Wl,--as-needed
 
 custom_filter.o: custom_filter.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@

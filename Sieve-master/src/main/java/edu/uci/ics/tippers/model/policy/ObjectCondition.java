@@ -283,7 +283,24 @@ public class ObjectCondition extends BooleanCondition {
             return dateEquiheightRange();
         }
         else {
-            throw new PolicyEngineException("Unknown attribute");
+            // Generic fallback for datasets without histogram wiring.
+            // This keeps guard selection operational when attributes are outside
+            // the original WiFi/Mall/Orders enumerations.
+            if (this.getBooleanPredicates().isEmpty()) {
+                return 0.1;
+            }
+            Set<Operation> ops = new HashSet<>();
+            for (BooleanPredicate bp : this.getBooleanPredicates()) {
+                ops.add(bp.getOperator());
+            }
+            if (ops.contains(Operation.EQ)) {
+                return 0.01;
+            }
+            if (ops.contains(Operation.GTE) || ops.contains(Operation.GT)
+                    || ops.contains(Operation.LTE) || ops.contains(Operation.LT)) {
+                return 0.2;
+            }
+            return 0.1;
         }
     }
 

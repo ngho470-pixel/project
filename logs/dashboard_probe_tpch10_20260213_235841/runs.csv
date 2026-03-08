@@ -1,0 +1,3 @@
+run_id,ts,db,K,policy_ids,baseline,query_id,warmup_runs,timed_runs,planning_ms,execution_ms,total_ms,peak_rss_mb,status,error_type,error_msg,result_count,ours_count,rls_count,correctness
+dashboard_probe_tpch10_20260213_235841,2026-02-14T00:03:11+05:30,tpch10,1,1,ours,1,0,1,0.633,71185.587,71186.220,2526.305,ok,,,3,3,3,1
+dashboard_probe_tpch10_20260213_235841,2026-02-14T00:03:11+05:30,tpch10,1,1,rls_with_index,1,0,1,0.475,34291.298,34291.773,94.629,ok,,,3,3,3,1

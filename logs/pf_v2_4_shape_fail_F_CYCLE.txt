@@ -1,0 +1,1 @@
+1. lineitem: lineitem.l_partkey = part.p_partkey AND partsupp.ps_partkey = part.p_partkey AND partsupp.ps_suppkey = supplier.s_suppkey AND lineitem.l_suppkey = supplier.s_suppkey

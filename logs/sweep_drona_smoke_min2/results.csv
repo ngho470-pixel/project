@@ -1,0 +1,6 @@
+db,baseline,query_id,policy_set_name,policy_ids,num_policies,query_complexity,policy_complexity,cold_ms,hot_ms,correctness,mem_overhead_kb,status,error_type,error_msg,pre_run_memory_building_ms
+tpch1,no_policy,1,1-5,"1,2,3,4,5",5,4,30,6114.596,6108.567,FALSE,0,1,mismatch,rows/hash mismatch vs rls_index,0.000
+tpch1,rls_index,1,1-5,"1,2,3,4,5",5,4,30,1898.612,1777.559,TRUE,167684,1,,,49805.353
+tpch1,ours,1,1-5,"1,2,3,4,5",5,4,30,19639.047,19445.620,TRUE,497472,1,,,32789.100
+tpch1,sieve,1,1-5,"1,2,3,4,5",5,4,30,,,UNKNOWN,,0,prepare_error,java runtime not found,0.000
+tpch1,sieve_index,1,1-5,"1,2,3,4,5",5,4,30,,,UNKNOWN,,0,prepare_error,java runtime not found,49888.985

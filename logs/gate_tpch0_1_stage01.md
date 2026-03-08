@@ -4,7 +4,7 @@
 - ok: 30
 - error: 0
 - mismatches_vs_rls_index: 0
-- median ours/rls_index ratio: 32.859
+- median ours/rls_index ratio: 32.231
 
 ## Errors
 - none

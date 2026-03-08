@@ -1,0 +1,2 @@
+db,db_scale,K,policy_ids,median_hot_ours_ms,median_hot_rls_ms,speedup_ratio,cross_median_hot_ours_ms,cross_median_hot_rls_ms,cross_speedup_ratio,median_hot_peak_rss_ours_kb,median_hot_peak_rss_rls_kb,disk_ours_bytes,disk_rls_bytes
+tpch1,1,10,"11,12,13,14,15,16,17,18,19,20",44086.558,8042.450,5.482,2400.591,3674.928,0.653,2872082,244309,180628195,727015424

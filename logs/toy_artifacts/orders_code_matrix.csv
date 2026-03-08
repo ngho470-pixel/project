@@ -1,0 +1,5 @@
+rid,orders.o_custkey,orders.o_orderkey,orders.o_orderstatus
+0,0,0,0
+1,0,1,1
+2,1,2,0
+3,2,3,1

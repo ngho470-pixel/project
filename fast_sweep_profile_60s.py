@@ -837,6 +837,8 @@ def apply_no_parallel_settings(cur) -> None:
         "SET max_parallel_workers_per_gather = 0;",
         "SET max_parallel_maintenance_workers = 0;",
         "SET max_parallel_workers = 0;",
+        "SET min_parallel_table_scan_size = '1TB';",
+        "SET min_parallel_index_scan_size = '1TB';",
         "SET parallel_setup_cost = 1000000000;",
         "SET parallel_tuple_cost = 1000000000;",
         "SET parallel_leader_participation = off;",
@@ -1467,6 +1469,43 @@ def clear_artifacts(db: str) -> None:
             cur.execute("ALTER TABLE public.files ADD COLUMN IF NOT EXISTS run_id text;")
             cur.execute("UPDATE public.files SET run_id='' WHERE run_id IS NULL;")
             cur.execute("DELETE FROM public.files;")
+    finally:
+        conn.close()
+
+
+def clear_all_artifacts(db: str, drop_tables: bool = True) -> None:
+    """
+    Remove harness artifacts from public.files and all run-scoped cf_files_* tables.
+    By default drops run-scoped tables entirely to guarantee a clean baseline.
+    """
+    conn = connect(db, "postgres")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS public.files (run_id text, name varchar, file bytea);")
+            cur.execute("ALTER TABLE public.files ADD COLUMN IF NOT EXISTS run_id text;")
+            cur.execute("UPDATE public.files SET run_id='' WHERE run_id IS NULL;")
+            cur.execute("DELETE FROM public.files;")
+
+            cur.execute(
+                "SELECT tablename FROM pg_tables "
+                "WHERE schemaname='public' AND tablename LIKE 'cf_files_%' "
+                "ORDER BY tablename;"
+            )
+            for (tname,) in cur.fetchall():
+                if drop_tables:
+                    cur.execute(
+                        sql.SQL("DROP TABLE IF EXISTS {}.{};").format(
+                            sql.Identifier("public"),
+                            sql.Identifier(str(tname)),
+                        )
+                    )
+                else:
+                    cur.execute(
+                        sql.SQL("TRUNCATE TABLE {}.{};").format(
+                            sql.Identifier("public"),
+                            sql.Identifier(str(tname)),
+                        )
+                    )
     finally:
         conn.close()
 

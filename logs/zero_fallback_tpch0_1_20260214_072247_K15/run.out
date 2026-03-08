@@ -1,0 +1,44 @@
+[db] start db=tpch0_1
+[phase] db=tpch0_1 clean_start artifacts=0 indexes=0
+[policy_set] db=tpch0_1 K=15 enabled_ids=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+[phase] db=tpch0_1 K=15 clean_before_k artifacts=0 indexes=0
+[correctness_sample] db=tpch0_1 K=15 queries=['3', '4', '5', '7', '8', '9', '10', '12', '13', '15', '18', '21', '22']
+[setup_ours] K=15 setup_ms=6180.615 disk=34367344
+[progress] db=tpch0_1 K=15 baseline=ours query=3
+[progress] db=tpch0_1 K=15 baseline=ours query=4
+[progress] db=tpch0_1 K=15 baseline=ours query=5
+[progress] db=tpch0_1 K=15 baseline=ours query=7
+[progress] db=tpch0_1 K=15 baseline=ours query=8
+[progress] db=tpch0_1 K=15 baseline=ours query=9
+[progress] db=tpch0_1 K=15 baseline=ours query=10
+[progress] db=tpch0_1 K=15 baseline=ours query=12
+[progress] db=tpch0_1 K=15 baseline=ours query=13
+[progress] db=tpch0_1 K=15 baseline=ours query=15
+[progress] db=tpch0_1 K=15 baseline=ours query=18
+[progress] db=tpch0_1 K=15 baseline=ours query=21
+[progress] db=tpch0_1 K=15 baseline=ours query=22
+[phase] db=tpch0_1 K=15 artifacts_dropped=1
+[index_infer] K=15 specs=['customer.c_acctbal', 'customer.c_custkey', 'customer.c_mktsegment', 'customer.c_name:text_pattern_ops', 'customer.c_nationkey', 'customer.c_phone:text_pattern_ops', 'lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_orderkey', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax', 'nation.n_name', 'nation.n_nationkey', 'nation.n_regionkey', 'orders.o_custkey', 'orders.o_orderkey', 'orders.o_orderpriority', 'orders.o_orderstatus', 'region.r_name', 'region.r_regionkey']
+[setup_rls] K=15 setup_ms=3084.067 disk=92323840 indexes=['cf_rls_k15_customer_c_acctbal_1', 'cf_rls_k15_customer_c_custkey_2', 'cf_rls_k15_customer_c_mktsegment_3', 'cf_rls_k15_customer_c_name_4', 'cf_rls_k15_customer_c_nationkey_5', 'cf_rls_k15_customer_c_phone_6', 'cf_rls_k15_lineitem_l_discount_7', 'cf_rls_k15_lineitem_l_extendedprice_8', 'cf_rls_k15_lineitem_l_linestatus_9', 'cf_rls_k15_lineitem_l_orderkey_10', 'cf_rls_k15_lineitem_l_quantity_11', 'cf_rls_k15_lineitem_l_returnflag_12', 'cf_rls_k15_lineitem_l_shipinstruct_13', 'cf_rls_k15_lineitem_l_shipmode_14', 'cf_rls_k15_lineitem_l_tax_15', 'cf_rls_k15_nation_n_name_16', 'cf_rls_k15_nation_n_nationkey_17', 'cf_rls_k15_nation_n_regionkey_18', 'cf_rls_k15_orders_o_custkey_19', 'cf_rls_k15_orders_o_orderkey_20', 'cf_rls_k15_orders_o_orderpriority_21', 'cf_rls_k15_orders_o_orderstatus_22', 'cf_rls_k15_region_r_name_23', 'cf_rls_k15_region_r_regionkey_24']
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=3
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=4
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=5
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=7
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=8
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=9
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=10
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=12
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=13
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=15
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=18
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=21
+[progress] db=tpch0_1 K=15 baseline=rls_with_index query=22
+[phase] db=tpch0_1 K=15 indexes_dropped=1
+[db] done db=tpch0_1
+[summary] db=tpch0_1 scale=0.1 K=15 median_hot ours=693.498ms rls=30.669ms ratio=22.612 cross_ratio=22.691 disk ours=34367344 rls=92323840 median_rss ours=181080KB rls=28308KB
+[plot] matplotlib unavailable: No module named 'matplotlib'
+[done] times_csv=logs/zero_fallback_tpch0_1_20260214_072247_K15/times.csv
+[done] profile_csv=logs/zero_fallback_tpch0_1_20260214_072247_K15/profile.csv
+[done] correctness_csv=logs/zero_fallback_tpch0_1_20260214_072247_K15/correctness.csv
+[done] summary_csv=logs/zero_fallback_tpch0_1_20260214_072247_K15/summary.csv
+[done] plots_dir=logs/zero_fallback_tpch0_1_20260214_072247_K15/plots

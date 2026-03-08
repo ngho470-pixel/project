@@ -1,0 +1,4 @@
+status=1 error=
+policy_profile_query: hub_ms=2543.796 stamp_ms=2852.388 propagate_ms=4.141 bin_ms=5.764 sig_ms=1484.319 sat_ms=0.211 decode_ms=301.743
+policy_profile: filter_ms=823.217
+

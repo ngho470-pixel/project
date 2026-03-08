@@ -1,0 +1,1 @@
+9. region: region.r_regionkey = nation.n_regionkey AND customer.c_nationkey = nation.n_nationkey AND supplier.s_nationkey = nation.n_nationkey AND customer.c_mktsegment = 'AUTOMOBILE' AND supplier.s_acctbal > 0

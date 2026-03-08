@@ -1,0 +1,7 @@
+{"cntrycode":"12","numcust":2669,"totacctbal":20035016.27}
+{"cntrycode":"14","numcust":2749,"totacctbal":20692704.37}
+{"cntrycode":"17","numcust":2645,"totacctbal":19850133.53}
+{"cntrycode":"18","numcust":2786,"totacctbal":20987068.28}
+{"cntrycode":"20","numcust":2745,"totacctbal":20498151.90}
+{"cntrycode":"21","numcust":2730,"totacctbal":20565269.64}
+{"cntrycode":"23","numcust":2705,"totacctbal":20278922.29}

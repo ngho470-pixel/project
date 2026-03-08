@@ -1,0 +1,3 @@
+customer|15000
+lineitem|600572
+orders|150000

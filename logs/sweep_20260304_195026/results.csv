@@ -1,0 +1,2 @@
+db,baseline,query_id,policy_set_name,policy_ids,num_policies,query_complexity,policy_complexity,cold_ms,hot_ms,correctness,baseline_rows,rls_index_rows,mem_overhead_kb,status,error_type,error_msg,pre_run_memory_building_ms
+tpch0_1,view_based,1,11-20,"11,12,13,14,15,16,17,18,19,20",10,4,55,5030.402,,UNKNOWN,,,,0,timeout,ERROR:  canceling statement due to statement timeout,5.981

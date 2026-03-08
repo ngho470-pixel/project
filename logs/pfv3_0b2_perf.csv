@@ -1,0 +1,4 @@
+db,case,target,query_id,status,correctness,reason,ours_ms,rls_ms,ours_rows,gt_rows,ours_hash,gt_hash,ours_over_rls,pfv3_dp_terms,pfv3_dp_td_bags,pfv3_dp_width_max,pfv3_msg_tuples_total,pfv3_factor_tuple_total,pfv3_allowed_tuples_target,pfv3_target_rows_stamped,pfv3_stamp_ms,pfv3_bin_slices_touched,pfv3_bin_rid_iters,pfv3_bin_intersections,proj_sig_count,proj_mask_or_ops,proj_rid_iters
+tpch1,P0S,lineitem,1,ok,PASS,,3434.855,1506.926,4,4,16a2c377e195c71ab2da21ed2cdd2759,16a2c377e195c71ab2da21ed2cdd2759,2.279,1,1,0,0,1,1,468252,96.085,0,0,0,0,0,0
+tpch1,P0C,lineitem,3,ok,PASS,,5271.988,1597.156,0,0,d41d8cd98f00b204e9800998ecf8427e,d41d8cd98f00b204e9800998ecf8427e,3.301,1,2,1,297453,3029752,297453,0,85.826,297456,1189837,297453,0,0,0
+tpch1,P0R,lineitem,1,ok,PASS,,9157.400,21446.167,4,4,a513d93918003b6a1f7839f53b965f4f,a513d93918003b6a1f7839f53b965f4f,0.427,1,2,1,400086,1199851,400086,0,806.951,800174,252107070,800172,0,0,0

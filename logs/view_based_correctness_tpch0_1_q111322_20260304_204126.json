@@ -1,0 +1,9 @@
+{
+  "db": "tpch0_1",
+  "total": 21,
+  "match": 21,
+  "mismatch": 0,
+  "errors": 0,
+  "csv": "/home/nghosh/setu/logs/view_based_correctness_tpch0_1_q111322_20260304_204126.csv",
+  "json": "/home/nghosh/setu/logs/view_based_correctness_tpch0_1_q111322_20260304_204126.json"
+}

@@ -1,0 +1,1 @@
+7. supplier: supplier.s_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND region.r_name = 'EUROPE'

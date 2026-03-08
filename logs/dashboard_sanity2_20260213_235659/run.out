@@ -1,0 +1,18 @@
+[matrix] run_id=dashboard_sanity2_20260213_235659 run_dir=/tmp/z3_lab/project/logs/dashboard_sanity2_20260213_235659
+[matrix] dbs=['tpch0_1'] Ks=[1] pool=1-20 warmup_runs=0 timed_runs=1
+[matrix] queries=['1']
+[db] start db=tpch0_1
+[clean_state] tag=clean_start db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[policy_set] db=tpch0_1 K=1 enabled_ids=[1]
+[clean_state] tag=clean_before_k K=1 db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[setup_ours] K=1 setup_ms=785.301 artifact_bytes_db=3013889 artifact_bytes_disk=3203072
+[progress] db=tpch0_1 K=1 baseline=ours query=1
+[clean_state] tag=after_ours_drop K=1 db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[index_infer] K=1 specs=['lineitem.l_linestatus', 'lineitem.l_returnflag']
+[setup_rls] K=1 setup_ms=474.408 disk=8372224 indexes=['cf_rls_k1_lineitem_l_linestatus_1', 'cf_rls_k1_lineitem_l_returnflag_2']
+[progress] db=tpch0_1 K=1 baseline=rls_with_index query=1
+[clean_state] tag=after_rls_drop K=1 db=tpch0_1 artifacts_rows=0 artifacts_bytes_db=0 artifacts_bytes_disk=16384 indexes=0 policies=0
+[db] done db=tpch0_1
+[done] run_dir=/tmp/z3_lab/project/logs/dashboard_sanity2_20260213_235659
+[done] runs_csv=/tmp/z3_lab/project/logs/dashboard_sanity2_20260213_235659/runs.csv
+[done] build_csv=/tmp/z3_lab/project/logs/dashboard_sanity2_20260213_235659/build.csv

@@ -1,0 +1,1 @@
+3. lineitem: lineitem.l_orderkey = orders.o_orderkey AND lineitem.l_suppkey = supplier.s_suppkey

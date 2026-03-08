@@ -1,0 +1,11 @@
+db,K,query_id,correctness,ours_count,rls_count,reason
+tpch0_1,10,3,1,0,0,
+tpch0_1,10,4,1,0,0,
+tpch0_1,10,5,1,0,0,
+tpch0_1,10,7,1,0,0,
+tpch0_1,10,8,1,0,0,
+tpch0_1,10,10,1,0,0,
+tpch0_1,10,13,1,0,0,
+tpch0_1,10,15,1,0,0,
+tpch0_1,10,18,1,0,0,
+tpch0_1,10,22,1,0,0,

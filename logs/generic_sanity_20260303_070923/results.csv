@@ -1,0 +1,4 @@
+db,baseline,query_id,policy_set_name,policy_ids,num_policies,query_complexity,policy_complexity,cold_ms,hot_ms,correctness,mem_overhead_kb,status,error_type,error_msg,pre_run_memory_building_ms
+tpch0_1,rls_index,1,1-5,"1,2,3,4,5",5,4,30,121.552,121.135,TRUE,,1,,,4279.431
+tpch0_1,sieve_index,1,1-5,"1,2,3,4,5",5,4,30,121.102,120.752,TRUE,,1,,,4268.657
+tpch0_1,ours,1,1-5,"1,2,3,4,5",5,4,30,2681.861,2651.367,TRUE,,1,,,2754.107

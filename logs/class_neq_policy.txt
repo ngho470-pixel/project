@@ -1,0 +1,4 @@
+1. lineitem: lineitem.l_returnflag != 'R'
+3. lineitem: lineitem.l_commitdate != lineitem.l_receiptdate
+7. orders: orders.o_custkey = customer.c_custkey AND (orders.o_totalprice != customer.c_acctbal)
+9. lineitem: lineitem.l_partkey = partsupp.ps_partkey AND lineitem.l_suppkey = partsupp.ps_suppkey AND (lineitem.l_quantity != partsupp.ps_availqty)

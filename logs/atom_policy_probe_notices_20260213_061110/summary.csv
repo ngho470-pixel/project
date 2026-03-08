@@ -1,0 +1,4 @@
+db,db_scale,K,policy_ids,median_hot_ours_ms,median_hot_rls_ms,speedup_ratio,cross_median_hot_ours_ms,cross_median_hot_rls_ms,cross_speedup_ratio,median_hot_peak_rss_ours_kb,median_hot_peak_rss_rls_kb,disk_ours_bytes,disk_rls_bytes
+tpch0_1,0.1,3,"1,2,3",226.611,90.638,2.500,0.000,0.000,0.000,169742,119290,20420305,44032000
+tpch0_1,0.1,4,"1,2,3,4",271.601,90.675,2.995,0.000,0.000,0.000,224952,121814,26776011,75563008
+tpch0_1,0.1,5,"1,2,3,4,5",256.817,90.612,2.834,0.000,0.000,0.000,212796,122510,26776011,75563008

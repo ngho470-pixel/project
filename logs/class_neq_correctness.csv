@@ -1,0 +1,8 @@
+db,policy_code,policy_target,query_id,enabled_policy_id,status,ours_rows,ours_hash,gt_rows,gt_hash,error_msg,proj_sig_count,proj_mask_or_ops,proj_rid_iters,pf2_cmp_total,pf2_cmp_supported,pf2_cmp_key_arity_max,pf2_cmp_summary_build_ms,pf2_cmp_summary_keys_total,pf2_cmp_checks_total,pf2_cmp_rejects_total,class_terms_ok,class_terms_reject,class_route_single_hub,class_route_two_hop,class_route_tree,class_route_cycle_rect,class_route_reject
+tpch1,N1,lineitem,6,1,PASS,1,a576fdadec80e7dfb58a895ec50285c3,1,a576fdadec80e7dfb58a895ec50285c3,,0,0,0,0,0,0,0.000,0,0,0,1,0,1,0,0,0,0
+tpch1,N2,lineitem,6,3,PASS,1,743dab9f0f0ef5f943373b85dbad83a9,1,743dab9f0f0ef5f943373b85dbad83a9,,0,0,0,0,0,0,0.000,0,0,0,1,0,1,0,0,0,0
+tpch1,N3,orders,3,5,PASS,0,d41d8cd98f00b204e9800998ecf8427e,0,d41d8cd98f00b204e9800998ecf8427e,,0,0,0,1,0,1,0.000,0,0,0,1,0,0,0,1,0,0
+tpch1,N4,orders,3,7,PASS,11438,0638c8fc47b7e22664195bd8cd91b823,11438,0638c8fc47b7e22664195bd8cd91b823,,0,0,0,1,1,1,6.069,99996,1500000,0,1,0,0,0,1,0,0
+tpch1,N4,orders,10,7,PASS,37690,91ea978b16d201b9ee7f85e96bf9c318,37690,91ea978b16d201b9ee7f85e96bf9c318,,0,0,0,1,1,1,5.971,99996,1500000,0,1,0,0,0,1,0,0
+tpch1,N5,lineitem,6,9,PASS,1,c639ef879f0efccdab0ceae428d1c1cf,1,c639ef879f0efccdab0ceae428d1c1cf,,0,0,0,1,1,2,208.076,800000,6001215,583,1,0,0,0,0,1,0
+tpch1,N5,lineitem,9,9,PASS,175,81cc75a18bd8289309ec6f0fb7bec64c,175,81cc75a18bd8289309ec6f0fb7bec64c,,,,,,,,,,,,,,,,,,

@@ -24,7 +24,7 @@ public class SelectGuard {
     Map<BEPolicy, List<Term>> ptMap;
 
 
-    QueryManager queryManager = new QueryManager();
+    QueryManager queryManager;
 
     public SelectGuard(BEExpression originalExp, boolean extend){
         this.input = new Term();
@@ -35,17 +35,13 @@ public class SelectGuard {
         this.pMap = new HashMap<>();
         this.costMap = new HashMap<>();
         this.ptMap = new HashMap<>();
-        int initialNumberOfTerms = getNumberOfAllTermsBeforeSelection();
         houseKeep();
         if(extend){
             GenerateCandidate pm = new GenerateCandidate(this.input.getRemainder(), PolicyConstants.RANGED_ATTRIBUTES);
             pm.extend();
         }
         this.canFactors = collectAllFactors(this.input.getRemainder());
-        System.out.println("Initial number of terms: " + initialNumberOfTerms);
         selectGuards();
-        int finalNumberOfTerms = numberOfGuards();
-        System.out.println("Final number of terms: " + finalNumberOfTerms);
     }
 
     public int numberOfGuards(){
@@ -273,6 +269,9 @@ public class SelectGuard {
     public List<String> guardAnalysis(int repetitions, boolean execution) {
         List<String> guardResults = new ArrayList<>();
         Duration totalEval = Duration.ofMillis(0);
+        if (execution && queryManager == null) {
+            queryManager = new QueryManager();
+        }
         int i = 0;
         for (Term mt : finalForm) {
             System.out.println("Guard " + i++ + ": " + mt.getFactor().print());

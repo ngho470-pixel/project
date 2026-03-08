@@ -1,0 +1,1 @@
+1. lineitem : (l_returnflag = 'R') OR (l_linestatus = 'F')

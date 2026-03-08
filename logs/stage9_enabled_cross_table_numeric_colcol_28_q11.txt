@@ -1,0 +1,1 @@
+28. partsupp : partsupp.ps_partkey = part.p_partkey AND (part.p_retailprice >= partsupp.ps_supplycost)

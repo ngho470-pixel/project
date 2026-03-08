@@ -1,0 +1,2 @@
+db,baseline,policy_set,query_id,status,error_type,error_msg,hot_ms,peak_rss_kb,rows,hash,gt_rows,gt_hash,match_gt,setup_ms,disk_bytes,scan_mode,scan_mode_reason,allow_density,parallelism_off_verified,proj_sig_count,proj_mask_or_ops,proj_rid_iters,cf_exec_ms_total,cf_exec_child_next_calls_total,cf_exec_rows_seen_total,cf_exec_rows_pass_total,cf_exec_rows_reject_total,cf_exec_allow_lookup_total,cf_exec_allow_lookup_ms
+tpch0_1,no_policy,S_A,1,1,,,633.206,19636,4,e4b573758499b162f5d590963d1f64d8,,,UNKNOWN,21.268,0,,,,true,,,,,,,,,,

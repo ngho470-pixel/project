@@ -1,0 +1,1 @@
+magic=CB03 total_rows=7 chunk_rows=1000000 ntoks=1 chunks=1

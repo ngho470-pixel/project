@@ -1,0 +1,8 @@
+db,baseline,query_id,policy_set_name,policy_ids,num_policies,query_complexity,policy_complexity,cold_ms,hot_ms,correctness,mem_overhead_kb,status,error_type,error_msg,pre_run_memory_building_ms
+tpch0_1,no_policy,1,1-5,"1,2,3,4,5",5,4,30,632.997,602.712,FALSE,0,1,mismatch,rows/hash mismatch vs rls_index,0.000
+tpch0_1,view_based,1,1-5,"1,2,3,4,5",5,4,30,211.308,211.288,TRUE,5716,1,,,2.668
+tpch0_1,rls,1,1-5,"1,2,3,4,5",5,4,30,181.245,181.044,TRUE,5692,1,,,0.000
+tpch0_1,rls_index,1,1-5,"1,2,3,4,5",5,4,30,121.162,120.822,TRUE,6632,1,,,4256.016
+tpch0_1,sieve,1,1-5,"1,2,3,4,5",5,4,30,211.323,211.102,TRUE,5012,1,,,2.955
+tpch0_1,sieve_index,1,1-5,"1,2,3,4,5",5,4,30,121.557,120.978,TRUE,3480,1,,,4257.861
+tpch0_1,ours,1,1-5,"1,2,3,4,5",5,4,30,2682.243,2651.191,TRUE,51052,1,,,2800.207

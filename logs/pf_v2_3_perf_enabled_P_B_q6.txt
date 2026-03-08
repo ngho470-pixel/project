@@ -1,0 +1,1 @@
+3. lineitem: lineitem.l_orderkey = orders.o_orderkey AND orders.o_custkey = customer.c_custkey AND orders.o_orderstatus = 'F' AND customer.c_mktsegment = 'AUTOMOBILE'

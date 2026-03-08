@@ -519,8 +519,13 @@ static AstNode *parse_atom(const std::vector<Token> &tokens, size_t &idx,
     Policy::AtomDef def;
     std::string key = canonicalize_atom(atom_tokens, target_table, policy, &def);
     if (!key.empty()) {
-        policy.atom_keys.insert(key);
+        // Keep atom variables policy-scoped so identical textual atoms from
+        // different policy clauses do not collapse into one SAT variable.
+        std::string scoped_key = key + "@p" + std::to_string(policy.line_no);
+        def.key = scoped_key;
+        policy.atom_keys.insert(scoped_key);
         policy.atoms.push_back(def);
+        key = std::move(scoped_key);
     }
     return make_var_node(key);
 }
@@ -572,6 +577,29 @@ static std::string ast_to_string(const AstNode *node) {
         }
     }
     return out;
+}
+
+static void ast_to_postfix_tokens(const AstNode *node, std::vector<PolicyAstTokC> &out) {
+    if (!node)
+        return;
+    if (node->type == AstNode::VAR) {
+        PolicyAstTokC tok;
+        tok.kind = POLICY_AST_TOK_VAR;
+        tok.value = node->var_id;
+        out.push_back(tok);
+        return;
+    }
+    if (node->children.empty()) {
+        return;
+    }
+    ast_to_postfix_tokens(node->children[0], out);
+    for (size_t i = 1; i < node->children.size(); i++) {
+        ast_to_postfix_tokens(node->children[i], out);
+        PolicyAstTokC op_tok;
+        op_tok.kind = (node->type == AstNode::AND) ? POLICY_AST_TOK_AND : POLICY_AST_TOK_OR;
+        op_tok.value = 0;
+        out.push_back(op_tok);
+    }
 }
 
 static void assign_var_ids(AstNode *node, const std::map<std::string, int> &mapping) {
@@ -1023,6 +1051,7 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
     }
 
     bool has_join_eq = false;
+    bool has_cross_atoms = false;
     std::set<int> needed_order_rank_domains;
     std::set<std::pair<std::string, std::string>> needed_col_consts;
     std::set<int> needed_domain_dicts;
@@ -1031,6 +1060,9 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         if (atom.kind == Policy::AtomDef::JOIN_EQ) {
             has_join_eq = true;
         } else {
+            if (atom.kind == Policy::AtomDef::COL_COL &&
+                atom.left_table != atom.right_table)
+                has_cross_atoms = true;
             if (atom.join_class_id >= 0)
                 needed_domain_dicts.insert(atom.join_class_id);
             else
@@ -1044,9 +1076,11 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
     }
 
     std::vector<std::string> needed_files;
-    if (has_join_eq || !needed_domain_dicts.empty()) {
+    if (has_join_eq || has_cross_atoms || !needed_domain_dicts.empty()) {
         needed_files.push_back("meta/join_classes");
         needed_files.push_back("meta/col_domain");
+        needed_files.push_back("meta/hubs");
+        needed_files.push_back("meta/composite_hubs");
     }
     for (const auto &tbl : closure_tables) {
         if (known_tables.find(tbl) == known_tables.end())
@@ -1084,61 +1118,6 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         ereport(ERROR, (errmsg("unsupported policy operator: %s", op.c_str())));
         return POLICY_OP_EQ;
     };
-
-    struct BundleDef {
-        std::string target;
-        std::string ast;
-        int policy_id = -1;
-        bool permissive = true;
-        std::vector<Policy::AtomDef> atoms;
-    };
-    std::vector<BundleDef> bundles;
-    bundles.reserve(policies.size());
-
-    for (const auto &pol : policies) {
-        if (policy_targets.find(pol.target) == policy_targets.end())
-            continue;
-        if (!pol.ast)
-            continue;
-        bool permissive = true;
-        if (pol.policy_id > 0)
-            permissive = (pol.policy_id % 2 == 1);
-        std::set<std::string> keys;
-        collect_ast_keys(pol.ast, keys);
-        std::map<std::string, Policy::AtomDef> b_defs;
-        for (const auto &atom : pol.atoms) {
-            if (atom.key.empty())
-                continue;
-            if (keys.find(atom.key) == keys.end())
-                continue;
-            if (b_defs.find(atom.key) == b_defs.end())
-                b_defs[atom.key] = atom;
-        }
-        std::vector<std::string> b_list;
-        b_list.reserve(b_defs.size());
-        for (const auto &kv : b_defs)
-            b_list.push_back(kv.first);
-        std::map<std::string, int> b_map;
-        for (size_t i = 0; i < b_list.size(); i++)
-            b_map[b_list[i]] = static_cast<int>(i + 1);
-
-        AstNode *b_ast = clone_ast(pol.ast);
-        assign_var_ids(b_ast, b_map);
-        std::string b_ast_str = ast_to_string(b_ast);
-
-        BundleDef b;
-        b.target = pol.target;
-        b.ast = b_ast_str;
-        b.policy_id = pol.policy_id;
-        b.permissive = permissive;
-        b.atoms.reserve(b_list.size());
-        for (const auto &k : b_list) {
-            auto it = b_defs.find(k);
-            if (it != b_defs.end())
-                b.atoms.push_back(it->second);
-        }
-        bundles.push_back(std::move(b));
-    }
 
     PolicyEvalResultC *res = (PolicyEvalResultC *)palloc0(sizeof(PolicyEvalResultC));
     res->needed_count = static_cast<int>(needed_files.size());
@@ -1197,68 +1176,15 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         }
     }
 
-    res->bundle_count = static_cast<int>(bundles.size());
-    res->bundles = res->bundle_count ? (PolicyBundleC *)palloc0(sizeof(PolicyBundleC) * res->bundle_count) : nullptr;
-    for (int i = 0; i < res->bundle_count; i++) {
-        const BundleDef &b = bundles[i];
-        PolicyBundleC *outb = &res->bundles[i];
-        outb->target_table = pstrdup(b.target.c_str());
-        outb->ast = b.ast.empty() ? pstrdup("") : pstrdup(b.ast.c_str());
-        outb->policy_id = b.policy_id;
-        outb->permissive = b.permissive ? 1 : 0;
-        outb->atom_count = static_cast<int>(b.atoms.size());
-        outb->atoms = outb->atom_count ? (PolicyAtomC *)palloc0(sizeof(PolicyAtomC) * outb->atom_count) : nullptr;
-        for (int j = 0; j < outb->atom_count; j++) {
-            const Policy::AtomDef &atom = b.atoms[j];
-            PolicyAtomC *out = &outb->atoms[j];
-            out->atom_id = j + 1;
-            if (atom.kind == Policy::AtomDef::JOIN_EQ)
-                out->kind = POLICY_ATOM_JOIN_EQ;
-            else if (atom.kind == Policy::AtomDef::COL_COL)
-                out->kind = POLICY_ATOM_COL_COL;
-            else
-                out->kind = POLICY_ATOM_COL_CONST;
-            out->join_class_id = atom.join_class_id;
-            out->canon_key = pstrdup(atom.key.c_str());
-            if (atom.kind == Policy::AtomDef::JOIN_EQ) {
-                std::string lkey = "join:" + atom.left_table + "." + atom.left_col +
-                                   " class=" + std::to_string(atom.join_class_id);
-                std::string rkey = "join:" + atom.right_table + "." + atom.right_col +
-                                   " class=" + std::to_string(atom.join_class_id);
-                out->lhs_schema_key = pstrdup(lkey.c_str());
-                out->rhs_schema_key = pstrdup(rkey.c_str());
-                out->op = 0;
-                out->const_count = 0;
-                out->const_values = nullptr;
-            } else if (atom.kind == Policy::AtomDef::COL_CONST) {
-                std::string skey = "const:" + atom.left_table + "." + atom.left_col;
-                out->lhs_schema_key = pstrdup(skey.c_str());
-                out->rhs_schema_key = nullptr;
-                out->op = map_const_op(atom.op);
-                out->const_count = static_cast<int>(atom.values.size());
-                out->const_values = out->const_count ? (char **)palloc0(sizeof(char *) * out->const_count) : nullptr;
-                for (int v = 0; v < out->const_count; v++) {
-                    out->const_values[v] = pstrdup(atom.values[v].c_str());
-                }
-            } else {
-                std::string lkey = "join:" + atom.left_table + "." + atom.left_col +
-                                   " class=" + std::to_string(atom.join_class_id);
-                std::string rkey = "join:" + atom.right_table + "." + atom.right_col +
-                                   " class=" + std::to_string(atom.join_class_id);
-                out->lhs_schema_key = pstrdup(lkey.c_str());
-                out->rhs_schema_key = pstrdup(rkey.c_str());
-                out->op = map_const_op(atom.op);
-                out->const_count = 0;
-                out->const_values = nullptr;
-            }
-        }
-    }
-
     res->target_count = static_cast<int>(target_ast.size());
     res->target_tables = res->target_count ? (char **)palloc0(sizeof(char *) * res->target_count) : nullptr;
     res->target_asts = res->target_count ? (char **)palloc0(sizeof(char *) * res->target_count) : nullptr;
     res->target_perm_asts = res->target_count ? (char **)palloc0(sizeof(char *) * res->target_count) : nullptr;
     res->target_rest_asts = res->target_count ? (char **)palloc0(sizeof(char *) * res->target_count) : nullptr;
+    res->target_ast_tok_len = 0;
+    res->target_ast_toks = nullptr;
+    res->target_ast_tok_offsets = res->target_count ? (int *)palloc0(sizeof(int) * res->target_count) : nullptr;
+    res->target_ast_tok_counts = res->target_count ? (int *)palloc0(sizeof(int) * res->target_count) : nullptr;
     res->target_joinclass_counts = res->target_count ? (int *)palloc0(sizeof(int) * res->target_count) : nullptr;
     res->target_joinclass_offsets = res->target_count ? (int *)palloc0(sizeof(int) * res->target_count) : nullptr;
     res->target_joinclass_ids_len = static_cast<int>(target_jc_ids.size());
@@ -1267,6 +1193,8 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
                                     : nullptr;
     for (int i = 0; i < res->target_joinclass_ids_len; i++)
         res->target_joinclass_ids[i] = target_jc_ids[i];
+    std::vector<PolicyAstTokC> ast_tok_flat;
+    ast_tok_flat.reserve(target_ast.size() * 8);
     int t = 0;
     for (auto &kv : target_ast) {
         res->target_tables[t] = pstrdup(kv.first.c_str());
@@ -1284,6 +1212,14 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
         std::string rest_str = rest_node ? ast_to_string(rest_node) : "";
         res->target_perm_asts[t] = perm_str.empty() ? pstrdup("") : pstrdup(perm_str.c_str());
         res->target_rest_asts[t] = rest_str.empty() ? pstrdup("") : pstrdup(rest_str.c_str());
+        if (res->target_ast_tok_offsets)
+            res->target_ast_tok_offsets[t] = static_cast<int>(ast_tok_flat.size());
+        std::vector<PolicyAstTokC> ast_toks;
+        if (kv.second)
+            ast_to_postfix_tokens(kv.second, ast_toks);
+        if (res->target_ast_tok_counts)
+            res->target_ast_tok_counts[t] = static_cast<int>(ast_toks.size());
+        ast_tok_flat.insert(ast_tok_flat.end(), ast_toks.begin(), ast_toks.end());
         if (res->target_joinclass_counts && t < (int)target_jc_counts.size()) {
             res->target_joinclass_counts[t] = target_jc_counts[t];
             res->target_joinclass_offsets[t] = target_jc_offsets[t];
@@ -1293,6 +1229,12 @@ static PolicyEvalResultC *evaluate_policies_internal(const char *policy_path,
                  kv.first.c_str(), ast_str.c_str(), perm_str.c_str(), rest_str.c_str());
         }
         t++;
+    }
+    res->target_ast_tok_len = static_cast<int>(ast_tok_flat.size());
+    if (res->target_ast_tok_len > 0) {
+        res->target_ast_toks = (PolicyAstTokC *)palloc0(sizeof(PolicyAstTokC) * res->target_ast_tok_len);
+        for (int i = 0; i < res->target_ast_tok_len; i++)
+            res->target_ast_toks[i] = ast_tok_flat[(size_t)i];
     }
 
     res->ast_node_count = static_cast<int>(store.nodes.size());
@@ -1352,29 +1294,6 @@ void free_policy_eval_result(PolicyEvalResultC *res) {
         }
         pfree(res->atoms);
     }
-    if (res->bundles) {
-        for (int i = 0; i < res->bundle_count; i++) {
-            PolicyBundleC *b = &res->bundles[i];
-            if (b->target_table) pfree(b->target_table);
-            if (b->ast) pfree(b->ast);
-            if (b->atoms) {
-                for (int j = 0; j < b->atom_count; j++) {
-                    PolicyAtomC *a = &b->atoms[j];
-                    if (a->canon_key) pfree(a->canon_key);
-                    if (a->lhs_schema_key) pfree(a->lhs_schema_key);
-                    if (a->rhs_schema_key) pfree(a->rhs_schema_key);
-                    if (a->const_values) {
-                        for (int k = 0; k < a->const_count; k++) {
-                            if (a->const_values[k]) pfree(a->const_values[k]);
-                        }
-                        pfree(a->const_values);
-                    }
-                }
-                pfree(b->atoms);
-            }
-        }
-        pfree(res->bundles);
-    }
     if (res->target_tables) {
         for (int i = 0; i < res->target_count; i++) {
             if (res->target_tables[i]) pfree(res->target_tables[i]);
@@ -1399,6 +1318,12 @@ void free_policy_eval_result(PolicyEvalResultC *res) {
         }
         pfree(res->target_rest_asts);
     }
+    if (res->target_ast_toks)
+        pfree(res->target_ast_toks);
+    if (res->target_ast_tok_offsets)
+        pfree(res->target_ast_tok_offsets);
+    if (res->target_ast_tok_counts)
+        pfree(res->target_ast_tok_counts);
     if (res->target_joinclass_counts)
         pfree(res->target_joinclass_counts);
     if (res->target_joinclass_offsets)

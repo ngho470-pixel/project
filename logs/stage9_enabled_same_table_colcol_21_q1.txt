@@ -1,0 +1,1 @@
+21. lineitem : (l_commitdate <= l_receiptdate)

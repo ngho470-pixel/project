@@ -1,0 +1,1 @@
+1. orders : orders.o_custkey = customer.c_custkey AND orders.o_custkey = 1 AND customer.c_mktsegment = 'AUTOMOBILE'

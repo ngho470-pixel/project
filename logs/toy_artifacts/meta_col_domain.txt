@@ -1,0 +1,6 @@
+customer.c_custkey=0
+orders.o_custkey=0
+customer.c_mktsegment=1
+lineitem.l_orderkey=2
+orders.o_orderkey=2
+orders.o_orderstatus=3

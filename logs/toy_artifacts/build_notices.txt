@@ -1,0 +1,11 @@
+NOTICE:  relation "files" already exists, skipping
+NOTICE:  relation "files" already exists, skipping
+NOTICE:  artifact_builder: join_class_map_init classes=4 ms=3.601
+NOTICE:  artifact_builder: table_tokenize table=customer rows=3 token_cols=2 ms=0.224
+NOTICE:  artifact_builder: table_tokenize table=lineitem rows=7 token_cols=1 ms=0.155
+NOTICE:  artifact_builder: table_tokenize table=orders rows=4 token_cols=3 ms=0.148
+NOTICE:  artifact_builder: domain_dict class=0 tokens=3 sorted=0 rank=0 ms=0.019
+NOTICE:  artifact_builder: domain_dict class=1 tokens=2 sorted=0 rank=0 ms=0.011
+NOTICE:  artifact_builder: domain_dict class=2 tokens=4 sorted=0 rank=0 ms=0.011
+NOTICE:  artifact_builder: domain_dict class=3 tokens=2 sorted=0 rank=0 ms=0.011
+NOTICE:  artifact_builder: total_ms=4.823 tables=3 join_classes=4 const_cols=2

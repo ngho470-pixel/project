@@ -6,13 +6,5 @@
 - cases: 30
 - ok: 30
 - mismatches_vs_rls_index: 0
-- median ours/rls_index ratio: 32.859
-
-## tpch1
-- csv: `logs/gate_tpch1_stage01.csv`
-- md: `logs/gate_tpch1_stage01.md`
-- cases: 30
-- ok: 30
-- mismatches_vs_rls_index: 0
-- median ours/rls_index ratio: 10.920
+- median ours/rls_index ratio: 32.231
 

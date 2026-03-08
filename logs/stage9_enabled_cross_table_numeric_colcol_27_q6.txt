@@ -1,0 +1,1 @@
+27. lineitem : lineitem.l_orderkey = orders.o_orderkey AND (lineitem.l_extendedprice <= orders.o_totalprice)

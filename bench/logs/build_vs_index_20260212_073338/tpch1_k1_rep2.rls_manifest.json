@@ -1,0 +1,23 @@
+{
+  "enabled_ids": [
+    1
+  ],
+  "index_count": 2,
+  "indexes": [
+    {
+      "column": "l_linestatus",
+      "index_name": "cf_rls_k1_lineitem_l_linestatus_1",
+      "pattern_ops": false,
+      "table": "lineitem"
+    },
+    {
+      "column": "l_returnflag",
+      "index_name": "cf_rls_k1_lineitem_l_returnflag_2",
+      "pattern_ops": false,
+      "table": "lineitem"
+    }
+  ],
+  "k": 1,
+  "policy_file": "policy_supported.txt",
+  "policy_pool": "1-20"
+}

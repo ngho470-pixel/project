@@ -1,0 +1,24 @@
+[db] start db=tpch0_1
+[phase] db=tpch0_1 clean_start artifacts=0 indexes=0
+[policy_set] db=tpch0_1 K=5 enabled_ids=[1, 2, 3, 4, 5]
+[phase] db=tpch0_1 K=5 clean_before_k artifacts=0 indexes=0
+[correctness_sample] db=tpch0_1 K=5 queries=['4', '15', '18']
+[setup_ours] K=5 setup_ms=5036.997 disk=26776019
+[progress] db=tpch0_1 K=5 baseline=ours query=4
+[progress] db=tpch0_1 K=5 baseline=ours query=15
+[progress] db=tpch0_1 K=5 baseline=ours query=18
+[phase] db=tpch0_1 K=5 artifacts_dropped=1
+[index_infer] K=5 specs=['lineitem.l_discount', 'lineitem.l_extendedprice', 'lineitem.l_linestatus', 'lineitem.l_quantity', 'lineitem.l_returnflag', 'lineitem.l_shipinstruct', 'lineitem.l_shipmode', 'lineitem.l_tax']
+[setup_rls] K=5 setup_ms=2638.678 disk=75563008 indexes=['cf_rls_k5_lineitem_l_discount_1', 'cf_rls_k5_lineitem_l_extendedprice_2', 'cf_rls_k5_lineitem_l_linestatus_3', 'cf_rls_k5_lineitem_l_quantity_4', 'cf_rls_k5_lineitem_l_returnflag_5', 'cf_rls_k5_lineitem_l_shipinstruct_6', 'cf_rls_k5_lineitem_l_shipmode_7', 'cf_rls_k5_lineitem_l_tax_8']
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=4
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=15
+[progress] db=tpch0_1 K=5 baseline=rls_with_index query=18
+[phase] db=tpch0_1 K=5 indexes_dropped=1
+[db] done db=tpch0_1
+[summary] db=tpch0_1 scale=0.1 K=5 median_hot ours=301.740ms rls=90.801ms ratio=3.323 cross_ratio=2.996 disk ours=26776019 rls=75563008 median_rss ours=250824KB rls=129164KB
+[plot] matplotlib unavailable: No module named 'matplotlib'
+[done] times_csv=logs/zero_fallback_tpch0_1_20260214_072247_K5/times.csv
+[done] profile_csv=logs/zero_fallback_tpch0_1_20260214_072247_K5/profile.csv
+[done] correctness_csv=logs/zero_fallback_tpch0_1_20260214_072247_K5/correctness.csv
+[done] summary_csv=logs/zero_fallback_tpch0_1_20260214_072247_K5/summary.csv
+[done] plots_dir=logs/zero_fallback_tpch0_1_20260214_072247_K5/plots

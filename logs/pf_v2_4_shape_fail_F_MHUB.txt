@@ -1,0 +1,1 @@
+5. lineitem: lineitem.l_orderkey = orders.o_orderkey AND lineitem.l_suppkey = supplier.s_suppkey AND supplier.s_nationkey = nation.n_nationkey

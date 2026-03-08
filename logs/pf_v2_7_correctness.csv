@@ -1,0 +1,9 @@
+db,policy_code,policy_target,policy_notes,query_id,enabled_policy_id,status,reason,ours_rows,ours_hash,gt_rows,gt_hash,policy_total_ms,project_ms,pf2_cmp_total,pf2_cmp_supported,pf2_cmp_key_arity_max,pf2_cmp_summary_build_ms,pf2_cmp_key2_entries,pf2_cmp_key2_build_ms,pf2_cmp_key2_lookups,pf2_cmp_checks_total,pf2_cmp_rejects_total,proj_sig_count,proj_mask_or_ops,proj_rid_iters
+tpch1,P29,lineitem,policy29 shape,1,1,PASS,,4,061aaec9134642d9a8747af58b3ad177,4,061aaec9134642d9a8747af58b3ad177,,,1,1,2,185.274,800000,185.274,6001215,6001215,14823,0,0,0
+tpch1,P29,lineitem,policy29 shape,6,1,PASS,,1,d37045faa672fde537e2b6c314cce341,1,d37045faa672fde537e2b6c314cce341,,,1,1,2,182.516,800000,182.516,6001215,6001215,14823,0,0,0
+tpch1,P29,lineitem,policy29 shape,9,1,PASS,,175,8cd7dd515f89827a4f7d3b902b4db258,175,8cd7dd515f89827a4f7d3b902b4db258,,,1,1,2,183.323,800000,183.323,6001215,6001215,14823,0,0,0
+tpch1,P29F,lineitem,policy29 + witness local predicate,6,3,PASS,,1,0853e9979e0c31547e1863b1e5ef0dbe,1,0853e9979e0c31547e1863b1e5ef0dbe,,,1,1,2,92.255,400310,92.255,5623381,5623381,2629822,0,0,0
+tpch1,P29F,lineitem,policy29 + witness local predicate,9,3,PASS,,175,0264ed980f00a55018ac49596172613c,175,0264ed980f00a55018ac49596172613c,,,1,1,2,92.449,400310,92.449,5623381,5623381,2629822,0,0,0
+tpch1,P29T,lineitem,policy29 + target local predicate,1,5,PASS,,4,afb089aa179965d9244f97b84e106e13,4,afb089aa179965d9244f97b84e106e13,,,1,1,2,184.712,800000,184.712,3274126,3274126,8123,0,0,0
+tpch1,P29T,lineitem,policy29 + target local predicate,6,5,PASS,,1,d37045faa672fde537e2b6c314cce341,1,d37045faa672fde537e2b6c314cce341,,,1,1,2,184.280,800000,184.280,3274126,3274126,8123,0,0,0
+tpch1,P29G,lineitem,policy29 shape >= comparator variant,6,7,PASS,,1,542c5a0d7f7601f97afb0a68497891b1,1,542c5a0d7f7601f97afb0a68497891b1,,,1,1,2,186.589,800000,186.589,6001215,6001215,5985809,0,0,0

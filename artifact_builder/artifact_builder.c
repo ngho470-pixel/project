@@ -294,62 +294,6 @@ static void insert_file_text(const char *name, const char *text) {
     insert_file(name, ba);
 }
 
-static void insert_file_u32_array(const char *name, const uint32 *vals, size_t nvals)
-{
-    size_t bytes = nvals * sizeof(uint32);
-    if (bytes > (size_t)INT_MAX)
-        ereport(ERROR, (errmsg("artifact_builder: u32 artifact too large %s bytes=%zu", name, bytes)));
-    bytea *ba = (bytea *)palloc(VARHDRSZ + bytes);
-    SET_VARSIZE(ba, VARHDRSZ + bytes);
-    if (bytes > 0 && vals)
-        memcpy(VARDATA(ba), vals, bytes);
-    insert_file(name, ba);
-    pfree(ba);
-}
-
-static void flush_code_chunk(const char *table,
-                             int *chunk_idx,
-                             uint32 *chunk_rows,
-                             ByteaBuilder **code_payload_bb_ptr)
-{
-    if (!table || !chunk_idx || !chunk_rows || !code_payload_bb_ptr)
-        return;
-    if (*chunk_rows == 0 || !*code_payload_bb_ptr)
-        return;
-
-    ByteaBuilder *code_payload_bb = *code_payload_bb_ptr;
-    ByteaBuilder *code_bb = bb_create();
-    size_t payload_len = bb_size(code_payload_bb);
-    if (payload_len > (size_t) INT32_MAX)
-        ereport(ERROR, (errmsg("code payload chunk too large for %s chunk=%d: %zu bytes",
-                               table, *chunk_idx, payload_len)));
-    if (*chunk_rows > (uint32) INT32_MAX)
-        ereport(ERROR, (errmsg("code chunk row count too large for %s chunk=%d: %u",
-                               table, *chunk_idx, *chunk_rows)));
-
-    bb_reserve(code_bb, sizeof(uint32) + sizeof(int32) + sizeof(int32) + payload_len);
-    const char magic[4] = {'C', 'B', '0', '2'};
-    bb_append_bytes(code_bb, magic, sizeof(magic));
-    bb_append_int32(code_bb, (int32) *chunk_rows);
-    bb_append_int32(code_bb, (int32) payload_len);
-    bytea *payload_ba = bb_to_bytea(code_payload_bb);
-    bb_append_bytes(code_bb, VARDATA(payload_ba), (size_t) VARSIZE_ANY_EXHDR(payload_ba));
-
-    char chunk_name[NAMEDATALEN * 2];
-    snprintf(chunk_name, sizeof(chunk_name), "%s_code_chunk_%d", table, *chunk_idx);
-    bytea *chunk_ba = bb_to_bytea(code_bb);
-    insert_file(chunk_name, chunk_ba);
-
-    /* Free large temporaries aggressively to cap per-build peak RSS. */
-    if (payload_ba) pfree(payload_ba);
-    if (chunk_ba) pfree(chunk_ba);
-    bb_free(code_bb);
-    bb_free(code_payload_bb);
-    *code_payload_bb_ptr = NULL;
-    *chunk_rows = 0;
-    (*chunk_idx)++;
-}
-
 static uint16
 bit_width_u32(uint32 v)
 {
@@ -866,53 +810,6 @@ static int32 dict_map_get_or_insert_bytes(HTAB *map,
 
     ereport(ERROR, (errmsg("artifact_builder: unreachable in dict_map_get_or_insert_bytes")));
     return -1;
-}
-
-static int32 domain_tokenize_with_map(HTAB *tok_map,
-                                      MemoryContext mcxt,
-                                      Datum v,
-                                      Oid typid,
-                                      Oid typoutput,
-                                      DomainTypeClass tc,
-                                      int32 *next_tok)
-{
-    if (tc == DOMAIN_TYPE_DATE) {
-        int64 ikey = dict_datum_to_intkey(typid, v);
-        return dict_map_get_or_insert_int64(tok_map, mcxt, ikey, next_tok, NULL);
-    }
-
-    if (tc == DOMAIN_TYPE_NUMERIC) {
-        char *txt = OidOutputFunctionCall(typoutput, v);
-        if (!txt)
-            return -1;
-        char *canon = normalize_numeric_string(txt);
-        int32 tval = dict_map_get_or_insert_text(tok_map, mcxt, canon, next_tok, NULL);
-        if (canon != txt)
-            pfree(canon);
-        pfree(txt);
-        return tval;
-    }
-
-    if (typid == BPCHAROID) {
-        char *txt = OidOutputFunctionCall(typoutput, v);
-        if (!txt)
-            return -1;
-        size_t n = strlen(txt);
-        while (n > 0 && txt[n - 1] == ' ') {
-            txt[n - 1] = '\0';
-            n--;
-        }
-        int32 tval = dict_map_get_or_insert_text(tok_map, mcxt, txt, next_tok, NULL);
-        pfree(txt);
-        return tval;
-    }
-
-    char *txt = OidOutputFunctionCall(typoutput, v);
-    if (!txt)
-        return -1;
-    int32 tval = dict_map_get_or_insert_text(tok_map, mcxt, txt, next_tok, NULL);
-    pfree(txt);
-    return tval;
 }
 
 static void write_dict_from_map(const char *name, HTAB *map, int32 n_tokens, Oid dict_typid)
@@ -1579,6 +1476,140 @@ Datum build_base(PG_FUNCTION_ARGS) {
         insert_file_text("meta/join_classes", buf.data);
     }
 
+    // meta/hubs (unary hubs derived from join classes)
+    {
+        StringInfoData buf;
+        initStringInfo(&buf);
+        for (int i = 0; i < nclasses; i++) {
+            appendStringInfo(&buf, "hub=class_%d class=%d arity=1 cols=", i, i);
+            for (int j = 0; j < classes[i].cols.count; j++) {
+                for (int k = j + 1; k < classes[i].cols.count; k++) {
+                    int ai = classes[i].cols.items[j];
+                    int bi = classes[i].cols.items[k];
+                    int cmp = strcmp(cols.items[ai].table, cols.items[bi].table);
+                    if (cmp == 0)
+                        cmp = strcmp(cols.items[ai].column, cols.items[bi].column);
+                    if (cmp > 0) {
+                        int tmp = classes[i].cols.items[j];
+                        classes[i].cols.items[j] = classes[i].cols.items[k];
+                        classes[i].cols.items[k] = tmp;
+                    }
+                }
+            }
+            for (int j = 0; j < classes[i].cols.count; j++) {
+                int col_idx = classes[i].cols.items[j];
+                if (j > 0)
+                    appendStringInfoString(&buf, ",");
+                appendStringInfo(&buf, "%s.%s", cols.items[col_idx].table, cols.items[col_idx].column);
+            }
+            appendStringInfoChar(&buf, '\n');
+        }
+        insert_file_text("meta/hubs", buf.data ? buf.data : "");
+    }
+
+    // meta/composite_hubs (arity>1 equality groups by table-pair per policy)
+    {
+        StringList composite_lines = {0};
+
+        for (int p = 0; p < ps.policy_count; p++) {
+            Policy *pol = &ps.policies[p];
+            if (pol->atom_count <= 0)
+                continue;
+            bool *used = (bool *)palloc0(sizeof(bool) * (size_t)pol->atom_count);
+
+            for (int i = 0; i < pol->atom_count; i++) {
+                PolicyAtom *ai = &pol->atoms[i];
+                if (used[i] || ai->type != ATOM_JOIN_EQ)
+                    continue;
+                if (ai->lhs_table[0] == '\0' || ai->rhs_table[0] == '\0')
+                    continue;
+                if (strcmp(ai->lhs_table, ai->rhs_table) == 0)
+                    continue;
+
+                const char *ta = ai->lhs_table;
+                const char *tb = ai->rhs_table;
+                if (strcmp(ta, tb) > 0) {
+                    const char *tmp = ta;
+                    ta = tb;
+                    tb = tmp;
+                }
+
+                StringList pairs = {0};
+                for (int j = i; j < pol->atom_count; j++) {
+                    PolicyAtom *aj = &pol->atoms[j];
+                    if (used[j] || aj->type != ATOM_JOIN_EQ)
+                        continue;
+                    if (aj->lhs_table[0] == '\0' || aj->rhs_table[0] == '\0')
+                        continue;
+                    if (strcmp(aj->lhs_table, aj->rhs_table) == 0)
+                        continue;
+
+                    const char *ja = aj->lhs_table;
+                    const char *jb = aj->rhs_table;
+                    if (strcmp(ja, jb) > 0) {
+                        const char *tmp = ja;
+                        ja = jb;
+                        jb = tmp;
+                    }
+                    if (strcmp(ja, ta) != 0 || strcmp(jb, tb) != 0)
+                        continue;
+
+                    const char *left_col = NULL;
+                    const char *right_col = NULL;
+                    if (strcmp(aj->lhs_table, ta) == 0 && strcmp(aj->rhs_table, tb) == 0) {
+                        left_col = aj->lhs_col;
+                        right_col = aj->rhs_col;
+                    } else {
+                        left_col = aj->rhs_col;
+                        right_col = aj->lhs_col;
+                    }
+                    if (left_col && right_col) {
+                        char *pair_txt = psprintf("%s=%s", left_col, right_col);
+                        str_list_add_unique(&pairs, pair_txt);
+                        pfree(pair_txt);
+                        used[j] = true;
+                    }
+                }
+
+                if (pairs.count > 1) {
+                    sort_string_list(&pairs);
+                    StringInfoData key;
+                    StringInfoData line;
+                    initStringInfo(&key);
+                    initStringInfo(&line);
+
+                    appendStringInfo(&key, "%s|%s|", ta, tb);
+                    for (int k = 0; k < pairs.count; k++) {
+                        if (k > 0)
+                            appendStringInfoString(&key, "&");
+                        appendStringInfoString(&key, pairs.items[k]);
+                    }
+
+                    appendStringInfo(&line,
+                                     "key=%s tables=%s,%s arity=%d pairs=",
+                                     key.data, ta, tb, pairs.count);
+                    for (int k = 0; k < pairs.count; k++) {
+                        if (k > 0)
+                            appendStringInfoString(&line, ",");
+                        appendStringInfoString(&line, pairs.items[k]);
+                    }
+                    str_list_add_unique(&composite_lines, line.data);
+                }
+            }
+        }
+
+        sort_string_list(&composite_lines);
+        {
+            StringInfoData buf;
+            initStringInfo(&buf);
+            for (int i = 0; i < composite_lines.count; i++) {
+                appendStringInfoString(&buf, composite_lines.items[i]);
+                appendStringInfoChar(&buf, '\n');
+            }
+            insert_file_text("meta/composite_hubs", buf.data ? buf.data : "");
+        }
+    }
+
     // meta/col_domain
     {
         StringInfoData buf;
@@ -1986,211 +2017,6 @@ Datum build_base(PG_FUNCTION_ARGS) {
              "artifact_builder: const_dict table=%s col=%s tokens=%d sorted=0 ms=%.3f",
              const_cols[i].col.table, const_cols[i].col.column,
              ntoks, elapsed_ms(dict_t0));
-    }
-
-    /* Build CSR token->RID bin indexes for all policy-scoped (table, domain) pairs. */
-    {
-        StringInfoData bin_meta;
-        initStringInfo(&bin_meta);
-
-        for (int ti = 0; ti < tables.count; ti++) {
-            TimestampTz bin_t0 = GetCurrentTimestamp();
-            char *table = tables.items[ti];
-
-            IntList table_cols = {0};
-            for (int i = 0; i < ncols; i++) {
-                if (strcmp(cols.items[i].table, table) != 0)
-                    continue;
-                int cid = (col_class && i < col_class_cap) ? col_class[i] : -1;
-                if (cid >= 0)
-                    int_list_add(&table_cols, i);
-            }
-            if (table_cols.count == 0)
-                continue;
-            sort_columns_by_name(&cols, &table_cols);
-
-            IntList bin_domains = {0};
-            IntList bin_col_idxs = {0};
-            for (int i = 0; i < table_cols.count; i++) {
-                int col_idx = table_cols.items[i];
-                int cid = (col_class && col_idx < col_class_cap) ? col_class[col_idx] : -1;
-                if (cid < 0 || cid >= nclasses)
-                    continue;
-                bool seen = false;
-                for (int j = 0; j < bin_domains.count; j++) {
-                    if (bin_domains.items[j] == cid) {
-                        seen = true;
-                        break;
-                    }
-                }
-                if (!seen) {
-                    int_list_add(&bin_domains, cid);
-                    int_list_add(&bin_col_idxs, col_idx);
-                }
-            }
-            if (bin_domains.count == 0)
-                continue;
-
-            for (int i = 0; i < bin_domains.count; i++) {
-                for (int j = i + 1; j < bin_domains.count; j++) {
-                    if (bin_domains.items[i] > bin_domains.items[j]) {
-                        int td = bin_domains.items[i];
-                        int tc = bin_col_idxs.items[i];
-                        bin_domains.items[i] = bin_domains.items[j];
-                        bin_col_idxs.items[i] = bin_col_idxs.items[j];
-                        bin_domains.items[j] = td;
-                        bin_col_idxs.items[j] = tc;
-                    }
-                }
-            }
-
-            BinTokCol *bcols = (BinTokCol *)palloc0(sizeof(BinTokCol) * bin_domains.count);
-
-            Oid relid = RelnameGetRelid(table);
-            if (!OidIsValid(relid))
-                ereport(ERROR, (errmsg("relation not found for bin index: %s", table)));
-            Relation rel = table_open(relid, AccessShareLock);
-            TupleDesc rel_desc = RelationGetDescr(rel);
-            for (int i = 0; i < bin_domains.count; i++) {
-                int col_idx = bin_col_idxs.items[i];
-                int did = bin_domains.items[i];
-                bcols[i].col_idx = col_idx;
-                bcols[i].domain_id = did;
-                bcols[i].attnum = get_attnum(relid, cols.items[col_idx].column);
-                if (bcols[i].attnum == InvalidAttrNumber)
-                    ereport(ERROR, (errmsg("missing bin attribute %s.%s", table, cols.items[col_idx].column)));
-                bcols[i].typid = TupleDescAttr(rel_desc, bcols[i].attnum - 1)->atttypid;
-                getTypeOutputInfo(bcols[i].typid, &bcols[i].typoutput, &bcols[i].typisvarlena);
-            }
-
-            uint32 **counts_by_bin = (uint32 **)palloc0(sizeof(uint32 *) * bin_domains.count);
-            uint32 **off_by_bin = (uint32 **)palloc0(sizeof(uint32 *) * bin_domains.count);
-            uint32 **rids_by_bin = (uint32 **)palloc0(sizeof(uint32 *) * bin_domains.count);
-            uint32 **cursor_by_bin = (uint32 **)palloc0(sizeof(uint32 *) * bin_domains.count);
-            uint32 *ntokens_by_bin = (uint32 *)palloc0(sizeof(uint32) * bin_domains.count);
-
-            for (int i = 0; i < bin_domains.count; i++) {
-                int did = bin_domains.items[i];
-                if (did < 0 || did >= nclasses)
-                    ereport(ERROR, (errmsg("invalid bin domain id %d for table %s", did, table)));
-                if (classes[did].next_tok < 0)
-                    ereport(ERROR, (errmsg("invalid domain token count %d for domain %d", classes[did].next_tok, did)));
-                ntokens_by_bin[i] = (uint32)classes[did].next_tok;
-                counts_by_bin[i] = ntokens_by_bin[i] > 0 ? (uint32 *)palloc0(sizeof(uint32) * ntokens_by_bin[i]) : NULL;
-            }
-
-            PushActiveSnapshot(GetTransactionSnapshot());
-            TableScanDesc scan = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
-            TupleTableSlot *slot = MakeSingleTupleTableSlot(rel_desc, table_slot_callbacks(rel));
-            uint32 nrows = 0;
-
-            while (table_scan_getnextslot(scan, ForwardScanDirection, slot)) {
-                for (int i = 0; i < bin_domains.count; i++) {
-                    bool isnull = false;
-                    Datum v = slot_getattr(slot, bcols[i].attnum, &isnull);
-                    if (isnull)
-                        continue;
-                    int did = bcols[i].domain_id;
-                    int32 next_tok_before = classes[did].next_tok;
-                    int32 tok = domain_tokenize_with_map(classes[did].tok_map,
-                                                        build_mcxt,
-                                                        v,
-                                                        bcols[i].typid,
-                                                        bcols[i].typoutput,
-                                                        (DomainTypeClass)classes[did].type_class,
-                                                        &classes[did].next_tok);
-                    if (classes[did].next_tok != next_tok_before)
-                        ereport(ERROR, (errmsg("artifact_builder: bin pass introduced new token table=%s domain=%d", table, did)));
-                    if (tok < 0 || (uint32)tok >= ntokens_by_bin[i])
-                        ereport(ERROR, (errmsg("artifact_builder: bin token out of range table=%s domain=%d tok=%d ntokens=%u",
-                                               table, did, tok, ntokens_by_bin[i])));
-                    counts_by_bin[i][tok]++;
-                }
-                if (nrows == UINT_MAX)
-                    ereport(ERROR, (errmsg("artifact_builder: row count overflow in bin pass for %s", table)));
-                nrows++;
-                ExecClearTuple(slot);
-            }
-            table_endscan(scan);
-
-            for (int i = 0; i < bin_domains.count; i++) {
-                uint32 ntok = ntokens_by_bin[i];
-                off_by_bin[i] = (uint32 *)palloc0(sizeof(uint32) * ((size_t)ntok + 1u));
-                for (uint32 t = 0; t < ntok; t++) {
-                    off_by_bin[i][t + 1u] = off_by_bin[i][t] + (counts_by_bin[i] ? counts_by_bin[i][t] : 0u);
-                }
-                uint32 nnz = off_by_bin[i][ntok];
-                rids_by_bin[i] = nnz > 0 ? (uint32 *)palloc(sizeof(uint32) * nnz) : NULL;
-                cursor_by_bin[i] = ntok > 0 ? (uint32 *)palloc(sizeof(uint32) * ntok) : NULL;
-                if (ntok > 0)
-                    memcpy(cursor_by_bin[i], off_by_bin[i], sizeof(uint32) * ntok);
-            }
-
-            scan = table_beginscan(rel, GetActiveSnapshot(), 0, NULL);
-            uint32 rid = 0;
-            while (table_scan_getnextslot(scan, ForwardScanDirection, slot)) {
-                for (int i = 0; i < bin_domains.count; i++) {
-                    bool isnull = false;
-                    Datum v = slot_getattr(slot, bcols[i].attnum, &isnull);
-                    if (isnull)
-                        continue;
-                    int did = bcols[i].domain_id;
-                    int32 next_tok_before = classes[did].next_tok;
-                    int32 tok = domain_tokenize_with_map(classes[did].tok_map,
-                                                        build_mcxt,
-                                                        v,
-                                                        bcols[i].typid,
-                                                        bcols[i].typoutput,
-                                                        (DomainTypeClass)classes[did].type_class,
-                                                        &classes[did].next_tok);
-                    if (classes[did].next_tok != next_tok_before)
-                        ereport(ERROR, (errmsg("artifact_builder: bin fill pass introduced new token table=%s domain=%d", table, did)));
-                    if (tok < 0)
-                        continue;
-                    uint32 pos = cursor_by_bin[i][(uint32)tok]++;
-                    rids_by_bin[i][pos] = rid;
-                }
-                rid++;
-                ExecClearTuple(slot);
-            }
-            table_endscan(scan);
-            ExecDropSingleTupleTableSlot(slot);
-            PopActiveSnapshot();
-            table_close(rel, AccessShareLock);
-
-            for (int i = 0; i < bin_domains.count; i++) {
-                uint32 ntok = ntokens_by_bin[i];
-                uint32 nnz = off_by_bin[i][ntok];
-                for (uint32 t = 0; t < ntok; t++) {
-                    if (cursor_by_bin[i][t] != off_by_bin[i][t + 1u])
-                        ereport(ERROR, (errmsg("artifact_builder: bin cursor mismatch table=%s domain=%d tok=%u", table, bin_domains.items[i], t)));
-                }
-
-                char off_name[NAMEDATALEN * 4];
-                char rids_name[NAMEDATALEN * 4];
-                snprintf(off_name, sizeof(off_name), "bin/%s/domain_%d.off", table, bin_domains.items[i]);
-                snprintf(rids_name, sizeof(rids_name), "bin/%s/domain_%d.rids", table, bin_domains.items[i]);
-                insert_file_u32_array(off_name, off_by_bin[i], (size_t)ntok + 1u);
-                insert_file_u32_array(rids_name, rids_by_bin[i], (size_t)nnz);
-                appendStringInfo(&bin_meta,
-                                 "table=%s domain=%d col=%s.%s off=%s rids=%s off_type=u32 rids_type=u32 ntokens=%u nrows=%u nnz=%u\n",
-                                 table,
-                                 bin_domains.items[i],
-                                 cols.items[bin_col_idxs.items[i]].table,
-                                 cols.items[bin_col_idxs.items[i]].column,
-                                 off_name,
-                                 rids_name,
-                                 ntok,
-                                 nrows,
-                                 nnz);
-            }
-
-            elog(NOTICE,
-                 "artifact_builder: bin_index table=%s pairs=%d rows=%u ms=%.3f",
-                 table, bin_domains.count, nrows, elapsed_ms(bin_t0));
-        }
-
-        insert_file_text("meta/bin_index", bin_meta.data ? bin_meta.data : "");
     }
 
     elog(NOTICE, "artifact_builder: total_ms=%.3f tables=%d join_classes=%d const_cols=%d",

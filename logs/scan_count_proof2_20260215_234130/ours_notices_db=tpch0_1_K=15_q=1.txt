@@ -1,0 +1,359 @@
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:l_linestatus OP:= STRING:'F' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( LPAREN:( IDENT:l_discount OP:>= NUMBER:0.02 AND:and IDENT:l_discount OP:<= NUMBER:0.05 AND:and IDENT:l_quantity OP:<= NUMBER:25 RPAREN:) OR:or LPAREN:( IDENT:l_discount OP:>= NUMBER:0.06 AND:and IDENT:l_discount OP:<= NUMBER:0.08 AND:and IDENT:l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:l_returnflag OP:= STRING:'A' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_tax OP:<= NUMBER:0.07 RPAREN:) OR:or LPAREN:( IDENT:l_discount OP:<= NUMBER:0.05 RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:l_extendedprice OP:> NUMBER:0 RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'AIR' COMMA:, STRING:'AIR REG' RPAREN:) AND:and IDENT:l_quantity OP:<= NUMBER:15 AND:and IDENT:l_discount OP:<= NUMBER:0.05 AND:and IDENT:l_linestatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:l_quantity OP:<= NUMBER:30 AND:and IDENT:l_discount OP:<= NUMBER:0.07 AND:and IDENT:l_returnflag OP:= STRING:'R' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:l_extendedprice OP:> NUMBER:0 RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:c_mktsegment OP:= STRING:'AUTOMOBILE' RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'BUILDING' RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:c_acctbal OP:> NUMBER:0 RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:c_mktsegment OP:= STRING:'FURNITURE' RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:c_nationkey OP:< NUMBER:10 RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( LPAREN:( IDENT:c_acctbal OP:>= NUMBER:500 AND:and IDENT:c_acctbal OP:<= NUMBER:7000 RPAREN:) OR:or LPAREN:( IDENT:c_phone OP:like STRING:'1%' AND:and IDENT:c_phone OP:like STRING:'%-%' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:c_name OP:like STRING:'Customer%' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:c_phone OP:like STRING:'2%' RPAREN:) OR:or LPAREN:( IDENT:c_phone OP:like STRING:'3%' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:c_mktsegment OP:= STRING:'MACHINERY' RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:c_acctbal OP:< NUMBER:9000 RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( LPAREN:( IDENT:c_mktsegment OP:= STRING:'AUTOMOBILE' AND:and IDENT:c_acctbal OP:> NUMBER:0 RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'FURNITURE' AND:and IDENT:c_acctbal OP:> NUMBER:500 RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'BUILDING' AND:and IDENT:c_acctbal OP:> NUMBER:1000 RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:c_nationkey OP:in LPAREN:( NUMBER:1 COMMA:, NUMBER:3 COMMA:, NUMBER:5 COMMA:, NUMBER:7 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' AND:and IDENT:customer.c_acctbal OP:> NUMBER:0 RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) AND:and IDENT:customer.c_mktsegment OP:= STRING:'BUILDING' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and LPAREN:( IDENT:nation.n_name OP:in LPAREN:( STRING:'GERMANY' COMMA:, STRING:'FRANCE' RPAREN:) OR:or IDENT:nation.n_name OP:in LPAREN:( STRING:'BRAZIL' COMMA:, STRING:'CANADA' RPAREN:) RPAREN:) AND:and IDENT:customer.c_acctbal OP:> NUMBER:0
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' OR:or IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) AND:and IDENT:orders.o_orderstatus OP:in LPAREN:( STRING:'O' COMMA:, STRING:'F' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' OR:or IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:lineitem.l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) AND:and IDENT:lineitem.l_returnflag OP:in LPAREN:( STRING:'R' COMMA:, STRING:'A' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=0 restrictive_total=0 targets=0 targets_perm0=0
+NOTICE:  policy_eval: closure_count=0
+NOTICE:  custom_filter: query_targets = [d]
+NOTICE:  policy_profile: eval_ms=0.710 artifact_load_ms=0.000 artifact_parse_ms=0.000 atoms_ms=0.000 presence_ms=0.000 project_ms=0.000 stamp_ms=0.000 bin_ms=0.000 local_sat_ms=0.000 fill_ms=0.000 prop_ms=0.000 prop_iters=0 decode_ms=0.000 policy_total_ms=0.000 ctid_map_ms=0.000 filter_ms=0.000 child_exec_ms=0.000 ctid_extract_ms=0.000 ctid_to_rid_ms=0.000 allow_check_ms=0.000 projection_ms=0.000 n_scanned_tables=0 n_policy_targets=0 n_filters=0 bytes_artifacts_loaded=0 bytes_allow=0 bytes_ctid=0 bytes_blk_index=0 rows_seen=0 rows_passed=0 ctid_misses=0 rss_kb_before_eval=23412 rss_kb_after_eval=23984 rss_kb_after_load=-1 rss_kb_after_engine=-1 rss_kb_after_ctid=-1 rss_kb_end=23984 peak_rss_kb_end=23984
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:l_linestatus OP:= STRING:'F' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( LPAREN:( IDENT:l_discount OP:>= NUMBER:0.02 AND:and IDENT:l_discount OP:<= NUMBER:0.05 AND:and IDENT:l_quantity OP:<= NUMBER:25 RPAREN:) OR:or LPAREN:( IDENT:l_discount OP:>= NUMBER:0.06 AND:and IDENT:l_discount OP:<= NUMBER:0.08 AND:and IDENT:l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:l_returnflag OP:= STRING:'A' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_tax OP:<= NUMBER:0.07 RPAREN:) OR:or LPAREN:( IDENT:l_discount OP:<= NUMBER:0.05 RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:l_extendedprice OP:> NUMBER:0 RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'AIR' COMMA:, STRING:'AIR REG' RPAREN:) AND:and IDENT:l_quantity OP:<= NUMBER:15 AND:and IDENT:l_discount OP:<= NUMBER:0.05 AND:and IDENT:l_linestatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:l_quantity OP:<= NUMBER:30 AND:and IDENT:l_discount OP:<= NUMBER:0.07 AND:and IDENT:l_returnflag OP:= STRING:'R' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:l_extendedprice OP:> NUMBER:0 RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:c_mktsegment OP:= STRING:'AUTOMOBILE' RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'BUILDING' RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:c_acctbal OP:> NUMBER:0 RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:c_mktsegment OP:= STRING:'FURNITURE' RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:c_nationkey OP:< NUMBER:10 RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( LPAREN:( IDENT:c_acctbal OP:>= NUMBER:500 AND:and IDENT:c_acctbal OP:<= NUMBER:7000 RPAREN:) OR:or LPAREN:( IDENT:c_phone OP:like STRING:'1%' AND:and IDENT:c_phone OP:like STRING:'%-%' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:c_name OP:like STRING:'Customer%' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:c_phone OP:like STRING:'2%' RPAREN:) OR:or LPAREN:( IDENT:c_phone OP:like STRING:'3%' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:c_mktsegment OP:= STRING:'MACHINERY' RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:c_acctbal OP:< NUMBER:9000 RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( LPAREN:( IDENT:c_mktsegment OP:= STRING:'AUTOMOBILE' AND:and IDENT:c_acctbal OP:> NUMBER:0 RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'FURNITURE' AND:and IDENT:c_acctbal OP:> NUMBER:500 RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'BUILDING' AND:and IDENT:c_acctbal OP:> NUMBER:1000 RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:c_nationkey OP:in LPAREN:( NUMBER:1 COMMA:, NUMBER:3 COMMA:, NUMBER:5 COMMA:, NUMBER:7 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' AND:and IDENT:customer.c_acctbal OP:> NUMBER:0 RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) AND:and IDENT:customer.c_mktsegment OP:= STRING:'BUILDING' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and LPAREN:( IDENT:nation.n_name OP:in LPAREN:( STRING:'GERMANY' COMMA:, STRING:'FRANCE' RPAREN:) OR:or IDENT:nation.n_name OP:in LPAREN:( STRING:'BRAZIL' COMMA:, STRING:'CANADA' RPAREN:) RPAREN:) AND:and IDENT:customer.c_acctbal OP:> NUMBER:0
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' OR:or IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) AND:and IDENT:orders.o_orderstatus OP:in LPAREN:( STRING:'O' COMMA:, STRING:'F' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' OR:or IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:lineitem.l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) AND:and IDENT:lineitem.l_returnflag OP:in LPAREN:( STRING:'R' COMMA:, STRING:'A' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  CF_POLICY_AST target=customer perm=2 rest=3 y0=0 ast=(y4 and (y9 or y10) and y13 or y12 and (y17 or y18) and (y11 or y10) and y2) and (y7 or y8) and (y3 and y1 or y16 and y15) and (y7 and y4 or y9 and y6 or y8 and y5) and y14
+NOTICE:  CF_POLICY_AST target=lineitem perm=4 rest=2 y0=0 ast=(y31 or y25 or y22 and y19 and y28 or y23 and y21 and y26 or (y34 and y27 and y19 and y25 or y35 and y29 and y20 and y31) and y24 or y47 and (y41 or y40) and (y35 and y33 or y36 and y32)) and y33 and (y35 or y36) and y33 and (y31 or y30) and (y37 or y19) and y24
+NOTICE:  CF_POLICY_AST target=orders perm=2 rest=2 y0=0 ast=(y45 and (y7 or y10) or y45 and y46 and (y39 or y38) and y4) and y45 and (y41 and y4 or y40 and y8) and y45 and y46 and y48 and (y44 or y43) and y42
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=8 restrictive_total=7 targets=3 targets_perm0=0
+NOTICE:  policy_eval: target=customer join_classes=[]
+NOTICE:  policy_eval: target=lineitem join_classes=[2]
+NOTICE:  policy_eval: target=orders join_classes=[0, 1, 3]
+NOTICE:  policy_eval: policy[1] target=lineitem expr=(l_returnflag = 'R') OR (l_linestatus = 'F') ast=y31 or y25
+NOTICE:  policy_eval: policy[2] target=lineitem expr=(l_shipinstruct = 'DELIVER IN PERSON') AND ((l_shipmode IN ('MAIL','SHIP')) OR (l_shipmode IN ('TRUCK','RAIL'))) ast=y33 and (y35 or y36)
+NOTICE:  policy_eval: policy[3] target=lineitem expr=((l_discount >= 0.02 AND l_discount <= 0.05 AND l_quantity <= 25) OR (l_discount >= 0.06 AND l_discount <= 0.08 AND l_quantity <= 10)) ast=y22 and y19 and y28 or y23 and y21 and y26
+NOTICE:  policy_eval: policy[4] target=lineitem expr=(l_shipinstruct = 'DELIVER IN PERSON') AND ((l_returnflag = 'R') OR (l_returnflag = 'A')) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > 0) ast=y33 and (y31 or y30) and (y37 or y19) and y24
+NOTICE:  policy_eval: policy[5] target=lineitem expr=((l_shipmode IN ('AIR','AIR REG') AND l_quantity <= 15 AND l_discount <= 0.05 AND l_linestatus = 'F') OR (l_shipmode IN ('MAIL','SHIP') AND l_quantity <= 30 AND l_discount <= 0.07 AND l_returnflag = 'R')) AND (l_extendedprice > 0) ast=(y34 and y27 and y19 and y25 or y35 and y29 and y20 and y31) and y24
+NOTICE:  policy_eval: policy[6] target=customer expr=(c_mktsegment = 'AUTOMOBILE') OR (c_mktsegment = 'BUILDING') ast=y7 or y8
+NOTICE:  policy_eval: policy[7] target=customer expr=(c_acctbal > 0) AND ((c_mktsegment = 'FURNITURE') OR (c_mktsegment = 'HOUSEHOLD')) AND (c_nationkey < 10) ast=y4 and (y9 or y10) and y13
+NOTICE:  policy_eval: policy[8] target=customer expr=((c_acctbal >= 500 AND c_acctbal <= 7000) OR (c_phone LIKE '1%' AND c_phone LIKE '%-%')) ast=y3 and y1 or y16 and y15
+NOTICE:  policy_eval: policy[9] target=customer expr=(c_name LIKE 'Customer%') AND ((c_phone LIKE '2%') OR (c_phone LIKE '3%')) AND ((c_mktsegment = 'MACHINERY') OR (c_mktsegment = 'HOUSEHOLD')) AND (c_acctbal < 9000) ast=y12 and (y17 or y18) and (y11 or y10) and y2
+NOTICE:  policy_eval: policy[10] target=customer expr=((c_mktsegment = 'AUTOMOBILE' AND c_acctbal > 0) OR (c_mktsegment = 'FURNITURE' AND c_acctbal > 500) OR (c_mktsegment = 'BUILDING' AND c_acctbal > 1000)) AND (c_nationkey IN (1,3,5,7)) ast=(y7 and y4 or y9 and y6 or y8 and y5) and y14
+NOTICE:  policy_eval: policy[11] target=orders expr=orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD') ast=y45 and (y7 or y10)
+NOTICE:  policy_eval: policy[12] target=orders expr=orders.o_custkey = customer.c_custkey AND ((orders.o_orderstatus = 'F' AND customer.c_acctbal > 0) OR (orders.o_orderpriority IN ('1-URGENT','2-HIGH') AND customer.c_mktsegment = 'BUILDING')) ast=y45 and (y41 and y4 or y40 and y8)
+NOTICE:  policy_eval: policy[13] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND (nation.n_name IN ('GERMANY','FRANCE') OR nation.n_name IN ('BRAZIL','CANADA')) AND customer.c_acctbal > 0 ast=y45 and y46 and (y39 or y38) and y4
+NOTICE:  policy_eval: policy[14] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND (region.r_name = 'EUROPE' OR region.r_name = 'ASIA') AND orders.o_orderstatus IN ('O','F') ast=y45 and y46 and y48 and (y44 or y43) and y42
+NOTICE:  policy_eval: policy[15] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND (orders.o_orderstatus = 'F' OR orders.o_orderpriority IN ('1-URGENT','2-HIGH')) AND ((lineitem.l_shipmode IN ('MAIL','SHIP') AND lineitem.l_shipinstruct = 'DELIVER IN PERSON') OR (lineitem.l_shipmode IN ('TRUCK','RAIL') AND lineitem.l_returnflag IN ('R','A'))) ast=y47 and (y41 or y40) and (y35 and y33 or y36 and y32)
+NOTICE:  policy_eval: atom y1 = const:customer.c_acctbal|<=|7000
+NOTICE:  policy_eval: atom y2 = const:customer.c_acctbal|<|9000
+NOTICE:  policy_eval: atom y3 = const:customer.c_acctbal|>=|500
+NOTICE:  policy_eval: atom y4 = const:customer.c_acctbal|>|0
+NOTICE:  policy_eval: atom y5 = const:customer.c_acctbal|>|1000
+NOTICE:  policy_eval: atom y6 = const:customer.c_acctbal|>|500
+NOTICE:  policy_eval: atom y7 = const:customer.c_mktsegment|=|AUTOMOBILE
+NOTICE:  policy_eval: atom y8 = const:customer.c_mktsegment|=|BUILDING
+NOTICE:  policy_eval: atom y9 = const:customer.c_mktsegment|=|FURNITURE
+NOTICE:  policy_eval: atom y10 = const:customer.c_mktsegment|=|HOUSEHOLD
+NOTICE:  policy_eval: atom y11 = const:customer.c_mktsegment|=|MACHINERY
+NOTICE:  policy_eval: atom y12 = const:customer.c_name|like|Customer%
+NOTICE:  policy_eval: atom y13 = const:customer.c_nationkey|<|10
+NOTICE:  policy_eval: atom y14 = const:customer.c_nationkey|in|1,3,5,7
+NOTICE:  policy_eval: atom y15 = const:customer.c_phone|like|%-%
+NOTICE:  policy_eval: atom y16 = const:customer.c_phone|like|1%
+NOTICE:  policy_eval: atom y17 = const:customer.c_phone|like|2%
+NOTICE:  policy_eval: atom y18 = const:customer.c_phone|like|3%
+NOTICE:  policy_eval: atom y19 = const:lineitem.l_discount|<=|0.05
+NOTICE:  policy_eval: atom y20 = const:lineitem.l_discount|<=|0.07
+NOTICE:  policy_eval: atom y21 = const:lineitem.l_discount|<=|0.08
+NOTICE:  policy_eval: atom y22 = const:lineitem.l_discount|>=|0.02
+NOTICE:  policy_eval: atom y23 = const:lineitem.l_discount|>=|0.06
+NOTICE:  policy_eval: atom y24 = const:lineitem.l_extendedprice|>|0
+NOTICE:  policy_eval: atom y25 = const:lineitem.l_linestatus|=|F
+NOTICE:  policy_eval: atom y26 = const:lineitem.l_quantity|<=|10
+NOTICE:  policy_eval: atom y27 = const:lineitem.l_quantity|<=|15
+NOTICE:  policy_eval: atom y28 = const:lineitem.l_quantity|<=|25
+NOTICE:  policy_eval: atom y29 = const:lineitem.l_quantity|<=|30
+NOTICE:  policy_eval: atom y30 = const:lineitem.l_returnflag|=|A
+NOTICE:  policy_eval: atom y31 = const:lineitem.l_returnflag|=|R
+NOTICE:  policy_eval: atom y32 = const:lineitem.l_returnflag|in|A,R
+NOTICE:  policy_eval: atom y33 = const:lineitem.l_shipinstruct|=|DELIVER IN PERSON
+NOTICE:  policy_eval: atom y34 = const:lineitem.l_shipmode|in|AIR,AIR REG
+NOTICE:  policy_eval: atom y35 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y36 = const:lineitem.l_shipmode|in|RAIL,TRUCK
+NOTICE:  policy_eval: atom y37 = const:lineitem.l_tax|<=|0.07
+NOTICE:  policy_eval: atom y38 = const:nation.n_name|in|BRAZIL,CANADA
+NOTICE:  policy_eval: atom y39 = const:nation.n_name|in|FRANCE,GERMANY
+NOTICE:  policy_eval: atom y40 = const:orders.o_orderpriority|in|1-URGENT,2-HIGH
+NOTICE:  policy_eval: atom y41 = const:orders.o_orderstatus|=|F
+NOTICE:  policy_eval: atom y42 = const:orders.o_orderstatus|in|F,O
+NOTICE:  policy_eval: atom y43 = const:region.r_name|=|ASIA
+NOTICE:  policy_eval: atom y44 = const:region.r_name|=|EUROPE
+NOTICE:  policy_eval: atom y45 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: atom y46 = join:customer.c_nationkey=nation.n_nationkey
+NOTICE:  policy_eval: atom y47 = join:lineitem.l_orderkey=orders.o_orderkey
+NOTICE:  policy_eval: atom y48 = join:nation.n_regionkey=region.r_regionkey
+NOTICE:  policy_eval: combined_ast target=customer ast=(y4 and (y9 or y10) and y13 or y12 and (y17 or y18) and (y11 or y10) and y2) and (y7 or y8) and (y3 and y1 or y16 and y15) and (y7 and y4 or y9 and y6 or y8 and y5) and y14 perm_ast=y4 and (y9 or y10) and y13 or y12 and (y17 or y18) and (y11 or y10) and y2 rest_ast=(y7 or y8) and (y3 and y1 or y16 and y15) and (y7 and y4 or y9 and y6 or y8 and y5) and y14
+NOTICE:  policy_eval: combined_ast target=lineitem ast=(y31 or y25 or y22 and y19 and y28 or y23 and y21 and y26 or (y34 and y27 and y19 and y25 or y35 and y29 and y20 and y31) and y24 or y47 and (y41 or y40) and (y35 and y33 or y36 and y32)) and y33 and (y35 or y36) and y33 and (y31 or y30) and (y37 or y19) and y24 perm_ast=y31 or y25 or y22 and y19 and y28 or y23 and y21 and y26 or (y34 and y27 and y19 and y25 or y35 and y29 and y20 and y31) and y24 or y47 and (y41 or y40) and (y35 and y33 or y36 and y32) rest_ast=y33 and (y35 or y36) and y33 and (y31 or y30) and (y37 or y19) and y24
+NOTICE:  policy_eval: combined_ast target=orders ast=(y45 and (y7 or y10) or y45 and y46 and (y39 or y38) and y4) and y45 and (y41 and y4 or y40 and y8) and y45 and y46 and y48 and (y44 or y43) and y42 perm_ast=y45 and (y7 or y10) or y45 and y46 and (y39 or y38) and y4 rest_ast=y45 and (y41 and y4 or y40 and y8) and y45 and y46 and y48 and (y44 or y43) and y42
+NOTICE:  policy_eval: closure_count=5
+NOTICE:  custom_filter: wrap rel=lineitem oid=16413 paths=1
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:l_linestatus OP:= STRING:'F' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) RPAREN:) OR:or LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( LPAREN:( IDENT:l_discount OP:>= NUMBER:0.02 AND:and IDENT:l_discount OP:<= NUMBER:0.05 AND:and IDENT:l_quantity OP:<= NUMBER:25 RPAREN:) OR:or LPAREN:( IDENT:l_discount OP:>= NUMBER:0.06 AND:and IDENT:l_discount OP:<= NUMBER:0.08 AND:and IDENT:l_quantity OP:<= NUMBER:10 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( IDENT:l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_returnflag OP:= STRING:'R' RPAREN:) OR:or LPAREN:( IDENT:l_returnflag OP:= STRING:'A' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:l_tax OP:<= NUMBER:0.07 RPAREN:) OR:or LPAREN:( IDENT:l_discount OP:<= NUMBER:0.05 RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:l_extendedprice OP:> NUMBER:0 RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=LPAREN:( LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'AIR' COMMA:, STRING:'AIR REG' RPAREN:) AND:and IDENT:l_quantity OP:<= NUMBER:15 AND:and IDENT:l_discount OP:<= NUMBER:0.05 AND:and IDENT:l_linestatus OP:= STRING:'F' RPAREN:) OR:or LPAREN:( IDENT:l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:l_quantity OP:<= NUMBER:30 AND:and IDENT:l_discount OP:<= NUMBER:0.07 AND:and IDENT:l_returnflag OP:= STRING:'R' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:l_extendedprice OP:> NUMBER:0 RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:c_mktsegment OP:= STRING:'AUTOMOBILE' RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'BUILDING' RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:c_acctbal OP:> NUMBER:0 RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:c_mktsegment OP:= STRING:'FURNITURE' RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:c_nationkey OP:< NUMBER:10 RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( LPAREN:( IDENT:c_acctbal OP:>= NUMBER:500 AND:and IDENT:c_acctbal OP:<= NUMBER:7000 RPAREN:) OR:or LPAREN:( IDENT:c_phone OP:like STRING:'1%' AND:and IDENT:c_phone OP:like STRING:'%-%' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( IDENT:c_name OP:like STRING:'Customer%' RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:c_phone OP:like STRING:'2%' RPAREN:) OR:or LPAREN:( IDENT:c_phone OP:like STRING:'3%' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:c_mktsegment OP:= STRING:'MACHINERY' RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:c_acctbal OP:< NUMBER:9000 RPAREN:)
+NOTICE:  policy_eval: target=customer tokens=LPAREN:( LPAREN:( IDENT:c_mktsegment OP:= STRING:'AUTOMOBILE' AND:and IDENT:c_acctbal OP:> NUMBER:0 RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'FURNITURE' AND:and IDENT:c_acctbal OP:> NUMBER:500 RPAREN:) OR:or LPAREN:( IDENT:c_mktsegment OP:= STRING:'BUILDING' AND:and IDENT:c_acctbal OP:> NUMBER:1000 RPAREN:) RPAREN:) AND:and LPAREN:( IDENT:c_nationkey OP:in LPAREN:( NUMBER:1 COMMA:, NUMBER:3 COMMA:, NUMBER:5 COMMA:, NUMBER:7 RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( IDENT:customer.c_mktsegment OP:= STRING:'AUTOMOBILE' OR:or IDENT:customer.c_mktsegment OP:= STRING:'HOUSEHOLD' RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and LPAREN:( LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' AND:and IDENT:customer.c_acctbal OP:> NUMBER:0 RPAREN:) OR:or LPAREN:( IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) AND:and IDENT:customer.c_mktsegment OP:= STRING:'BUILDING' RPAREN:) RPAREN:)
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and LPAREN:( IDENT:nation.n_name OP:in LPAREN:( STRING:'GERMANY' COMMA:, STRING:'FRANCE' RPAREN:) OR:or IDENT:nation.n_name OP:in LPAREN:( STRING:'BRAZIL' COMMA:, STRING:'CANADA' RPAREN:) RPAREN:) AND:and IDENT:customer.c_acctbal OP:> NUMBER:0
+NOTICE:  policy_eval: target=orders tokens=IDENT:orders.o_custkey OP:= IDENT:customer.c_custkey AND:and IDENT:customer.c_nationkey OP:= IDENT:nation.n_nationkey AND:and IDENT:nation.n_regionkey OP:= IDENT:region.r_regionkey AND:and LPAREN:( IDENT:region.r_name OP:= STRING:'EUROPE' OR:or IDENT:region.r_name OP:= STRING:'ASIA' RPAREN:) AND:and IDENT:orders.o_orderstatus OP:in LPAREN:( STRING:'O' COMMA:, STRING:'F' RPAREN:)
+NOTICE:  policy_eval: target=lineitem tokens=IDENT:lineitem.l_orderkey OP:= IDENT:orders.o_orderkey AND:and LPAREN:( IDENT:orders.o_orderstatus OP:= STRING:'F' OR:or IDENT:orders.o_orderpriority OP:in LPAREN:( STRING:'1-URGENT' COMMA:, STRING:'2-HIGH' RPAREN:) RPAREN:) AND:and LPAREN:( LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'MAIL' COMMA:, STRING:'SHIP' RPAREN:) AND:and IDENT:lineitem.l_shipinstruct OP:= STRING:'DELIVER IN PERSON' RPAREN:) OR:or LPAREN:( IDENT:lineitem.l_shipmode OP:in LPAREN:( STRING:'TRUCK' COMMA:, STRING:'RAIL' RPAREN:) AND:and IDENT:lineitem.l_returnflag OP:in LPAREN:( STRING:'R' COMMA:, STRING:'A' RPAREN:) RPAREN:) RPAREN:)
+NOTICE:  CF_POLICY_AST target=customer perm=2 rest=3 y0=0 ast=(y4 and (y9 or y10) and y13 or y12 and (y17 or y18) and (y11 or y10) and y2) and (y7 or y8) and (y3 and y1 or y16 and y15) and (y7 and y4 or y9 and y6 or y8 and y5) and y14
+NOTICE:  CF_POLICY_AST target=lineitem perm=4 rest=2 y0=0 ast=(y31 or y25 or y22 and y19 and y28 or y23 and y21 and y26 or (y34 and y27 and y19 and y25 or y35 and y29 and y20 and y31) and y24 or y47 and (y41 or y40) and (y35 and y33 or y36 and y32)) and y33 and (y35 or y36) and y33 and (y31 or y30) and (y37 or y19) and y24
+NOTICE:  CF_POLICY_AST target=orders perm=2 rest=2 y0=0 ast=(y45 and (y7 or y10) or y45 and y46 and (y39 or y38) and y4) and y45 and (y41 and y4 or y40 and y8) and y45 and y46 and y48 and (y44 or y43) and y42
+NOTICE:  CF_POLICY_AST_SUMMARY permissive_total=8 restrictive_total=7 targets=3 targets_perm0=0
+NOTICE:  policy_eval: target=customer join_classes=[]
+NOTICE:  policy_eval: target=lineitem join_classes=[2]
+NOTICE:  policy_eval: target=orders join_classes=[0, 1, 3]
+NOTICE:  policy_eval: policy[1] target=lineitem expr=(l_returnflag = 'R') OR (l_linestatus = 'F') ast=y31 or y25
+NOTICE:  policy_eval: policy[2] target=lineitem expr=(l_shipinstruct = 'DELIVER IN PERSON') AND ((l_shipmode IN ('MAIL','SHIP')) OR (l_shipmode IN ('TRUCK','RAIL'))) ast=y33 and (y35 or y36)
+NOTICE:  policy_eval: policy[3] target=lineitem expr=((l_discount >= 0.02 AND l_discount <= 0.05 AND l_quantity <= 25) OR (l_discount >= 0.06 AND l_discount <= 0.08 AND l_quantity <= 10)) ast=y22 and y19 and y28 or y23 and y21 and y26
+NOTICE:  policy_eval: policy[4] target=lineitem expr=(l_shipinstruct = 'DELIVER IN PERSON') AND ((l_returnflag = 'R') OR (l_returnflag = 'A')) AND ((l_tax <= 0.07) OR (l_discount <= 0.05)) AND (l_extendedprice > 0) ast=y33 and (y31 or y30) and (y37 or y19) and y24
+NOTICE:  policy_eval: policy[5] target=lineitem expr=((l_shipmode IN ('AIR','AIR REG') AND l_quantity <= 15 AND l_discount <= 0.05 AND l_linestatus = 'F') OR (l_shipmode IN ('MAIL','SHIP') AND l_quantity <= 30 AND l_discount <= 0.07 AND l_returnflag = 'R')) AND (l_extendedprice > 0) ast=(y34 and y27 and y19 and y25 or y35 and y29 and y20 and y31) and y24
+NOTICE:  policy_eval: policy[6] target=customer expr=(c_mktsegment = 'AUTOMOBILE') OR (c_mktsegment = 'BUILDING') ast=y7 or y8
+NOTICE:  policy_eval: policy[7] target=customer expr=(c_acctbal > 0) AND ((c_mktsegment = 'FURNITURE') OR (c_mktsegment = 'HOUSEHOLD')) AND (c_nationkey < 10) ast=y4 and (y9 or y10) and y13
+NOTICE:  policy_eval: policy[8] target=customer expr=((c_acctbal >= 500 AND c_acctbal <= 7000) OR (c_phone LIKE '1%' AND c_phone LIKE '%-%')) ast=y3 and y1 or y16 and y15
+NOTICE:  policy_eval: policy[9] target=customer expr=(c_name LIKE 'Customer%') AND ((c_phone LIKE '2%') OR (c_phone LIKE '3%')) AND ((c_mktsegment = 'MACHINERY') OR (c_mktsegment = 'HOUSEHOLD')) AND (c_acctbal < 9000) ast=y12 and (y17 or y18) and (y11 or y10) and y2
+NOTICE:  policy_eval: policy[10] target=customer expr=((c_mktsegment = 'AUTOMOBILE' AND c_acctbal > 0) OR (c_mktsegment = 'FURNITURE' AND c_acctbal > 500) OR (c_mktsegment = 'BUILDING' AND c_acctbal > 1000)) AND (c_nationkey IN (1,3,5,7)) ast=(y7 and y4 or y9 and y6 or y8 and y5) and y14
+NOTICE:  policy_eval: policy[11] target=orders expr=orders.o_custkey = customer.c_custkey AND (customer.c_mktsegment = 'AUTOMOBILE' OR customer.c_mktsegment = 'HOUSEHOLD') ast=y45 and (y7 or y10)
+NOTICE:  policy_eval: policy[12] target=orders expr=orders.o_custkey = customer.c_custkey AND ((orders.o_orderstatus = 'F' AND customer.c_acctbal > 0) OR (orders.o_orderpriority IN ('1-URGENT','2-HIGH') AND customer.c_mktsegment = 'BUILDING')) ast=y45 and (y41 and y4 or y40 and y8)
+NOTICE:  policy_eval: policy[13] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND (nation.n_name IN ('GERMANY','FRANCE') OR nation.n_name IN ('BRAZIL','CANADA')) AND customer.c_acctbal > 0 ast=y45 and y46 and (y39 or y38) and y4
+NOTICE:  policy_eval: policy[14] target=orders expr=orders.o_custkey = customer.c_custkey AND customer.c_nationkey = nation.n_nationkey AND nation.n_regionkey = region.r_regionkey AND (region.r_name = 'EUROPE' OR region.r_name = 'ASIA') AND orders.o_orderstatus IN ('O','F') ast=y45 and y46 and y48 and (y44 or y43) and y42
+NOTICE:  policy_eval: policy[15] target=lineitem expr=lineitem.l_orderkey = orders.o_orderkey AND (orders.o_orderstatus = 'F' OR orders.o_orderpriority IN ('1-URGENT','2-HIGH')) AND ((lineitem.l_shipmode IN ('MAIL','SHIP') AND lineitem.l_shipinstruct = 'DELIVER IN PERSON') OR (lineitem.l_shipmode IN ('TRUCK','RAIL') AND lineitem.l_returnflag IN ('R','A'))) ast=y47 and (y41 or y40) and (y35 and y33 or y36 and y32)
+NOTICE:  policy_eval: atom y1 = const:customer.c_acctbal|<=|7000
+NOTICE:  policy_eval: atom y2 = const:customer.c_acctbal|<|9000
+NOTICE:  policy_eval: atom y3 = const:customer.c_acctbal|>=|500
+NOTICE:  policy_eval: atom y4 = const:customer.c_acctbal|>|0
+NOTICE:  policy_eval: atom y5 = const:customer.c_acctbal|>|1000
+NOTICE:  policy_eval: atom y6 = const:customer.c_acctbal|>|500
+NOTICE:  policy_eval: atom y7 = const:customer.c_mktsegment|=|AUTOMOBILE
+NOTICE:  policy_eval: atom y8 = const:customer.c_mktsegment|=|BUILDING
+NOTICE:  policy_eval: atom y9 = const:customer.c_mktsegment|=|FURNITURE
+NOTICE:  policy_eval: atom y10 = const:customer.c_mktsegment|=|HOUSEHOLD
+NOTICE:  policy_eval: atom y11 = const:customer.c_mktsegment|=|MACHINERY
+NOTICE:  policy_eval: atom y12 = const:customer.c_name|like|Customer%
+NOTICE:  policy_eval: atom y13 = const:customer.c_nationkey|<|10
+NOTICE:  policy_eval: atom y14 = const:customer.c_nationkey|in|1,3,5,7
+NOTICE:  policy_eval: atom y15 = const:customer.c_phone|like|%-%
+NOTICE:  policy_eval: atom y16 = const:customer.c_phone|like|1%
+NOTICE:  policy_eval: atom y17 = const:customer.c_phone|like|2%
+NOTICE:  policy_eval: atom y18 = const:customer.c_phone|like|3%
+NOTICE:  policy_eval: atom y19 = const:lineitem.l_discount|<=|0.05
+NOTICE:  policy_eval: atom y20 = const:lineitem.l_discount|<=|0.07
+NOTICE:  policy_eval: atom y21 = const:lineitem.l_discount|<=|0.08
+NOTICE:  policy_eval: atom y22 = const:lineitem.l_discount|>=|0.02
+NOTICE:  policy_eval: atom y23 = const:lineitem.l_discount|>=|0.06
+NOTICE:  policy_eval: atom y24 = const:lineitem.l_extendedprice|>|0
+NOTICE:  policy_eval: atom y25 = const:lineitem.l_linestatus|=|F
+NOTICE:  policy_eval: atom y26 = const:lineitem.l_quantity|<=|10
+NOTICE:  policy_eval: atom y27 = const:lineitem.l_quantity|<=|15
+NOTICE:  policy_eval: atom y28 = const:lineitem.l_quantity|<=|25
+NOTICE:  policy_eval: atom y29 = const:lineitem.l_quantity|<=|30
+NOTICE:  policy_eval: atom y30 = const:lineitem.l_returnflag|=|A
+NOTICE:  policy_eval: atom y31 = const:lineitem.l_returnflag|=|R
+NOTICE:  policy_eval: atom y32 = const:lineitem.l_returnflag|in|A,R
+NOTICE:  policy_eval: atom y33 = const:lineitem.l_shipinstruct|=|DELIVER IN PERSON
+NOTICE:  policy_eval: atom y34 = const:lineitem.l_shipmode|in|AIR,AIR REG
+NOTICE:  policy_eval: atom y35 = const:lineitem.l_shipmode|in|MAIL,SHIP
+NOTICE:  policy_eval: atom y36 = const:lineitem.l_shipmode|in|RAIL,TRUCK
+NOTICE:  policy_eval: atom y37 = const:lineitem.l_tax|<=|0.07
+NOTICE:  policy_eval: atom y38 = const:nation.n_name|in|BRAZIL,CANADA
+NOTICE:  policy_eval: atom y39 = const:nation.n_name|in|FRANCE,GERMANY
+NOTICE:  policy_eval: atom y40 = const:orders.o_orderpriority|in|1-URGENT,2-HIGH
+NOTICE:  policy_eval: atom y41 = const:orders.o_orderstatus|=|F
+NOTICE:  policy_eval: atom y42 = const:orders.o_orderstatus|in|F,O
+NOTICE:  policy_eval: atom y43 = const:region.r_name|=|ASIA
+NOTICE:  policy_eval: atom y44 = const:region.r_name|=|EUROPE
+NOTICE:  policy_eval: atom y45 = join:customer.c_custkey=orders.o_custkey
+NOTICE:  policy_eval: atom y46 = join:customer.c_nationkey=nation.n_nationkey
+NOTICE:  policy_eval: atom y47 = join:lineitem.l_orderkey=orders.o_orderkey
+NOTICE:  policy_eval: atom y48 = join:nation.n_regionkey=region.r_regionkey
+NOTICE:  policy_eval: combined_ast target=customer ast=(y4 and (y9 or y10) and y13 or y12 and (y17 or y18) and (y11 or y10) and y2) and (y7 or y8) and (y3 and y1 or y16 and y15) and (y7 and y4 or y9 and y6 or y8 and y5) and y14 perm_ast=y4 and (y9 or y10) and y13 or y12 and (y17 or y18) and (y11 or y10) and y2 rest_ast=(y7 or y8) and (y3 and y1 or y16 and y15) and (y7 and y4 or y9 and y6 or y8 and y5) and y14
+NOTICE:  policy_eval: combined_ast target=lineitem ast=(y31 or y25 or y22 and y19 and y28 or y23 and y21 and y26 or (y34 and y27 and y19 and y25 or y35 and y29 and y20 and y31) and y24 or y47 and (y41 or y40) and (y35 and y33 or y36 and y32)) and y33 and (y35 or y36) and y33 and (y31 or y30) and (y37 or y19) and y24 perm_ast=y31 or y25 or y22 and y19 and y28 or y23 and y21 and y26 or (y34 and y27 and y19 and y25 or y35 and y29 and y20 and y31) and y24 or y47 and (y41 or y40) and (y35 and y33 or y36 and y32) rest_ast=y33 and (y35 or y36) and y33 and (y31 or y30) and (y37 or y19) and y24
+NOTICE:  policy_eval: combined_ast target=orders ast=(y45 and (y7 or y10) or y45 and y46 and (y39 or y38) and y4) and y45 and (y41 and y4 or y40 and y8) and y45 and y46 and y48 and (y44 or y43) and y42 perm_ast=y45 and (y7 or y10) or y45 and y46 and (y39 or y38) and y4 rest_ast=y45 and (y41 and y4 or y40 and y8) and y45 and y46 and y48 and (y44 or y43) and y42
+NOTICE:  policy_eval: closure_count=5
+NOTICE:  custom_filter: needed_files = [customer_code_base, customer_ctid, dict/customer/c_acctbal, dict/customer/c_mktsegment, dict/customer/c_name, dict/customer/c_nationkey, dict/customer/c_phone, dict/lineitem/l_discount, dict/lineitem/l_extendedprice, dict/lineitem/l_linestatus, dict/lineitem/l_quantity, dict/lineitem/l_returnflag, dict/lineitem/l_shipinstruct, dict/lineitem/l_shipmode, dict/lineitem/l_tax, dict/nation/n_name, dict/orders/o_orderpriority, dict/orders/o_orderstatus, dict/region/r_name, lineitem_code_base, lineitem_ctid, meta/cols/customer, meta/cols/lineitem, meta/cols/nation, meta/cols/orders, meta/cols/region, meta/dict_sorted/customer/c_acctbal, meta/dict_sorted/customer/c_mktsegment, meta/dict_sorted/customer/c_name, meta/dict_sorted/customer/c_nationkey, meta/dict_sorted/customer/c_phone, meta/dict_sorted/lineitem/l_discount, meta/dict_sorted/lineitem/l_extendedprice, meta/dict_sorted/lineitem/l_linestatus, meta/dict_sorted/lineitem/l_quantity, meta/dict_sorted/lineitem/l_returnflag, meta/dict_sorted/lineitem/l_shipinstruct, meta/dict_sorted/lineitem/l_shipmode, meta/dict_sorted/lineitem/l_tax, meta/dict_sorted/nation/n_name, meta/dict_sorted/orders/o_orderpriority, meta/dict_sorted/orders/o_orderstatus, meta/dict_sorted/region/r_name, meta/dict_type/customer/c_acctbal, meta/dict_type/customer/c_mktsegment, meta/dict_type/customer/c_name, meta/dict_type/customer/c_nationkey, meta/dict_type/customer/c_phone, meta/dict_type/lineitem/l_discount, meta/dict_type/lineitem/l_extendedprice, meta/dict_type/lineitem/l_linestatus, meta/dict_type/lineitem/l_quantity, meta/dict_type/lineitem/l_returnflag, meta/dict_type/lineitem/l_shipinstruct, meta/dict_type/lineitem/l_shipmode, meta/dict_type/lineitem/l_tax, meta/dict_type/nation/n_name, meta/dict_type/orders/o_orderpriority, meta/dict_type/orders/o_orderstatus, meta/dict_type/region/r_name, meta/join_classes, nation_code_base, nation_ctid, orders_code_base, orders_ctid, region_code_base, region_ctid]
+NOTICE:  custom_filter: policy_targets = [customer, lineitem, orders]
+NOTICE:  policy_eval: target_tables=[customer, lineitem, orders]
+NOTICE:  policy_eval: combined_ast target=customer ast=(y4 and (y9 or y10) and y13 or y12 and (y17 or y18) and (y11 or y10) and y2) and (y7 or y8) and (y3 and y1 or y16 and y15) and (y7 and y4 or y9 and y6 or y8 and y5) and y14
+NOTICE:  policy_eval: combined_ast target=lineitem ast=(y31 or y25 or y22 and y19 and y28 or y23 and y21 and y26 or (y34 and y27 and y19 and y25 or y35 and y29 and y20 and y31) and y24 or y47 and (y41 or y40) and (y35 and y33 or y36 and y32)) and y33 and (y35 or y36) and y33 and (y31 or y30) and (y37 or y19) and y24
+NOTICE:  policy_eval: combined_ast target=orders ast=(y45 and (y7 or y10) or y45 and y46 and (y39 or y38) and y4) and y45 and (y41 and y4 or y40 and y8) and y45 and y46 and y48 and (y44 or y43) and y42
+NOTICE:  custom_filter: query_targets = [lineitem]
+NOTICE:  custom_filter: scanned_tables = [lineitem]
+NOTICE:  custom_filter: table=lineitem filter=on
+NOTICE:  custom_filter: artifact_load_ms=20.575
+NOTICE:  custom_filter: calling policy_run once target_count=3 atom_count=48
+NOTICE:  policy: load_ms=5.307
+NOTICE:  policy_stamp: spi: SELECT file FROM public.files WHERE name = 'customer_code_chunk_0'
+NOTICE:  policy: global_atoms table=customer count=18
+NOTICE:  policy: global_bins table=customer bins=120 rows=15000
+NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=18
+NOTICE:  policy: local_bins table=customer atoms=18 bins=120
+NOTICE:  policy: local_ms table=customer stamp=5.291 bin=0.139 eval=9.497 fill=35.164
+NOTICE:  policy: local_eval table=customer sat_calls=120 cache_hits=0
+NOTICE:  CF_POLICY_SIDE table=customer rows=15000 combined_ok=0 perm_ok=5390 rest_ok=852 has_perm=1 has_rest=1
+NOTICE:  CF_POLICY_SIDE_AST table=customer combined=(((((((y4 and (y9 or y10)) and y13) or (((y12 and (y17 or y18)) and (y11 or y10)) and y2)) and (y7 or y8)) and ((y3 and y1) or (y16 and y15))) and (((y7 and y4) or (y9 and y6)) or (y8 and y5))) and y14) perm=(((y4 and (y9 or y10)) and y13) or (((y12 and (y17 or y18)) and (y11 or y10)) and y2)) rest=((((y7 or y8) and ((y3 and y1) or (y16 and y15))) and (((y7 and y4) or (y9 and y6)) or (y8 and y5))) and y14)
+NOTICE:  CF_ATOM_COUNTS table=customer rows=15000 ok=0 used_vars=18 local_const_vars=18
+NOTICE:  CF_ATOM table=customer aid=y1 true_rows=10944 desc=customer.c_acctbal <= 7000
+NOTICE:  CF_ATOM table=customer aid=y2 true_rows=13650 desc=customer.c_acctbal < 9000
+NOTICE:  CF_ATOM table=customer aid=y3 true_rows=12951 desc=customer.c_acctbal >= 500
+NOTICE:  CF_ATOM table=customer aid=y4 true_rows=13596 desc=customer.c_acctbal > 0
+NOTICE:  CF_ATOM table=customer aid=y5 true_rows=12271 desc=customer.c_acctbal > 1000
+NOTICE:  CF_ATOM table=customer aid=y6 true_rows=12951 desc=customer.c_acctbal > 500
+NOTICE:  CF_ATOM table=customer aid=y7 true_rows=3013 desc=customer.c_mktsegment = 'AUTOMOBILE'
+NOTICE:  CF_ATOM table=customer aid=y8 true_rows=3111 desc=customer.c_mktsegment = 'BUILDING'
+NOTICE:  CF_ATOM table=customer aid=y9 true_rows=2888 desc=customer.c_mktsegment = 'FURNITURE'
+NOTICE:  CF_ATOM table=customer aid=y10 true_rows=3009 desc=customer.c_mktsegment = 'HOUSEHOLD'
+NOTICE:  CF_ATOM table=customer aid=y11 true_rows=2979 desc=customer.c_mktsegment = 'MACHINERY'
+NOTICE:  CF_ATOM table=customer aid=y12 true_rows=15000 desc=customer.c_name LIKE 'Customer%'
+NOTICE:  CF_ATOM table=customer aid=y13 true_rows=6016 desc=customer.c_nationkey < 10
+NOTICE:  CF_ATOM table=customer aid=y14 true_rows=2433 desc=customer.c_nationkey IN (1,3,5,7)
+NOTICE:  CF_ATOM table=customer aid=y15 true_rows=15000 desc=customer.c_phone LIKE '%-%'
+NOTICE:  CF_ATOM table=customer aid=y16 true_rows=6016 desc=customer.c_phone LIKE '1%'
+NOTICE:  CF_ATOM table=customer aid=y17 true_rows=6053 desc=customer.c_phone LIKE '2%'
+NOTICE:  CF_ATOM table=customer aid=y18 true_rows=2931 desc=customer.c_phone LIKE '3%'
+NOTICE:  policy: allow_customer count = 0 / 15000
+NOTICE:  policy_stamp: spi: SELECT file FROM public.files WHERE name = 'nation_code_chunk_0'
+NOTICE:  policy_stamp: spi: SELECT file FROM public.files WHERE name = 'orders_code_chunk_0'
+NOTICE:  policy_stamp: spi: SELECT file FROM public.files WHERE name = 'region_code_chunk_0'
+NOTICE:  policy: extract_local table=customer z=49 atoms=2
+NOTICE:  policy: extract_local table=nation z=50 atoms=2
+NOTICE:  policy: extract_local table=customer z=51 atoms=1
+NOTICE:  policy: extract_local table=customer z=52 atoms=1
+NOTICE:  policy: extract_local table=customer z=53 atoms=1
+NOTICE:  policy: extract_local table=region z=54 atoms=2
+NOTICE:  policy: global_ast=(((((((((y45 and y49) or (((y45 and y46) and y50) and y51)) and y45) and ((y41 and y52) or (y40 and y53))) and y45) and y46) and y48) and y54) and y42)
+NOTICE:  policy: global_atoms table=customer count=18
+NOTICE:  policy: global_bins table=customer bins=120 rows=15000
+NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=2
+NOTICE:  policy: local_bins table=customer atoms=2 bins=120
+NOTICE:  policy: local_ms table=customer stamp=4.273 bin=0.141 eval=0.632 fill=3.676
+NOTICE:  policy: local_eval table=customer sat_calls=3 cache_hits=117
+NOTICE:  CF_POLICY_SIDE table=customer rows=15000 combined_ok=6022 perm_ok=15000 rest_ok=15000 has_perm=1 has_rest=1
+NOTICE:  CF_POLICY_SIDE_AST table=customer combined=(y7 or y10) perm=(((y4 and (y9 or y10)) and y13) or (((y12 and (y17 or y18)) and (y11 or y10)) and y2)) rest=((((y7 or y8) and ((y3 and y1) or (y16 and y15))) and (((y7 and y4) or (y9 and y6)) or (y8 and y5))) and y14)
+NOTICE:  CF_ATOM_COUNTS table=customer rows=15000 ok=6022 used_vars=2 local_const_vars=2
+NOTICE:  CF_ATOM table=customer aid=y7 true_rows=3013 desc=customer.c_mktsegment = 'AUTOMOBILE'
+NOTICE:  CF_ATOM table=customer aid=y10 true_rows=3009 desc=customer.c_mktsegment = 'HOUSEHOLD'
+NOTICE:  policy: z_eval table=customer z=49 bins=120 sat_calls=3 allowed_sigs=0
+NOTICE:  policy: z_token_truth z=49 domain=14999 true=0
+NOTICE:  policy: global_atoms table=nation count=2
+NOTICE:  policy: global_bins table=nation bins=3 rows=25
+NOTICE:  policy: bundle_eval target=nation bundle_id=1 uses_atoms=2
+NOTICE:  policy: local_bins table=nation atoms=2 bins=3
+NOTICE:  policy: local_ms table=nation stamp=0.001 bin=0.001 eval=0.606 fill=0.001
+NOTICE:  policy: local_eval table=nation sat_calls=3 cache_hits=0
+NOTICE:  CF_POLICY_SIDE table=nation rows=25 combined_ok=4 perm_ok=0 rest_ok=25 has_perm=0 has_rest=0
+NOTICE:  CF_POLICY_SIDE_AST table=nation combined=(y39 or y38) perm= rest=
+NOTICE:  CF_ATOM_COUNTS table=nation rows=25 ok=4 used_vars=2 local_const_vars=2
+NOTICE:  CF_ATOM table=nation aid=y38 true_rows=2 desc=nation.n_name IN ('BRAZIL','CANADA')
+NOTICE:  CF_ATOM table=nation aid=y39 true_rows=2 desc=nation.n_name IN ('FRANCE','GERMANY')
+NOTICE:  policy: z_eval table=nation z=50 bins=3 sat_calls=3 allowed_sigs=2
+NOTICE:  policy: z_token_truth z=50 domain=14999 true=0
+NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=1
+NOTICE:  policy: local_bins table=customer atoms=1 bins=120
+NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=0.000 fill=3.135
+NOTICE:  policy: local_eval table=customer sat_calls=0 cache_hits=118
+NOTICE:  CF_POLICY_SIDE table=customer rows=15000 combined_ok=13596 perm_ok=15000 rest_ok=15000 has_perm=1 has_rest=1
+NOTICE:  CF_POLICY_SIDE_AST table=customer combined=y4 perm=(((y4 and (y9 or y10)) and y13) or (((y12 and (y17 or y18)) and (y11 or y10)) and y2)) rest=((((y7 or y8) and ((y3 and y1) or (y16 and y15))) and (((y7 and y4) or (y9 and y6)) or (y8 and y5))) and y14)
+NOTICE:  CF_ATOM_COUNTS table=customer rows=15000 ok=13596 used_vars=1 local_const_vars=1
+NOTICE:  CF_ATOM table=customer aid=y4 true_rows=13596 desc=customer.c_acctbal > 0
+NOTICE:  policy: z_eval table=customer z=51 bins=120 sat_calls=0 allowed_sigs=0
+NOTICE:  policy: z_token_truth z=51 domain=14999 true=0
+NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=1
+NOTICE:  policy: local_bins table=customer atoms=1 bins=120
+NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=0.000 fill=1.602
+NOTICE:  policy: local_eval table=customer sat_calls=0 cache_hits=120
+NOTICE:  CF_POLICY_SIDE table=customer rows=15000 combined_ok=13596 perm_ok=15000 rest_ok=15000 has_perm=1 has_rest=1
+NOTICE:  CF_POLICY_SIDE_AST table=customer combined=y4 perm=(((y4 and (y9 or y10)) and y13) or (((y12 and (y17 or y18)) and (y11 or y10)) and y2)) rest=((((y7 or y8) and ((y3 and y1) or (y16 and y15))) and (((y7 and y4) or (y9 and y6)) or (y8 and y5))) and y14)
+NOTICE:  CF_ATOM_COUNTS table=customer rows=15000 ok=13596 used_vars=1 local_const_vars=1
+NOTICE:  CF_ATOM table=customer aid=y4 true_rows=13596 desc=customer.c_acctbal > 0
+NOTICE:  policy: z_eval table=customer z=52 bins=120 sat_calls=0 allowed_sigs=0
+NOTICE:  policy: z_token_truth z=52 domain=14999 true=0
+NOTICE:  policy: bundle_eval target=customer bundle_id=1 uses_atoms=1
+NOTICE:  policy: local_bins table=customer atoms=1 bins=120
+NOTICE:  policy: local_ms table=customer stamp=0.000 bin=0.000 eval=0.000 fill=3.199
+NOTICE:  policy: local_eval table=customer sat_calls=0 cache_hits=118
+NOTICE:  CF_POLICY_SIDE table=customer rows=15000 combined_ok=3111 perm_ok=15000 rest_ok=15000 has_perm=1 has_rest=1
+NOTICE:  CF_POLICY_SIDE_AST table=customer combined=y8 perm=(((y4 and (y9 or y10)) and y13) or (((y12 and (y17 or y18)) and (y11 or y10)) and y2)) rest=((((y7 or y8) and ((y3 and y1) or (y16 and y15))) and (((y7 and y4) or (y9 and y6)) or (y8 and y5))) and y14)
+NOTICE:  CF_ATOM_COUNTS table=customer rows=15000 ok=3111 used_vars=1 local_const_vars=1
+NOTICE:  CF_ATOM table=customer aid=y8 true_rows=3111 desc=customer.c_mktsegment = 'BUILDING'
+NOTICE:  policy: z_eval table=customer z=53 bins=120 sat_calls=0 allowed_sigs=0
+NOTICE:  policy: z_token_truth z=53 domain=14999 true=0
+NOTICE:  policy: global_atoms table=region count=2
+NOTICE:  policy: global_bins table=region bins=3 rows=5
+NOTICE:  policy: bundle_eval target=region bundle_id=1 uses_atoms=2
+NOTICE:  policy: local_bins table=region atoms=2 bins=3
+NOTICE:  policy: local_ms table=region stamp=0.000 bin=0.001 eval=0.601 fill=0.001
+NOTICE:  policy: local_eval table=region sat_calls=3 cache_hits=0
+NOTICE:  CF_POLICY_SIDE table=region rows=5 combined_ok=2 perm_ok=0 rest_ok=5 has_perm=0 has_rest=0
+NOTICE:  CF_POLICY_SIDE_AST table=region combined=(y44 or y43) perm= rest=
+NOTICE:  CF_ATOM_COUNTS table=region rows=5 ok=2 used_vars=2 local_const_vars=2
+NOTICE:  CF_ATOM table=region aid=y43 true_rows=1 desc=region.r_name = 'ASIA'
+NOTICE:  CF_ATOM table=region aid=y44 true_rows=1 desc=region.r_name = 'EUROPE'
+NOTICE:  policy: z_eval table=region z=54 bins=3 sat_calls=3 allowed_sigs=2
+NOTICE:  policy: z_token_truth z=54 domain=14999 true=0
+NOTICE:  policy: allow_orders count = 0 / 150000
+NOTICE:  policy_stamp: spi: SELECT file FROM public.files WHERE name = 'lineitem_code_chunk_0'
+NOTICE:  policy: extract_local table=orders z=49 atoms=2
+NOTICE:  policy: global_ast=(((((((((((y31 or y25) or ((y22 and y19) and y28)) or ((y23 and y21) and y26)) or (((((y34 and y27) and y19) and y25) or (((y35 and y29) and y20) and y31)) and y24)) or ((y47 and y49) and ((y35 and y33) or (y36 and y32)))) and y33) and (y35 or y36)) and y33) and (y31 or y30)) and (y37 or y19)) and y24)
+NOTICE:  policy: global_atoms table=orders count=3
+NOTICE:  policy: global_bins table=orders bins=6 rows=150000
+NOTICE:  policy: bundle_eval target=orders bundle_id=1 uses_atoms=2
+NOTICE:  policy: local_bins table=orders atoms=2 bins=6
+NOTICE:  policy: local_ms table=orders stamp=6.258 bin=1.323 eval=0.838 fill=4.913
+NOTICE:  policy: local_eval table=orders sat_calls=4 cache_hits=2
+NOTICE:  CF_POLICY_SIDE table=orders rows=150000 combined_ok=103877 perm_ok=150000 rest_ok=103877 has_perm=1 has_rest=1
+NOTICE:  CF_POLICY_SIDE_AST table=orders combined=(y41 or y40) perm=((y45 and (y7 or y10)) or (((y45 and y46) and (y39 or y38)) and y4)) rest=((((((y45 and ((y41 and y4) or (y40 and y8))) and y45) and y46) and y48) and (y44 or y43)) and y42)
+NOTICE:  CF_ATOM_COUNTS table=orders rows=150000 ok=103877 used_vars=2 local_const_vars=2
+NOTICE:  CF_ATOM table=orders aid=y40 true_rows=60283 desc=orders.o_orderpriority IN ('1-URGENT','2-HIGH')
+NOTICE:  CF_ATOM table=orders aid=y41 true_rows=72884 desc=orders.o_orderstatus = 'F'
+NOTICE:  policy: z_eval table=orders z=49 bins=6 sat_calls=4 allowed_sigs=0
+NOTICE:  policy: z_token_truth z=49 domain=150000 true=0
+NOTICE:  policy: allow_lineitem count = 40243 / 600572
+NOTICE:  policy: total_ms=740.931
+NOTICE:  policy_profile_bundle: bundle=1 target=customer K=0 query= local={customer:atoms=18,bins=120,sat=120,hits=0,ms=5.291/0.139/9.497/35.164|customer:atoms=2,bins=120,sat=3,hits=117,ms=4.273/0.141/0.632/3.676|nation:atoms=2,bins=3,sat=3,hits=0,ms=0.001/0.001/0.606/0.001|customer:atoms=1,bins=120,sat=0,hits=118,ms=0.000/0.000/0.000/3.135|customer:atoms=1,bins=120,sat=0,hits=120,ms=0.000/0.000/0.000/1.602|customer:atoms=1,bins=120,sat=0,hits=118,ms=0.000/0.000/0.000/3.199|region:atoms=2,bins=3,sat=3,hits=0,ms=0.000/0.001/0.601/0.001|orders:atoms=2,bins=6,sat=4,hits=2,ms=6.258/1.323/0.838/4.913,total_ms=81.293} prop={iter=0,ms=0.000,classes=[]} decode={orders:0/150000,ms=1.230|lineitem:40243/600572,ms=8.244,total_ms=9.474} total_ms=740.931
+NOTICE:  custom_filter: allow_customer count=0/15000
+NOTICE:  custom_filter: allow_orders count=0/150000
+NOTICE:  custom_filter: allow_lineitem count=40243/600572
+NOTICE:  custom_filter: allow_lineitem popcount=40243/600572
+NOTICE:  custom_filter: ctid_map[0]=(4704,1)->0
+NOTICE:  custom_filter: ctid_map[1]=(4704,2)->1
+NOTICE:  custom_filter: ctid_map[2]=(4704,3)->2
+NOTICE:  custom_filter: ctid_map[3]=(4704,4)->3
+NOTICE:  custom_filter: ctid_map[4]=(4704,5)->4
+NOTICE:  custom_filter: ctid_index_ms=2.541 rel=lineitem
+NOTICE:  custom_filter: lineitem_ctid head [4704,1 4704,2 4704,3 4704,4 4704,5]
+NOTICE:  custom_filter: retain rel=lineitem allow=75072B ctid=4804576B blk_index=1584188B
+NOTICE:  custom_filter: retain total allow=75072B ctid=4804576B blk_index=1584188B
+NOTICE:  policy_profile_query: K=0 query_id= total_ms=740.931 local_ms=81.293 prop_ms=0.000 decode_ms=9.474 sat_calls=133 cache_hits=475 closure_tables=5 filtered_targets=3
+NOTICE:  policy: scan_count table=orders count=1
+NOTICE:  policy: scan_count table=region count=1
+NOTICE:  policy: scan_count table=nation count=1
+NOTICE:  policy: scan_count table=customer count=1
+NOTICE:  custom_filter exec: rel=lineitem oid=16413 seen=600569 passed=40243 misses=0 mode=trace
+NOTICE:  custom_filter: row validation time = 280.406 ms
+NOTICE:  policy_profile: eval_ms=1.503 artifact_load_ms=20.575 artifact_parse_ms=5.307 atoms_ms=25.316 presence_ms=470.500 project_ms=9.474 stamp_ms=15.823 bin_ms=1.606 local_sat_ms=12.174 fill_ms=51.690 prop_ms=0.000 prop_iters=0 decode_ms=9.474 policy_total_ms=740.931 ctid_map_ms=2.541 filter_ms=280.406 child_exec_ms=89.156 ctid_extract_ms=83.099 ctid_to_rid_ms=14.041 allow_check_ms=13.117 projection_ms=5.145 n_scanned_tables=1 n_policy_targets=3 n_filters=1 bytes_artifacts_loaded=8455209 bytes_allow=75072 bytes_ctid=4804576 bytes_blk_index=1584188 rows_seen=600569 rows_passed=40243 ctid_misses=0 rss_kb_before_eval=27648 rss_kb_after_eval=27648 rss_kb_after_load=41632 rss_kb_after_engine=99196 rss_kb_after_ctid=99196 rss_kb_end=78724 peak_rss_kb_end=161868
